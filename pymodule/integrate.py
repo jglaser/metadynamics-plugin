@@ -1,12 +1,13 @@
 import _metadynamics
 
-# Next, since we are extending an updater, we need to bring in the base class updater and some other parts from 
-# hoomd_script
 from hoomd_script.integrate import _integrator
 from hoomd_script.force import _force
 from hoomd_script import util
 from hoomd_script import globals
+
 import hoomd
+
+import cv
 
 class mode_metadynamics(_integrator):
     def __init__(self, dt, W, stride, deltaT):
@@ -24,16 +25,16 @@ class mode_metadynamics(_integrator):
 
         self.cv_list = [];
 
-    def register_cv(self, cv_name, sigma):
-        found = False;
-        # Find the collective variable in the list of forces
+    def update_forces(self):
+        self.cpp_integrator.removeAllVariables()
+
+        have_cv = False
         for f in globals.forces:
-            if f.name == '_'+cv_name:
-                found = True;
-                break;
+            if isinstance(f, cv._collective_variable):
+                self.cpp_integrator.registerCollectiveVariable(f.cpp_force, f.sigma)
+                have_cv=True
 
-        if not found:
-            print >> sys.stderr, "\n***Error! Cannot find collective variable '" + cv_name + "' in list of forces.\n"
-            raise RuntimeError('Error initializing collective variable')
+        if not have_cv:
+            globals.msg.warning("integrate.mode_metadynamics: No collective variables defined. Continuing with simulation anyway.\n")
 
-        self.cpp_integrator.registerCollectiveVariable(f.cpp_force, sigma)
+        _integrator.update_forces(self)

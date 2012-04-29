@@ -48,7 +48,7 @@ void IntegratorMetaDynamics::update(unsigned int timestep)
         m_prof->pop();
 
     // update bias potential
-    updateBiasPotential(timestep);
+    updateBiasPotential(timestep+1);
 
     // compute the net force on all particles
 #ifdef ENABLE_CUDA
@@ -84,6 +84,9 @@ void IntegratorMetaDynamics::update(unsigned int timestep)
 
 void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
     {
+    // exit early if there are no collective variables
+    if (m_variables.size() == 0)
+        return;
 
     // collect values of collective variables
     std::vector< Scalar> current_val;
