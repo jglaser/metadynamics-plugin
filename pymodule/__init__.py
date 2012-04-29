@@ -2,4 +2,5 @@
 
 # need to import all submodules defined in this directory
 import integrate
+import cv
 

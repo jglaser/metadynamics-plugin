@@ -36,9 +36,4 @@ class mode_metadynamics(_integrator):
             print >> sys.stderr, "\n***Error! Cannot find collective variable '" + cv_name + "' in list of forces.\n"
             raise RuntimeError('Error initializing collective variable')
 
-        if not f.log:
-            print >> sys.stderr, "\n***Warning! Collective variable '" + f.name + "' is still enabled as a regular force field."
-            print >> sys.stderr, "\n   Disabling with log=True.\n"
-            f.disable(Log=True)
-
         self.cpp_integrator.registerCollectiveVariable(f.cpp_force, sigma)

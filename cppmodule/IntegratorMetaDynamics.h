@@ -1,12 +1,16 @@
+#ifndef __INTEGRATOR_METADYNAMICS_H__
+#define __INTEGRATOR_METADYNAMICS_H__
+
 #include <hoomd/hoomd.h>
 
 #include <boost/shared_ptr.hpp>
 
+#include "CollectiveVariable.h"
+
 struct CollectiveVariableItem
     {
-    boost::shared_ptr<ForceCompute> m_cv;       // The collective variable
+    boost::shared_ptr<CollectiveVariable> m_cv; // The collective variable
     Scalar m_sigma;                             // Width of compensating gaussians for this variable
-    Scalar m_curr_bias;                         // current partial deriviative of the biasing potential
     };
 
 //! Implements a metadynamics update scheme
@@ -35,15 +39,12 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
                 it->clear();
 
             m_num_update_steps = 0;
-            m_log_weight.clear();
-            m_reweighting_factor = 1.0;
-            m_Vdot_avg_sum = 0.0;
             m_bias_potential.clear();
             }
 
         virtual void printStats() {};
 
-        void registerCollectiveVariable(boost::shared_ptr<ForceCompute> cv, Scalar sigma)
+        void registerCollectiveVariable(boost::shared_ptr<CollectiveVariable> cv, Scalar sigma)
             {
             assert(cv);
             assert(gaussian_width > 0);
@@ -72,10 +73,6 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
                 {
                 return m_curr_bias_potential;
                 }
-            else if (quantity == m_log_names[1])
-                {
-                return m_reweighting_factor;
-                }
             else
                 { 
                 // default: throw exception
@@ -98,9 +95,6 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         std::vector<std::string> m_log_names;             //!< Names of logging quantities
         std::string m_suffix;                             //!< Suffix for unbiased variables
         Scalar m_curr_bias_potential;                     //!< The sum of Gaussians
-        std::vector<double> m_log_weight;                 //!< Logarithm of reweighting factors
-        double m_reweighting_factor;                      //!< Ratio between unbiased and biased ensemble
-        double m_Vdot_avg_sum;                            //!< Logarithm of reweighting factor
         std::vector<Scalar> m_bias_potential;             //!< List of values of the bias potential
 
         void updateBiasPotential(unsigned int timestep);
@@ -111,3 +105,4 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
 //! Export to python
 void export_IntegratorMetaDynamics();
 
+#endif // __INTEGRATOR_METADYNAMICS_H__
