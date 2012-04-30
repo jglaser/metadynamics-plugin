@@ -10,14 +10,14 @@ import hoomd
 import cv
 
 class mode_metadynamics(_integrator):
-    def __init__(self, dt, W, stride, deltaT):
+    def __init__(self, dt, W, stride, deltaT, filename="", overwrite=False):
         util.print_status_line();
     
         # initialize base class
         _integrator.__init__(self);
         
         # initialize the reflected c++ class
-        self.cpp_integrator = _metadynamics.IntegratorMetaDynamics(globals.system_definition, dt, W, deltaT, stride);
+        self.cpp_integrator = _metadynamics.IntegratorMetaDynamics(globals.system_definition, dt, W, deltaT, stride, filename, overwrite);
 
         self.supports_methods = True;
 

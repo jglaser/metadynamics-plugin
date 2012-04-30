@@ -22,7 +22,9 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
                    Scalar deltaT,
                    Scalar W,
                    Scalar T_shift,
-                   unsigned int stride);
+                   unsigned int stride,
+                   const std::string& filename = "",
+                   bool overwrite = false);
 
         virtual ~IntegratorMetaDynamics() {}
 
@@ -97,9 +99,22 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         Scalar m_curr_bias_potential;                     //!< The sum of Gaussians
         std::vector<Scalar> m_bias_potential;             //!< List of values of the bias potential
 
+        bool m_file_initialized;                          //!< True if file output has been initialized
+        const std::string m_filename;                     //!< Name of output file
+        bool m_overwrite;                                 //!< True if the file should be overwritten
+        bool m_is_appending;                              //!< True if we are appending to the file
+        std::ofstream m_file;                             //!< Output log file
+        std::string m_delimiter;                          //!< Delimiting string
+
         void updateBiasPotential(unsigned int timestep);
 
         void addCVForces();
+
+        //! Helper function to open output file for logging
+        void openOutputFile();
+
+        //! Helper function to write file header
+        void writeFileHeader();
     };
 
 //! Export to python

@@ -8,7 +8,8 @@ class LamellarOrderParameterGPU : public LamellarOrderParameter
         LamellarOrderParameterGPU(boost::shared_ptr<SystemDefinition> sysdef,
                                const std::vector<Scalar>& mode,
                                const std::vector<int3>& lattice_vectors,
-                               bool generate_symmetries);
+                               bool generate_symmetries,
+                               const std::string& suffix = "");
 
         virtual ~LamellarOrderParameterGPU() {}
 

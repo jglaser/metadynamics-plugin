@@ -9,8 +9,9 @@ using namespace boost::python;
 LamellarOrderParameter::LamellarOrderParameter(boost::shared_ptr<SystemDefinition> sysdef,
                                const std::vector<Scalar>& mode,
                                const std::vector<int3>& lattice_vectors,
-                               bool generate_symmetries)
-    : CollectiveVariable(sysdef), m_log_name("cv_lamellar"), m_sum(0.0)
+                               bool generate_symmetries,
+                               const std::string& suffix)
+    : CollectiveVariable(sysdef, "cv_lamellar"), m_sum(0.0)
     {
     if (mode.size() != m_pdata->getNTypes())
         {
@@ -30,6 +31,9 @@ LamellarOrderParameter::LamellarOrderParameter(boost::shared_ptr<SystemDefinitio
 
     GPUArray<Scalar2> fourier_modes(m_lattice_vectors.size(), m_exec_conf);
     m_fourier_modes.swap(fourier_modes);
+
+    m_cv_name += suffix;
+    m_log_name = m_cv_name;
     }
 
 /*! Apply all rotations and mirror symmetries of the cubic lattice to the list
@@ -227,7 +231,8 @@ void export_LamellarOrderParameter()
         ("LamellarOrderParameter", init< boost::shared_ptr<SystemDefinition>,
                                          const std::vector<Scalar>&,
                                          const std::vector<int3>,
-                                         bool>());
+                                         bool,
+                                         const std::string&>());
 
     class_<std::vector<int3> >("std_vector_int3")
         .def(vector_indexing_suite< std::vector<int3> > ())

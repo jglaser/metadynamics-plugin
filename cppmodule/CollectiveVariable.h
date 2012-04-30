@@ -3,10 +3,12 @@
 
 #include <hoomd/hoomd.h>
 
+#include <string.h>
+
 class CollectiveVariable : public ForceCompute
     {
     public:
-        CollectiveVariable(boost::shared_ptr<SystemDefinition> sysdef);
+        CollectiveVariable(boost::shared_ptr<SystemDefinition> sysdef, const std::string& name);
         virtual ~CollectiveVariable() {}
 
         virtual void computeForces(unsigned int timestep) = 0;
@@ -18,8 +20,15 @@ class CollectiveVariable : public ForceCompute
             m_bias = bias;
             }
 
+        std::string getName()
+            {
+            return m_cv_name;
+            }
+
     protected:
         Scalar m_bias;
+
+        std::string m_cv_name;
     };
 
 void export_CollectiveVariable();

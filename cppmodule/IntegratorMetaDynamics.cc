@@ -1,23 +1,79 @@
 #include "IntegratorMetaDynamics.h"
 
+#include <stdio.h>
+using namespace std;
+
 #include <boost/python.hpp>
+#include <boost/filesystem.hpp>
+
 using namespace boost::python;
+using namespace boost::filesystem;
+
 
 IntegratorMetaDynamics::IntegratorMetaDynamics(boost::shared_ptr<SystemDefinition> sysdef,
             Scalar deltaT,
             Scalar W,
             Scalar T_shift,
-            unsigned int stride)
+            unsigned int stride,
+            const std::string& filename,
+            bool overwrite)
     : IntegratorTwoStep(sysdef, deltaT),
       m_W(W),
       m_T_shift(T_shift),
       m_stride(stride),
       m_num_update_steps(0),
-      m_curr_bias_potential(0.0)
+      m_curr_bias_potential(0.0),
+      m_file_initialized(false),
+      m_filename(filename),
+      m_overwrite(overwrite),
+      m_is_appending(false),
+      m_delimiter("\t")
     {
     assert(m_T_shift>0);
     assert(m_W > 0);
+
     m_log_names.push_back("bias_potential");
+    }
+
+void IntegratorMetaDynamics::openOutputFile()
+    {
+    if (exists(m_filename) && !m_overwrite)
+        {
+        m_exec_conf->msg->notice(3) << "integrate.mode_metadynamics: Appending log to existing file \"" << m_filename << "\"" << endl;
+        m_file.open(m_filename.c_str(), ios_base::in | ios_base::out | ios_base::ate);
+        m_is_appending = true;
+        }
+    else
+        {
+        m_exec_conf->msg->notice(3) << "integrate.mode_metadynamics: Creating new log in file \"" << m_filename << "\"" << endl;
+        m_file.open(m_filename.c_str(), ios_base::out);
+        m_is_appending = false;
+        }
+    if (!m_file.good())
+        {
+        m_exec_conf->msg->error() << "integrate.mode_metadynamics: Error opening log file " << m_filename << endl;
+        throw runtime_error("Error initializing IntegratorMetadynamics");
+        }
+    }
+
+void IntegratorMetaDynamics::writeFileHeader()
+    {
+    assert(m_variables.size());
+    assert(m_file);
+
+    m_file << "timestep" << m_delimiter << "W" << m_delimiter;
+
+    std::vector<CollectiveVariableItem>::iterator it;
+    for (it = m_variables.begin(); it != m_variables.end(); ++it)
+        {
+        m_file << it->m_cv->getName();
+        m_file << m_delimiter << "sigma_" << it->m_cv->getName();
+
+        if (it != m_variables.end())
+            m_file << m_delimiter;
+        }
+
+    m_file << endl;
     }
 
 void IntegratorMetaDynamics::update(unsigned int timestep)
@@ -88,6 +144,14 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
     if (m_variables.size() == 0)
         return;
 
+    if (! m_file_initialized && m_filename != "")
+        {
+        openOutputFile();
+        if (! m_is_appending)
+            writeFileHeader();
+        m_file_initialized = true;
+        }
+    
     // collect values of collective variables
     std::vector< Scalar> current_val;
     std::vector<CollectiveVariableItem>::iterator it;
@@ -137,6 +201,24 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
 
         m_curr_bias_potential += m_W*scal*gauss;
         }
+
+    // write hills information
+    if (m_file_initialized && (m_num_update_steps % m_stride == 0))
+        {
+        Scalar W = m_W*exp(-m_curr_bias_potential/m_T_shift);
+        m_file << timestep << m_delimiter << W << m_delimiter;
+
+        std::vector<Scalar>::iterator cv;
+        for (cv = current_val.begin(); cv != current_val.end(); ++cv)
+            {
+            unsigned int cv_index = cv - current_val.begin();
+            m_file << *cv << m_delimiter;
+            m_file << m_variables[cv_index].m_sigma;
+            if (cv != current_val.end()) m_file << m_delimiter;
+            }
+
+        m_file << endl;
+        }
    
     if (m_num_update_steps % m_stride == 0)
         m_bias_potential.push_back(m_curr_bias_potential);
@@ -163,7 +245,9 @@ void export_IntegratorMetaDynamics()
                           Scalar,
                           Scalar,
                           Scalar,
-                          unsigned int>())
+                          unsigned int,
+                          const std::string&,
+                          bool>())
     .def("registerCollectiveVariable", &IntegratorMetaDynamics::registerCollectiveVariable)
     .def("removeAllVariables", &IntegratorMetaDynamics::removeAllVariables)
     ;

@@ -1,5 +1,7 @@
 #include <hoomd/hoomd.h>
 
+#include <string.h>
+
 #ifndef __LAMELLAR_ORDER_PARAMETER_H__
 #define __LAMELLAR_ORDER_PARAMETER_H__
 
@@ -19,7 +21,9 @@ class LamellarOrderParameter : public CollectiveVariable
         LamellarOrderParameter(boost::shared_ptr<SystemDefinition> sysdef,
                                const std::vector<Scalar>& mode,
                                const std::vector<int3>& lattice_vectors,
-                               bool generate_symmetries);
+                               bool generate_symmetries,
+                               const std::string& suffix = ""
+                               );
         virtual ~LamellarOrderParameter() {}
 
         virtual void computeForces(unsigned int timestep);

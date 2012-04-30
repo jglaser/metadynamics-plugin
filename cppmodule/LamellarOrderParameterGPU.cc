@@ -6,8 +6,9 @@
 LamellarOrderParameterGPU::LamellarOrderParameterGPU(boost::shared_ptr<SystemDefinition> sysdef,
                           const std::vector<Scalar>& mode,
                           const std::vector<int3>& lattice_vectors,
-                          bool generate_symmetries)
-    : LamellarOrderParameter(sysdef, mode, lattice_vectors, generate_symmetries)
+                          bool generate_symmetries,
+                          const std::string& suffix)
+    : LamellarOrderParameter(sysdef, mode, lattice_vectors, generate_symmetries, suffix)
     {
 
     GPUArray<Scalar> gpu_mode(mode.size(), m_exec_conf);
@@ -87,6 +88,7 @@ void export_LamellarOrderParameterGPU()
         ("LamellarOrderParameterGPU", init< boost::shared_ptr<SystemDefinition>,
                                          const std::vector<Scalar>&,
                                          const std::vector<int3>,
-                                         bool>());
+                                         bool,
+                                         const std::string& >());
     }
 #endif
