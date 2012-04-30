@@ -1,6 +1,8 @@
 #include "IntegratorMetaDynamics.h"
 
 #include <stdio.h>
+#include <iomanip>
+
 using namespace std;
 
 #include <boost/python.hpp>
@@ -74,6 +76,14 @@ void IntegratorMetaDynamics::writeFileHeader()
         }
 
     m_file << endl;
+    }
+
+void IntegratorMetaDynamics::prepRun(unsigned int timestep)
+    {
+    // initial update of the potential
+    updateBiasPotential(timestep);
+
+    Integrator::prepRun(timestep);
     }
 
 void IntegratorMetaDynamics::update(unsigned int timestep)
@@ -206,14 +216,15 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
     if (m_file_initialized && (m_num_update_steps % m_stride == 0))
         {
         Scalar W = m_W*exp(-m_curr_bias_potential/m_T_shift);
-        m_file << timestep << m_delimiter << W << m_delimiter;
+        m_file << setprecision(10) << timestep << m_delimiter;
+        m_file << setprecision(10) << W << m_delimiter;
 
         std::vector<Scalar>::iterator cv;
         for (cv = current_val.begin(); cv != current_val.end(); ++cv)
             {
             unsigned int cv_index = cv - current_val.begin();
-            m_file << *cv << m_delimiter;
-            m_file << m_variables[cv_index].m_sigma;
+            m_file << setprecision(10) << *cv << m_delimiter;
+            m_file << setprecision(10) << m_variables[cv_index].m_sigma;
             if (cv != current_val.end()) m_file << m_delimiter;
             }
 

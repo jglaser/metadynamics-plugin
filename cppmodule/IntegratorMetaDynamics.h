@@ -31,6 +31,9 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         //! Sample the collective variables and update their biasing coefficients
         virtual void update(unsigned int timestep);
 
+        //! Prepare for the run
+        virtual void prepRun(unsigned int timestep);
+
         //! Reset metadynamics potential
         virtual void resetStats()
             {
