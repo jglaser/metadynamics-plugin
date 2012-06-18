@@ -9,21 +9,15 @@ using namespace boost::python;
 LamellarOrderParameter::LamellarOrderParameter(boost::shared_ptr<SystemDefinition> sysdef,
                                const std::vector<Scalar>& mode,
                                const std::vector<int3>& lattice_vectors,
-                               bool generate_symmetries,
+                               const std::vector<Scalar>& phases,
                                const std::string& suffix)
-    : CollectiveVariable(sysdef, "cv_lamellar"), m_sum(0.0)
+    : CollectiveVariable(sysdef, "cv_lamellar"), m_lattice_vectors(lattice_vectors), m_mode(mode), m_sum(0.0)
     {
     if (mode.size() != m_pdata->getNTypes())
         {
         m_exec_conf->msg->error() << "cv.lamellar: Number of mode parameters has to equal the number of particle types!" << std::endl;
         throw runtime_error("Error initializing cv.lamellar");
         }
-
-    m_mode = mode;
-    if (generate_symmetries)
-        m_lattice_vectors = applyCubicSymmetries(lattice_vectors);
-    else
-        m_lattice_vectors = lattice_vectors;
 
     // allocate array of wave vectors
     GPUArray<Scalar3> wave_vectors(m_lattice_vectors.size(), m_exec_conf);
@@ -32,66 +26,16 @@ LamellarOrderParameter::LamellarOrderParameter(boost::shared_ptr<SystemDefinitio
     GPUArray<Scalar2> fourier_modes(m_lattice_vectors.size(), m_exec_conf);
     m_fourier_modes.swap(fourier_modes);
 
+    GPUArray<Scalar> phase_array(m_lattice_vectors.size(), m_exec_conf);
+    m_phases.swap(phase_array);
+
+    // Copy over phase shifts
+    ArrayHandle<Scalar> h_phases(m_phases, access_location::host, access_mode::overwrite);
+    std::copy(phases.begin(), phases.end(), h_phases.data);
+
     m_cv_name += suffix;
     m_log_name = m_cv_name;
     }
-
-/*! Apply all rotations and mirror symmetries of the cubic lattice to the list
-    of input wave vectors
- */
-const std::vector<int3> LamellarOrderParameter::applyCubicSymmetries(const std::vector<int3>& lattice_vectors)
-    {
-    std::vector<int3> out;
-
-    for (unsigned int n = 0; n < lattice_vectors.size(); n++)
-        {
-        int cur_vec[3] = {lattice_vectors[n].x, lattice_vectors[n].y, lattice_vectors[n].z};
-        std::vector<int3> symmetries;
-
-        // apply permutations
-        for (unsigned int i = 0; i < 3; i++)
-            for (unsigned int j = 0; j < 2; j++)
-                {
-                if (j==i) j++;
-
-                unsigned int k = 0;
-
-                if (k == i || k==j) k++;
-                if (k == i || k==j) k++;
-                
-                symmetries.push_back( make_int3(cur_vec[i], cur_vec[j], cur_vec[k]));
-                }
-
-
-        // apply mirror symmetries
-        unsigned int size = symmetries.size();
-        for (unsigned int i = 0; i < 2; i++)
-            for (unsigned int j = 0; j < 2; j++)
-                for (unsigned int k = 0; k < 2; k++)
-                    for (unsigned int l= 0; l < size; l++)
-                        symmetries.push_back( make_int3( symmetries[l].x * ((i==0) ? 1 : -1),
-                                                         symmetries[l].y * ((l==0) ? 1 : -1),
-                                                         symmetries[l].z * ((k==0) ? 1 : -1)));
-    
-        // remove duplicate wave vectors
-        for (unsigned int i = 0; i < symmetries.size(); i++)
-            {
-            bool found = false;
-
-            for (unsigned  j = 0; j < i; j++)
-                if (symmetries[i] == symmetries[j])
-                    found = true;
-
-            if (! found)
-                {
-                out.push_back(symmetries[i]);
-                m_exec_conf->msg->notice(6) << "cv.lamellar: Adding wave vector (" << symmetries[i].x << ","
-                                            << symmetries[i].y << "," << symmetries[i].z << ")" << std::endl;
-                }
-            }
-        }
-    return out;
-}
 
 void LamellarOrderParameter::computeForces(unsigned int timestep)
     {
@@ -112,7 +56,8 @@ void LamellarOrderParameter::computeForces(unsigned int timestep)
     ArrayHandle<Scalar2> h_fourier_modes(m_fourier_modes, access_location::host, access_mode::read);
 
     ArrayHandle<Scalar3> h_wave_vectors(m_wave_vectors, access_location::host, access_mode::read);
-    unsigned int size = m_wave_vectors.getNumElements();
+
+    ArrayHandle<Scalar> h_phases(m_phases, access_location::host, access_mode::read);
 
     Scalar3 L = m_pdata->getGlobalBox().getL();
     Scalar V = L.x*L.y*L.z;
@@ -132,38 +77,34 @@ void LamellarOrderParameter::computeForces(unsigned int timestep)
             Scalar3 q = h_wave_vectors.data[k];
             Scalar dotproduct = dot(pos,q);
 
-            Scalar2 exponential;
-            exponential.x = mode*cos(dotproduct);
-            exponential.y = -mode*sin(dotproduct);
+            Scalar f; 
+            f = mode*sin(dotproduct + h_phases.data[k]);
 
-            Scalar2 fourier_mode = h_fourier_modes.data[k];
-            Scalar im = -(exponential.x*fourier_mode.y + exponential.y*fourier_mode.x);
-
-            force_energy.x += Scalar(2.0)*q.x*im;
-            force_energy.y += Scalar(2.0)*q.y*im;
-            force_energy.z += Scalar(2.0)*q.z*im;
+            force_energy.x += q.x*f;
+            force_energy.y += q.y*f;
+            force_energy.z += q.z*f;
             }
 
         force_energy.x *= m_bias;
         force_energy.y *= m_bias;
         force_energy.z *= m_bias;
 
-        force_energy.x /= size *V;
-        force_energy.y /= size *V;
-        force_energy.z /= size *V;
+        force_energy.x /= V;
+        force_energy.y /= V;
+        force_energy.z /= V;
 
         h_force.data[idx] = force_energy;
         }
 
-    // Calculate value of collective variable (avg of structure factors)    
+    // Calculate value of collective variable (sum of real parts of fourier modes)
     m_sum = 0.0;
     for (unsigned k = 0; k < m_fourier_modes.getNumElements(); k++)
         {
         Scalar2 fourier_mode = h_fourier_modes.data[k];
-        m_sum += fourier_mode.x * fourier_mode.x + fourier_mode.y * fourier_mode.y;
+        m_sum += fourier_mode.x;
         }
 
-    m_sum /= V * m_fourier_modes.getNumElements();
+    m_sum /= V;
 
     if (m_prof)
         m_prof->pop();
@@ -188,6 +129,7 @@ void LamellarOrderParameter::calculateFourierModes()
     {
     ArrayHandle<Scalar2> h_fourier_modes(m_fourier_modes, access_location::host, access_mode::overwrite);
     ArrayHandle<Scalar3> h_wave_vectors(m_wave_vectors, access_location::host, access_mode::read);
+    ArrayHandle<Scalar> h_phases(m_phases, access_location::host, access_mode::read);
 
     ArrayHandle<Scalar4> h_postype(m_pdata->getPositions(), access_location::host, access_mode::read);
 
@@ -204,8 +146,8 @@ void LamellarOrderParameter::calculateFourierModes()
             unsigned int type = __scalar_as_int(postype.w);
             Scalar mode = m_mode[type];
             Scalar dotproduct = dot(q,pos);
-            h_fourier_modes.data[k].x += mode * cos(dotproduct);
-            h_fourier_modes.data[k].y += mode * sin(dotproduct);
+            h_fourier_modes.data[k].x += mode * cos(dotproduct + h_phases.data[k]);
+            h_fourier_modes.data[k].y += mode * sin(dotproduct + h_phases.data[k]);
             }
         }
     }
@@ -231,7 +173,7 @@ void export_LamellarOrderParameter()
         ("LamellarOrderParameter", init< boost::shared_ptr<SystemDefinition>,
                                          const std::vector<Scalar>&,
                                          const std::vector<int3>,
-                                         bool,
+                                         const std::vector<Scalar>,
                                          const std::string&>());
 
     class_<std::vector<int3> >("std_vector_int3")

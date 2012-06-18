@@ -9,7 +9,8 @@ __global__ void kernel_calculate_sq_partial(
             Scalar4 *postype,
             int n_wave,
             Scalar3 *wave_vectors,
-            Scalar *d_modes)
+            Scalar *d_modes,
+            Scalar *phases)
     {
     extern __shared__ cuComplex sdata[];
 
@@ -19,6 +20,7 @@ __global__ void kernel_calculate_sq_partial(
 
     for (unsigned int i = 0; i < n_wave; i++) {
         Scalar3 q = wave_vectors[i];
+        Scalar phi = phases[i];
 
         cuComplex mySum = make_cuComplex(0.0f,0.0f);
 
@@ -28,8 +30,8 @@ __global__ void kernel_calculate_sq_partial(
             Scalar dotproduct = q.x * p.x + q.y * p.y + q.z * p.z;
             unsigned int type = __float_as_int(postype[j].w);
             Scalar mode = d_modes[type];
-            cuComplex exponential = make_cuComplex(mode*cosf(dotproduct),
-                                                   mode*sinf(dotproduct));
+            cuComplex exponential = make_cuComplex(mode*cosf(dotproduct+phi),
+                                                   mode*sinf(dotproduct+phi));
             mySum = cuCaddf(mySum,exponential);
         }
         sdata[tidx] = mySum;
@@ -119,7 +121,8 @@ cudaError_t gpu_calculate_fourier_modes(unsigned int n_wave,
                                  unsigned int n_particles,
                                  Scalar4 *d_postype,
                                  Scalar *d_mode,
-                                 Scalar2 *d_fourier_modes
+                                 Scalar2 *d_fourier_modes,
+                                 Scalar *d_phases
                                  )
     {
     cuComplex *d_fourier_mode_partial;
@@ -138,7 +141,8 @@ cudaError_t gpu_calculate_fourier_modes(unsigned int n_wave,
                d_postype,
                n_wave,
                d_wave_vectors,
-               d_mode);
+               d_mode,
+               d_phases);
 
     if (cudaStatus = cudaGetLastError()) 
            return cudaStatus;
@@ -165,10 +169,10 @@ __global__ void kernel_compute_sq_forces(unsigned int N,
                                   Scalar *virial,
                                   unsigned int n_wave,
                                   Scalar3 *wave_vectors,
-                                  Scalar2 *fourier_modes,
                                   Scalar *mode,
                                   Scalar V,
-                                  Scalar bias)
+                                  Scalar bias,
+                                  Scalar *phases)
     {
     unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= N)
@@ -187,21 +191,16 @@ __global__ void kernel_compute_sq_forces(unsigned int N,
         Scalar3 q = wave_vectors[k];
         Scalar dotproduct = dot(pos,q);
 
-        Scalar2 exponential;
-        exponential.x = m*cosf(dotproduct);
-        exponential.y = -m*sinf(dotproduct);
+        Scalar f = m*sinf(dotproduct + phases[k]);
         
-        Scalar2 fourier_mode = fourier_modes[k];
-        Scalar im = - (exponential.x*fourier_mode.y + exponential.y*fourier_mode.x);
-
-        force_energy.x += Scalar(2.0)*q.x*im;
-        force_energy.y += Scalar(2.0)*q.y*im;
-        force_energy.z += Scalar(2.0)*q.z*im;
+        force_energy.x += q.x*f;
+        force_energy.y += q.y*f;
+        force_energy.z += q.z*f;
         }
 
-    force_energy.x /= (Scalar)n_wave*V;
-    force_energy.y /= (Scalar)n_wave*V;
-    force_energy.z /= (Scalar)n_wave*V;
+    force_energy.x /= V;
+    force_energy.y /= V;
+    force_energy.z /= V;
 
     force_energy.x *= bias;
     force_energy.y *= bias;
@@ -216,10 +215,10 @@ cudaError_t gpu_compute_sq_forces(unsigned int N,
                                   Scalar *d_virial,
                                   unsigned int n_wave,
                                   Scalar3 *d_wave_vectors,
-                                  Scalar2 *d_fourier_modes,
                                   Scalar *d_mode,
                                   const BoxDim global_box,
-                                  Scalar bias)
+                                  Scalar bias,
+                                  Scalar *d_phases)
     {
     cudaError_t cudaStatus;
     const unsigned int block_size = 512;
@@ -233,10 +232,10 @@ cudaError_t gpu_compute_sq_forces(unsigned int N,
                                                                d_virial,
                                                                n_wave,
                                                                d_wave_vectors,
-                                                               d_fourier_modes,
                                                                d_mode,
                                                                V,
-                                                               bias);
+                                                               bias,
+                                                               d_phases);
 
     cudaStatus = cudaGetLastError();
     return cudaStatus;

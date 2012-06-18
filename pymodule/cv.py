@@ -15,7 +15,7 @@ class _collective_variable(_force):
 
 class lamellar(_collective_variable):
 
-    def __init__(self, sigma, mode, lattice_vectors, generate_symmetries=False, name=None):
+    def __init__(self, sigma, mode, lattice_vectors, phi, name=None):
         util.print_status_line()
 
         if name is not None:
@@ -30,7 +30,6 @@ class lamellar(_collective_variable):
                 globals.msg.error("cv.lamellar: List of supplied latice vectors is empty.\n")
                 raise RuntimeEror('Error creating collective variable.')
      
-        
         if type(mode) != type(dict()):
                 globals.msg.error("cv.lamellar: Mode amplitudes specified incorrectly.\n")
                 raise RuntimeEror('Error creating collective variable.')
@@ -48,13 +47,21 @@ class lamellar(_collective_variable):
         for l in lattice_vectors:
             if len(l) != 3:
                 globals.msg.error("cv.lamellar: List of input lattice vectors not a list of triples.\n")
-                raise RuntimeEror('Error creating collective variable.')
+                raise RuntimeError('Error creating collective variable.')
             cpp_lattice_vectors.append(hoomd.make_int3(l[0], l[1], l[2]))
 
+        cpp_phases = hoomd.std_vector_float()
+        if len(phi) != len(lattice_vectors):
+                globals.msg.error("cv.lamellar: List of phase shifts not equal to length of lattice vectors.\n")
+                raise RuntimeError('Error creating collective variable.')
+
+        for phase in phi:
+            cpp_phases.append(phase)
+
         if not globals.exec_conf.isCUDAEnabled():
-            self.cpp_force = _metadynamics.LamellarOrderParameter(globals.system_definition, cpp_mode, cpp_lattice_vectors, generate_symmetries, suffix)
+            self.cpp_force = _metadynamics.LamellarOrderParameter(globals.system_definition, cpp_mode, cpp_lattice_vectors, cpp_phases, suffix)
         else:
-            self.cpp_force = _metadynamics.LamellarOrderParameterGPU(globals.system_definition, cpp_mode, cpp_lattice_vectors, generate_symmetries, suffix)
+            self.cpp_force = _metadynamics.LamellarOrderParameterGPU(globals.system_definition, cpp_mode, cpp_lattice_vectors, cpp_phases, suffix)
 
         globals.system.addCompute(self.cpp_force, self.force_name)
 

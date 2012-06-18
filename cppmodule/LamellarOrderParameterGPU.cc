@@ -6,9 +6,9 @@
 LamellarOrderParameterGPU::LamellarOrderParameterGPU(boost::shared_ptr<SystemDefinition> sysdef,
                           const std::vector<Scalar>& mode,
                           const std::vector<int3>& lattice_vectors,
-                          bool generate_symmetries,
+                          const std::vector<Scalar>& phases,
                           const std::string& suffix)
-    : LamellarOrderParameter(sysdef, mode, lattice_vectors, generate_symmetries, suffix)
+    : LamellarOrderParameter(sysdef, mode, lattice_vectors, phases, suffix)
     {
 
     GPUArray<Scalar> gpu_mode(mode.size(), m_exec_conf);
@@ -34,6 +34,7 @@ void LamellarOrderParameterGPU::computeForces(unsigned int timestep)
         ArrayHandle<Scalar3> d_wave_vectors(m_wave_vectors, access_location::device, access_mode::read);
         ArrayHandle<Scalar2> d_fourier_modes(m_fourier_modes, access_location::device, access_mode::overwrite);
         ArrayHandle<Scalar> d_gpu_mode(m_gpu_mode, access_location::device, access_mode::read);
+        ArrayHandle<Scalar> d_phases(m_phases, access_location::device, access_mode::read);
 
         // calculate Fourier modes
         gpu_calculate_fourier_modes(m_wave_vectors.getNumElements(),
@@ -41,13 +42,13 @@ void LamellarOrderParameterGPU::computeForces(unsigned int timestep)
                                     m_pdata->getN(),
                                     d_postype.data,
                                     d_gpu_mode.data,
-                                    d_fourier_modes.data);
+                                    d_fourier_modes.data,
+                                    d_phases.data);
 
         CHECK_CUDA_ERROR();
 
         ArrayHandle<Scalar4> d_force(m_force, access_location::device, access_mode::overwrite);
         ArrayHandle<Scalar> d_virial(m_virial, access_location::device, access_mode::overwrite);
-
 
         // calculate forces
         gpu_compute_sq_forces(m_pdata->getN(),
@@ -56,10 +57,10 @@ void LamellarOrderParameterGPU::computeForces(unsigned int timestep)
                              d_virial.data,
                              m_wave_vectors.getNumElements(),
                              d_wave_vectors.data,
-                             d_fourier_modes.data,
                              d_gpu_mode.data,
                              m_pdata->getGlobalBox(),
-                             m_bias);
+                             m_bias,
+                             d_phases.data);
         CHECK_CUDA_ERROR();
         }
 
@@ -67,15 +68,15 @@ void LamellarOrderParameterGPU::computeForces(unsigned int timestep)
     Scalar3 L = m_pdata->getGlobalBox().getL();
     Scalar V = L.x*L.y*L.z;
 
-    // calculate value of collective variable (avg of structure factors)
+    // calculate value of collective variable (sum of real parts of fourier modes)
     m_sum = 0.0;
     for (unsigned k = 0; k < m_fourier_modes.getNumElements(); k++)
         {
         Scalar2 fourier_mode = h_fourier_modes.data[k];
-        m_sum += fourier_mode.x * fourier_mode.x + fourier_mode.y * fourier_mode.y;
+        m_sum += fourier_mode.x;
         }
 
-    m_sum /= V * m_fourier_modes.getNumElements();
+    m_sum /= V;
 
     if (m_prof)
         m_prof->pop();
@@ -87,8 +88,8 @@ void export_LamellarOrderParameterGPU()
     class_<LamellarOrderParameterGPU, boost::shared_ptr<LamellarOrderParameterGPU>, bases<LamellarOrderParameter>, boost::noncopyable >
         ("LamellarOrderParameterGPU", init< boost::shared_ptr<SystemDefinition>,
                                          const std::vector<Scalar>&,
-                                         const std::vector<int3>,
-                                         bool,
+                                         const std::vector<int3>&,
+                                         const std::vector<Scalar>&,
                                          const std::string& >());
     }
 #endif

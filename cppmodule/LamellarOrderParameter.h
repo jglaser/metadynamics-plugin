@@ -21,7 +21,7 @@ class LamellarOrderParameter : public CollectiveVariable
         LamellarOrderParameter(boost::shared_ptr<SystemDefinition> sysdef,
                                const std::vector<Scalar>& mode,
                                const std::vector<int3>& lattice_vectors,
-                               bool generate_symmetries,
+                               const std::vector<Scalar>& phases,
                                const std::string& suffix = ""
                                );
         virtual ~LamellarOrderParameter() {}
@@ -52,8 +52,7 @@ class LamellarOrderParameter : public CollectiveVariable
 
         GPUArray<Scalar3> m_wave_vectors;
         GPUArray<Scalar2> m_fourier_modes; //!< Fourier modes
-
-        const std::vector<int3> applyCubicSymmetries(const std::vector<int3>& lattice_vectors);
+        GPUArray<Scalar> m_phases;         //!< Phase shifts
 
         void calculateWaveVectors();
 
