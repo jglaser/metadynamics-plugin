@@ -6,11 +6,15 @@
 #include <boost/shared_ptr.hpp>
 
 #include "CollectiveVariable.h"
+#include "IndexGrid.h"
 
 struct CollectiveVariableItem
     {
-    boost::shared_ptr<CollectiveVariable> m_cv; // The collective variable
-    Scalar m_sigma;                             // Width of compensating gaussians for this variable
+    boost::shared_ptr<CollectiveVariable> m_cv; //!< The collective variable
+    Scalar m_sigma;                             //!< Width of compensating gaussians for this variable
+    Scalar m_cv_min;                            //!< Minium value of collective variable (if using grid)
+    Scalar m_cv_max;                            //!< Maximum value of collective variable (if using grid)
+    Scalar m_num_points;                        //!< Number of grid points for this collective variable
     };
 
 //! Implements a metadynamics update scheme
@@ -23,8 +27,10 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
                    Scalar W,
                    Scalar T_shift,
                    unsigned int stride,
+                   bool add_hills = true,
                    const std::string& filename = "",
-                   bool overwrite = false);
+                   bool overwrite = false,
+                   bool use_grid = false);
 
         virtual ~IntegratorMetaDynamics() {}
 
@@ -34,36 +40,32 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         //! Prepare for the run
         virtual void prepRun(unsigned int timestep);
 
-        //! Reset metadynamics potential
-        virtual void resetStats()
-            {
-            m_cv_values.resize(m_variables.size());
-            std::vector< std::vector<Scalar> >::iterator it;
-
-            for (it = m_cv_values.begin(); it != m_cv_values.end(); ++it)
-                it->clear();
-
-            m_num_update_steps = 0;
-            m_bias_potential.clear();
-            }
-
         virtual void printStats() {};
 
-        void registerCollectiveVariable(boost::shared_ptr<CollectiveVariable> cv, Scalar sigma)
+        void registerCollectiveVariable(boost::shared_ptr<CollectiveVariable> cv, Scalar sigma, Scalar cv_min=Scalar(0.0), Scalar cv_max=Scalar(0.0), int num_points=0)
             {
             assert(cv);
-            assert(gaussian_width > 0);
+            assert(sigma > 0);
 
             CollectiveVariableItem cv_item;
 
             cv_item.m_cv = cv;
             cv_item.m_sigma = sigma;
+           
+            cv_item.m_cv_min = cv_min;
+            cv_item.m_cv_max = cv_max;
+            cv_item.m_num_points = (unsigned int) num_points;
 
             m_variables.push_back(cv_item);
             }
 
         void removeAllVariables()
             {
+            // Issue a warning if we are already initialized
+            if (m_is_initialized)
+                {
+                m_exec_conf->msg->warning() << "integrate.mode_metadynamics: Removing collective after initialization. Results may be inconsistent." << endl;
+                }
             m_variables.clear();
             }
 
@@ -87,6 +89,25 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
                 }
             }
 
+        void setGrid(bool use_grid);
+
+        bool isInitialized()
+            {
+            return m_is_initialized;
+            }
+
+        void dumpGrid(const std::string& filename);
+
+        void restartFromGridFile(const std::string &filename)
+            {
+            m_restart_filename = filename;
+            }
+
+        void setAddHills(bool add_hills)
+            {
+            m_add_hills = add_hills;
+            }
+
     private:
         Scalar m_W;                                       //!< Height of Gaussians
         Scalar m_T_shift;                                 //!< Temperature shift
@@ -102,12 +123,19 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         Scalar m_curr_bias_potential;                     //!< The sum of Gaussians
         std::vector<Scalar> m_bias_potential;             //!< List of values of the bias potential
 
-        bool m_file_initialized;                          //!< True if file output has been initialized
+        bool m_is_initialized;                            //!< True if history-dependent potential has been initialized
         const std::string m_filename;                     //!< Name of output file
         bool m_overwrite;                                 //!< True if the file should be overwritten
         bool m_is_appending;                              //!< True if we are appending to the file
         std::ofstream m_file;                             //!< Output log file
         std::string m_delimiter;                          //!< Delimiting string
+
+        bool m_use_grid;                                  //!< True if we are using a grid
+        std::vector<Scalar> m_grid;                       //!< d-dimensional grid to store values of bias potential
+        IndexGrid m_grid_index;                           //!< Indexer for the d-dimensional grid
+
+        bool m_add_hills;                                 //!< True if hills should be added during the simulation
+        std::string m_restart_filename;                   //!< Name of file to read restart information from
 
         void updateBiasPotential(unsigned int timestep);
 
@@ -118,6 +146,16 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
 
         //! Helper function to write file header
         void writeFileHeader();
+
+        //! Helper function to initialize the grid
+        void setupGrid();
+
+        //! Helper function to get value of bias potential by multilinear interpolation
+        Scalar interpolateBiasPotential(const std::vector<Scalar>& val);
+
+        //! Helper function to read in data from grid file
+        void readGrid(const std::string& filename);
+
     };
 
 //! Export to python

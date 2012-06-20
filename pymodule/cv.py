@@ -13,6 +13,22 @@ class _collective_variable(_force):
 
         self.sigma = sigma
 
+        # default grid parameters
+        self.cv_min = 0.0
+        self.cv_max = 0.0
+        self.num_points = 0
+        
+        self.use_grid = False
+
+    def enable_grid(self,cv_min, cv_max, num_points):
+        util.print_status_line()
+
+        self.cv_min = cv_min
+        self.cv_max = cv_max
+        self.num_points = num_points
+
+        self.use_grid = True
+
 class lamellar(_collective_variable):
 
     def __init__(self, sigma, mode, lattice_vectors, phi, name=None):

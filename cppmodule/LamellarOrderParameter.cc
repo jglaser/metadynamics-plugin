@@ -42,16 +42,16 @@ void LamellarOrderParameter::computeForces(unsigned int timestep)
     if (m_prof)
         m_prof->push("cv lamellar");
 
+    calculateWaveVectors();
+
+    calculateFourierModes();
+
     ArrayHandle<Scalar4> h_postype(m_pdata->getPositions(), access_location::host, access_mode::read);
 
     ArrayHandle<Scalar4> h_force(m_force, access_location::host, access_mode::overwrite);
     ArrayHandle<Scalar> h_virial(m_virial, access_location::host, access_mode::overwrite);
 
     memset(h_virial.data, 0, sizeof(Scalar)*6*m_virial.getPitch());
-
-    calculateWaveVectors();
-
-    calculateFourierModes();
 
     ArrayHandle<Scalar2> h_fourier_modes(m_fourier_modes, access_location::host, access_mode::read);
 
