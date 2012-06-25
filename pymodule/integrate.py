@@ -73,7 +73,7 @@ class mode_metadynamics(_integrator):
 
         self.cpp_integrator.restartFromGridFile(filename)
 
-    def set_params(self, add_hills=False):
+    def set_params(self, add_hills=True):
         util.print_status_line();
        
         self.cpp_integrator.setAddHills(add_hills)

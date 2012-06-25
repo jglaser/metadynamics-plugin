@@ -404,12 +404,13 @@ Scalar IntegratorMetaDynamics::interpolateBiasPotential(const std::vector<Scalar
         {
         bool found = false;
         unsigned int h;
-        Scalar lower_bound, upper_bound;
+        Scalar lower_bound(0.0), upper_bound(0.0);
+        Scalar delta = (m_variables[i].m_cv_max - m_variables[i].m_cv_min)/(m_variables[i].m_num_points - 1);
+        upper_bound = m_variables[i].m_cv_min;
         for (h=0; h < m_variables[i].m_num_points-1; h++)
             {
-            Scalar delta = (m_variables[i].m_cv_max - m_variables[i].m_cv_min)/(m_variables[i].m_num_points - 1);
-            lower_bound = m_variables[i].m_cv_min + delta *h;
-            upper_bound = lower_bound + delta;
+            lower_bound = upper_bound;
+            upper_bound += delta;
 
             if ( (val[i] >= lower_bound) && (val[i] < upper_bound))
                 {
