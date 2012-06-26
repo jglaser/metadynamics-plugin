@@ -1,3 +1,6 @@
+/*! \file LamellarOrderParameterGPU.cu
+    \brief CUDA implementation of LamellarOrderParameter GPU routines
+ */
 #include <cuda.h>
 #include <cuComplex.h>
 

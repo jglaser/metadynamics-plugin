@@ -1,7 +1,15 @@
+/*! \file LamellarOrderParameterGPU.h
+ *  \brief Defines the LamellarOrderParameterGPU class
+ */
+
+#ifndef __LAMELLAR_ORDER_PARAMETER_GPU_H__
+#define __LAMELLAR_ORDER_PARAMETER_GPU_H__
+
 #include "LamellarOrderParameter.h"
 
 #ifdef ENABLE_CUDA
 
+//! Class to calculate the lamellar order parameter on the GPU
 class LamellarOrderParameterGPU : public LamellarOrderParameter
     {
     public:
@@ -21,3 +29,4 @@ class LamellarOrderParameterGPU : public LamellarOrderParameter
 
 void export_LamellarOrderParameterGPU();
 #endif
+#endif // __LAMELLAR_ORDER_PARAMETER_GPU_H__

@@ -1,3 +1,6 @@
+/* \file LamellarOrderParameter.cc
+ * \brief Implements the LamellarOrderParameter class
+ */
 #include "LamellarOrderParameter.h"
 
 #include <boost/python.hpp>

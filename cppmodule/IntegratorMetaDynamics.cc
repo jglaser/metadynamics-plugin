@@ -1,3 +1,7 @@
+/*! \file IntegratorMetaDynamics.cc
+    \brief Implements the IntegratorMetaDynamics class
+ */
+
 #include "IntegratorMetaDynamics.h"
 
 #include <stdio.h>

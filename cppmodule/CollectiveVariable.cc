@@ -1,3 +1,6 @@
+/*! \file CollectiveVariable.cc
+    \brief Partially implements the CollectiveVariable class
+ */
 #include <boost/python.hpp>
 
 #include "CollectiveVariable.h"

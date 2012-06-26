@@ -1,3 +1,6 @@
+/*! \file IndexGrid.cc
+ *  \brief Implements the IndexGrid class
+ */
 #include "IndexGrid.h"
 #include <assert.h>
 

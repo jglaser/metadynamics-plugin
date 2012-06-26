@@ -1,3 +1,6 @@
+/*! \file LamellarOrderParameterGPU.cc
+ *  \brief Implements the LamellarOrderParameterGPU class
+ */
 #include "LamellarOrderParameterGPU.h"
 
 #ifdef ENABLE_CUDA
