@@ -1,3 +1,6 @@
+## \package metadynamics.cv
+# \brief Defines the collective variables used for metadynamics integration
+
 from hoomd_script import globals
 from hoomd_script import util
 from hoomd_script import data
@@ -6,8 +9,20 @@ from hoomd_script.force import _force
 import _metadynamics
 import hoomd
 
-
+## \internal
+# \brief Base class for collective variables
+#
+# A collective_variable in python reflects a CollectiveVariable in C++.
+# It is, in particular, a specialization of a force, since collective
+# variables generate forces acting on the particles during the simulation.
 class _collective_variable(_force):
+    ## \internal
+    # \brief Constructs a collective variable
+    #
+    # This mainly sets some parameters of the collective variable
+    #
+    # \param sigma Standard deviation of Gaussians added for this collective variable
+    # \param name Name of the collective variable
     def __init__(self, sigma, name=None):
         _force.__init__(self, name)
 
@@ -20,6 +35,10 @@ class _collective_variable(_force):
         
         self.use_grid = False
 
+    ## Sets grid mode for this collective variable
+    # \param cv_min Minimum of the collective variable (smallest grid value)
+    # \param cv_max Maximum of the collective variable (largest grid value)
+    # \param num_points Dimension of the grid for this collective variable 
     def enable_grid(self,cv_min, cv_max, num_points):
         util.print_status_line()
 
@@ -29,8 +48,39 @@ class _collective_variable(_force):
 
         self.use_grid = True
 
+## Lamellar order parameter as a collective variable
+# This collective variable is based on the Fourier modes of concentration
+# (or composition fluctuations).
+#
+# The value of the collective variable \f$ s \f$ is given by
+# \f$ s = \sum_{i = 1}^n \sum_{j = 1}^N a(type_j$ \cos(\mathbf{q}_i\mathbf{r_j} + \phi_i)) \f$,
+# where \f$n\f$ is the number of modes supplied,
+# \f$ \mathbf{q}_i = 2 \pi (n_{i,x}/L_x, n_{i,y}/L_y, n_{i,z}/L_z) is the 
+# wave vector associated with mode \f$i\f$, \f$\phi_i\f$ its phase shift,
+# and $a(type_j)$ is the mode coefficient for a particle of type \f$type\f$.
+#
+# The force on particle i is calculated as
+# \f$\vec f_i = - \frac{\partial V}{\partial s} \vec\Nabla_i s\f$.
+#
+# Example:
+# In a diblock copolymer melt constructed from monomers of types A and B, use
+# \code
+# metadynamics.cv.lamellar(sigma=.05,mode=dict(A=1.0, B=-1.0), lattice_vectors=[(0,0,3)],phi=[0.0])
+# \endcode
+# to define the order parameter for a Fourier mode along the (003) direction,
+# with mode coefficients of +1 and -1 for A and B monomers. 
+# The width of Gaussians deposited is sigma=0.05. The phase shift is zero.
+#
+# \b Logging:
+# The log name of this collective variable used by the command analyze.log
+# is \b cv_lamellar.
 class lamellar(_collective_variable):
-
+    ## Construct a lamellar order parameter
+    # \param sigma Width of deposited Gaussians
+    # \param mode Per-type list (dictionary) of mode coefficients
+    # \param lattice_vectors List of reciprocal lattice vectors (Miller indices) for every mode
+    # \param phi Per-mode list of phase shifts
+    # \param name Name given to this collective variable
     def __init__(self, sigma, mode, lattice_vectors, phi, name=None):
         util.print_status_line()
 
@@ -81,5 +131,6 @@ class lamellar(_collective_variable):
 
         globals.system.addCompute(self.cpp_force, self.force_name)
 
+    ## \internal
     def update_coeffs(self):
         pass
