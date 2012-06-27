@@ -50,7 +50,7 @@ import cv
 #    V(\mathbf{s}, t) = \sum\limits_{t'=0, t_G, 2 t_G,\dots}^{t'<t}
 #                       W e^{-\frac{V[\mathbf{s}(\mathbf{r}(t')]}{\Delta T}}
 #                       \exp\left\{-\sum\limits_{i=1}^d
-#                       \frac{[s_i(\mathbf{r}) - s_i(\mathbf{r}(t'))]}{2\sigma_i^2}\right\},
+#                       \frac{[s_i(\mathbf{r}) - s_i(\mathbf{r}(t'))]^2}{2\sigma_i^2}\right\},
 # \f]
 # where
 # - \f$ s \f$ is the vector of collective variables
