@@ -1,0 +1,27 @@
+/*! \mainpage
+
+Welcome to the documentation for the HOOMD-blue \b metadynamics plugin !
+
+<h3>Usage:</h3>
+
+To load the plugin in HOOMD-blue, use
+\code
+from hoomd_plugins import metadynamics
+\endcode
+anywhere in your script file before using one of the below commands.
+
+The following additional script commands are available from this plugin:
+
+Table of contents:
+ - \ref sec_index_integration
+ - \ref sec_index_cv
+
+\section sec_index_integration Integrate
+ - \link metadynamics.integrate integrate\endlink -<i>Overview</i>
+ - \link metadynamics.integrate.mode_metadynamics integrate.mode_metadynamics\endlink - <i>Metadynamics Integration </i>
+ 
+\section sec_index_cv Collective variables
+ - \link metadynamics.cv.lamellar cv.lamellar\endlink - <i>Lamellar order parameter </i>
+
+*/
+

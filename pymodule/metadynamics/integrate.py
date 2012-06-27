@@ -5,20 +5,20 @@
 # adaptive bias potential. Metadynamics is described in detail in
 # Barducci et al., Metadynamics, Wiley Interdiscipl. Rev.: Comput. Mol. Sci. 5, pp. 826-843 (2011).
 #
-# Metadynamics integration (integrate.mode_metadynamics) can be combined
+# Metadynamics integration (\b integrate.mode_metadynamics) can be combined
 # with any standard integration methods, such as NVT, NVE etc. supported
 # by HOOMD-Blue.
 #
 # In addition to integration methods, metadynamics also requires at least
-# one collective variable (\sa cv) to be defined, the values of which
+# one collective variable (\b cv) to be defined, the values of which
 # will be sampled to updateei the biasing potential. The forces from
 # the bias potential are added to the particles during the simulation.
 #
 # Some of the features of this package are loosely inspired by the
 # PLUMED plugin for Metadynamics, http://www.plumed-code.org/.
 #
-# This package support well-tempered metadynamics with multiple collective
-# variables, grid and off-grid bias potentials, and saving of and restarting
+# This package supports well-tempered metadynamics with multiple collective
+# variables, on- and off-grid bias potentials, and saving of and restarting
 # from grid information. It is also possible to simply equilibrate the system
 # in the presence of a previously generated bias potential,
 # without updating the latter, to sample a histogram of values of the
@@ -33,7 +33,7 @@
 #
 # \code
 # all = group.all
-# meta = metadynamics.integrate.mode_metadynamics(dt=0.005, W=1,
+# meta = metadynamics.integrate.mode_metadynamics(dt=0.005, W=1,stride=5000, deltaT=dT)
 # integrate.nvt(group=all, T=1, tau=0.5)
 # # set up a collective variable on a grid
 # lamellar = metadynamics.cv.lamellar(sigma=0.05, mode=dict(A=1.0, B=-1.0), lattice_vectors=[(0,0,3)], phi=[0.0])
@@ -44,8 +44,8 @@
 # meta.dump_grid("grid.dat")
 # \endcode
 #
-# If the saved bias potential should be used to continue the simulation from
-# later, this can be accomplished by
+# If the saved bias potential should be used to continue the simulation from,
+# this can be accomplished by
 # \code
 # meta = metadynamics.integrate.mode_metadynamics(dt=0.005, W=1,
 # integrate.nvt(group=all, T=1, tau=0.5)
@@ -56,6 +56,7 @@
 # meta.restart_from_grid("grid.dat")
 # run(1e5)
 # \endcode
+#
 
 import _metadynamics
 
@@ -216,3 +217,4 @@ class mode_metadynamics(_integrator):
         util.print_status_line();
        
         self.cpp_integrator.setAddHills(add_hills)
+

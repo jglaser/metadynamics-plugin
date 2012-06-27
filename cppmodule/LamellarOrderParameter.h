@@ -23,9 +23,9 @@
    concentration fluctuations.
 
    The value of the collective variable \f$ s \f$ is given by
-   \f$ s = \sum_{i = 1}^n \sum_{j = 1}^N a(type_j$ \cos(\mathbf{q}_i\mathbf{r_j} + \phi_i)) \f$,
+   \f$ s = \sum_{i = 1}^n \sum_{j = 1}^N a(type_j \cos(\mathbf{q}_i\mathbf{r_j} + \phi_i)) \f$,
    where \f$n\f$ is the number of modes supplied,
-   \f$ \mathbf{q}_i = 2 \pi (n_{i,x}/L_x, n_{i,y}/L_y, n_{i,z}/L_z) is the 
+   \f$ \mathbf{q}_i = 2 \pi (n_{i,x}/L_x, n_{i,y}/L_y, n_{i,z}/L_z) \f$ is the 
    wave vector associated with mode \f$i\f$, \f$\phi_i\f$ its phase shift,
    and $a(type_j)$ is the mode coefficient for a particle of type \f$type\f$.
 

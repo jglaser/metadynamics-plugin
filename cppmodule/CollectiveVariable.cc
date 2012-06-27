@@ -13,19 +13,30 @@ CollectiveVariable::CollectiveVariable(boost::shared_ptr<SystemDefinition> sysde
     {
     }
 
+//! Wrapper for abstract class CollectiveVariable
 class CollectiveVariableWrap : public CollectiveVariable, public wrapper<CollectiveVariable>
     {
     public:
+        //! Constructs a CollectiveVariableWrap
+        /*! \param sysdef The system definition
+            \param name Name of the collective variable
+         */
         CollectiveVariableWrap(boost::shared_ptr<SystemDefinition> sysdef,
                                const std::string& name) 
             : CollectiveVariable(sysdef, name)
             { }
 
+        /*! Compute the forces
+            \param timestep Current value of the timestep
+         */
         void computeForces(unsigned int timestep)
             {
             this->get_override("computeForces")(timestep);
             }
 
+        /*! Returns the current value of the collective variable
+            \param timestep Current value of the timestep
+         */
         Scalar getCurrentValue(unsigned int timestep)
             {
             return this->get_override("getCurrentValue")(timestep);

@@ -35,6 +35,21 @@ class _collective_variable(_force):
         
         self.use_grid = False
 
+    ## \var sigma
+    # \internal
+
+    ## \var cv_min
+    # \internal
+
+    ## \var cv_max
+    # \internal
+
+    ## \var num_points
+    # \internal
+
+    ## \var use_grid
+    # \internal
+
     ## Sets grid mode for this collective variable
     # \param cv_min Minimum of the collective variable (smallest grid value)
     # \param cv_max Maximum of the collective variable (largest grid value)
@@ -53,14 +68,14 @@ class _collective_variable(_force):
 # (or composition fluctuations).
 #
 # The value of the collective variable \f$ s \f$ is given by
-# \f$ s = \sum_{i = 1}^n \sum_{j = 1}^N a(type_j$ \cos(\mathbf{q}_i\mathbf{r_j} + \phi_i)) \f$,
+# \f$ s = \sum_{i = 1}^n \sum_{j = 1}^N a(type_j \cos(\mathbf{q}_i\mathbf{r_j} + \phi_i)) \f$,
 # where \f$n\f$ is the number of modes supplied,
-# \f$ \mathbf{q}_i = 2 \pi (n_{i,x}/L_x, n_{i,y}/L_y, n_{i,z}/L_z) is the 
-# wave vector associated with mode \f$i\f$, \f$\phi_i\f$ its phase shift,
-# and $a(type_j)$ is the mode coefficient for a particle of type \f$type\f$.
+# \f$ \mathbf{q}_i = 2 \pi (n_{i,x}/L_x, n_{i,y}/L_y, n_{i,z}/L_z) \f$ is the 
+# wave vector associated with mode \f$ i \f$, \f$ \phi_i \f$ its phase shift,
+# and \f$a(type_j)\f$ is the mode coefficient for a particle of type \f$type\f$.
 #
 # The force on particle i is calculated as
-# \f$\vec f_i = - \frac{\partial V}{\partial s} \vec\Nabla_i s\f$.
+# \f$\vec f_i = - \frac{\partial V}{\partial s} \vec\nabla_i s\f$.
 #
 # Example:
 # In a diblock copolymer melt constructed from monomers of types A and B, use

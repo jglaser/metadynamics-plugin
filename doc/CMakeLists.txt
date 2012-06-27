@@ -18,7 +18,8 @@ file(GLOB SOURCE_FILES "${${PROJECT_NAME}_SOURCE_DIR}/cppmodule/*.cu"
                        "${${PROJECT_NAME}_SOURCE_DIR}/cppmodule/*.cuh"
                        "${${PROJECT_NAME}_SOURCE_DIR}/cppmodule/*.cc"
                        "${${PROJECT_NAME}_SOURCE_DIR}/cppmodule/*.h"
-                       "${${PROJECT_NAME}_SOURCE_DIR}/pymodule/*.py")
+                       "${${PROJECT_NAME}_SOURCE_DIR}/pymodule/*.py"
+                       "${${PROJECT_NAME}_SOURCE_DIR}/doc/*.doc")
 
 add_custom_command (OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}/index.html
                     COMMAND ${DOXYGEN} ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile

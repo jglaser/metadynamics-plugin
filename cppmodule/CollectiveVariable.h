@@ -74,6 +74,7 @@ class CollectiveVariable : public ForceCompute
         std::string m_cv_name;
     };
 
+//! Export the CollectiveVariable class to python
 void export_CollectiveVariable();
 
 #endif // __COLLECTIVE_VARIABLE_H__
