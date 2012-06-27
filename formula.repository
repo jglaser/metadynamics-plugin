@@ -1,0 +1,33 @@
+\form#0:$ s $
+\form#1:$ s = \sum_{i = 1}^n \sum_{j = 1}^N a(type_j \cos(\mathbf{q}_i\mathbf{r_j} + \phi_i)) $
+\form#2:$n$
+\form#3:$ \mathbf{q}_i = 2 \pi (n_{i,x}/L_x, n_{i,y}/L_y, n_{i,z}/L_z) $
+\form#4:$i$
+\form#5:$\phi_i$
+\form#6:$type$
+\form#7:$s$
+\form#8:$\mathbf{r}_j$
+\form#9:\[ s = V^{-1} \sum_{i = 1}^n \sum_{j = 1}^N a(type_j) \cos(\mathbf{q}_i\mathbf{r_j} + \phi_i), \]
+\form#10:$N$
+\form#11:$V$
+\form#12:$ \mathbf{q}_i = 2 \pi (\frac{n_{i,x}}{L_x}, \frac{n_{i,y}}{L_y}, \frac{n_{i,z}}{L_z}) $
+\form#13:$ i $
+\form#14:$ \phi_i $
+\form#15:$a(type)$
+\form#16:$\vec f_i = - \frac{\partial V}{\partial s} \vec\nabla_i s$
+\form#17:$V(s,t)$
+\form#18:$t$
+\form#19:\[ V(\mathbf{s}, t) = \sum\limits_{t'=0, t_G, 2 t_G,\dots}^{t'<t} W e^{-\frac{V[\mathbf{s}(\mathbf{r}(t')]}{\Delta T}} \exp\left\{-\sum\limits_{i=1}^d \frac{[s_i(\mathbf{r}) - s_i(\mathbf{r}(t'))]}{2\sigma_i^2}\right\}, \]
+\form#20:$ t_G $
+\form#21:$\tau$
+\form#22:$ W $
+\form#23:$ \sigma_i $
+\form#24:$ t_G/\Delta t$
+\form#25:$ \Delta T$
+\form#26:$ (\Delta T + T) k_B T$
+\form#27:$\Delta T = \infty$
+\form#28:$\Delta T = 100$
+\form#29:$ W =1 $
+\form#30:$t_G/\Delta t=5000$
+\form#31:$\Delta t = 0.005$
+\form#32:$\Delta T = 7 $
