@@ -25,5 +25,6 @@ Table of contents:
 \section sec_index_cv Collective variables
  - \link metadynamics.cv.lamellar cv.lamellar\endlink - <i>Lamellar order parameter for phase transitions in block copolymers</i>
 
+\b Author: Jens Glaser <jglaser@umn.edu>
 */
 
