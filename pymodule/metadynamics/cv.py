@@ -63,21 +63,27 @@ class _collective_variable(_force):
 
         self.use_grid = True
 
-## Lamellar order parameter as a collective variable
+## \brief Lamellar order parameter as a collective variable to study phase transitions in block copolymer systems
+#
 # This collective variable is based on the Fourier modes of concentration
-# (or composition fluctuations).
+# or composition fluctuations.
 #
 # The value of the collective variable \f$ s \f$ is given by
-# \f$ s = \sum_{i = 1}^n \sum_{j = 1}^N a(type_j \cos(\mathbf{q}_i\mathbf{r_j} + \phi_i)) \f$,
-# where \f$n\f$ is the number of modes supplied,
-# \f$ \mathbf{q}_i = 2 \pi (n_{i,x}/L_x, n_{i,y}/L_y, n_{i,z}/L_z) \f$ is the 
-# wave vector associated with mode \f$ i \f$, \f$ \phi_i \f$ its phase shift,
-# and \f$a(type_j)\f$ is the mode coefficient for a particle of type \f$type\f$.
+# \f[ s = V^{-1} \sum_{i = 1}^n \sum_{j = 1}^N a(type_j) \cos(\mathbf{q}_i\mathbf{r_j} + \phi_i), \f]
+# where
+# - \f$n\f$ is the number of modes supplied
+# - \f$N\f$ is the number of particles
+# - \f$V\f$ is the system volume
+# - \f$ \mathbf{q}_i = 2 \pi (\frac{n_{i,x}}{L_x}, \frac{n_{i,y}}{L_y}, \frac{n_{i,z}}{L_z}) \f$ is the 
+# wave vector associated with mode \f$ i \f$,
+# - \f$ \phi_i \f$ its phase shift,
+# - \f$a(type)\f$ is the mode coefficient for a particle of type \f$type\f$.
 #
 # The force on particle i is calculated as
 # \f$\vec f_i = - \frac{\partial V}{\partial s} \vec\nabla_i s\f$.
 #
-# Example:
+# <h2>Example:</h2>
+#
 # In a diblock copolymer melt constructed from monomers of types A and B, use
 # \code
 # metadynamics.cv.lamellar(sigma=.05,mode=dict(A=1.0, B=-1.0), lattice_vectors=[(0,0,3)],phi=[0.0])
@@ -86,8 +92,8 @@ class _collective_variable(_force):
 # with mode coefficients of +1 and -1 for A and B monomers. 
 # The width of Gaussians deposited is sigma=0.05. The phase shift is zero.
 #
-# \b Logging:
-# The log name of this collective variable used by the command analyze.log
+# <h2> Logging:</h2>
+# The log name of this collective variable used by the command \b analyze.log
 # is \b cv_lamellar.
 class lamellar(_collective_variable):
     ## Construct a lamellar order parameter
@@ -145,6 +151,9 @@ class lamellar(_collective_variable):
             self.cpp_force = _metadynamics.LamellarOrderParameterGPU(globals.system_definition, cpp_mode, cpp_lattice_vectors, cpp_phases, suffix)
 
         globals.system.addCompute(self.cpp_force, self.force_name)
+
+    ## \var cpp_force
+    # \internal 
 
     ## \internal
     def update_coeffs(self):
