@@ -2,6 +2,9 @@
 
 Welcome to the documentation for the HOOMD-blue \b metadynamics plugin !
 
+Metadynamics is a technique to measure free energy surfaces (FES)
+using an adaptive bias potential.
+
 <h3>Usage:</h3>
 
 To load the plugin in HOOMD-blue, use

@@ -79,7 +79,7 @@ import cv
 # the positions and heights of Gaussians that are added together to form
 # the bias potential), or a bias potential evaluated on a grid.
 # The negative of the bias potential can be used to calculate the free energy
-# landscape (FES).
+# surface (FES).
 #
 # By default, integrate.mode_metadynamics uses the \a well-tempered variant
 # of metadynamics, where a shift temperature \f$ \Delta T\f$ is defined, which
