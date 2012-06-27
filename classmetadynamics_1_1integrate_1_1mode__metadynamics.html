@@ -36,7 +36,7 @@
   <div id="navrow2" class="tabs2">
     <ul class="tablist">
       <li><a href="annotated.html"><span>Class&#160;List</span></a></li>
-      <li><a href="hierarchy.html"><span>Class&#160;Hierarchy</span></a></li>
+      <li><a href="inherits.html"><span>Class&#160;Hierarchy</span></a></li>
       <li><a href="functions.html"><span>Class&#160;Members</span></a></li>
     </ul>
   </div>
@@ -60,7 +60,7 @@
 <p>The metadynamics algorithm is reviewed in detail in <a href="http://dx.doi.org/10.1002/wcms.31">Barducci et al., Metadynamics, Wiley Interdiscipl. Rev.: Comput. Mol. Sci. 5, pp. 826-843 (2011)</a></p>
 <p>Explictly, the metadynamics biasing potential <img class="formulaInl" alt="$V(s,t)$" src="form_17.png"/> at time <img class="formulaInl" alt="$t$" src="form_18.png"/> takes the form </p>
 <p class="formulaDsp">
-<img class="formulaDsp" alt="\[ V(\mathbf{s}, t) = \sum\limits_{t'=0, t_G, 2 t_G,\dots}^{t'<t} W e^{-\frac{V[\mathbf{s}(\mathbf{r}(t')]}{\Delta T}} \exp\left\{-\sum\limits_{i=1}^d \frac{[s_i(\mathbf{r}) - s_i(\mathbf{r}(t'))]}{2\sigma_i^2}\right\}, \]" src="form_19.png"/>
+<img class="formulaDsp" alt="\[ V(\mathbf{s}, t) = \sum\limits_{t'=0, t_G, 2 t_G,\dots}^{t'<t} W e^{-\frac{V[\mathbf{s}(\mathbf{r}(t')]}{\Delta T}} \exp\left\{-\sum\limits_{i=1}^d \frac{[s_i(\mathbf{r}) - s_i(\mathbf{r}(t'))]^2}{2\sigma_i^2}\right\}, \]" src="form_19.png"/>
 </p>
 <p> where</p>
 <ul>
@@ -121,8 +121,13 @@
 <div class="line"> <span class="comment"># restart from saved bias potential</span></div>
 <div class="line"> meta.restart_from_grid(<span class="stringliteral">&quot;grid.dat&quot;</span>)</div>
 <div class="line"> run(1e5)</div>
-</div><!-- fragment --> </div>
-<p>Inherits _integrator.</p>
+</div><!-- fragment --> </div><div class="dynheader">
+Inheritance diagram for mode_metadynamics:</div>
+<div class="dyncontent">
+<div class="center"><img src="classmetadynamics_1_1integrate_1_1mode__metadynamics__inherit__graph.png" border="0" usemap="#mode__metadynamics_inherit__map" alt="Inheritance graph"/></div>
+<map name="mode__metadynamics_inherit__map" id="mode__metadynamics_inherit__map">
+</map>
+<center><span class="legend">[<a href="graph_legend.html">legend</a>]</span></center></div>
 
 <p><a href="classmetadynamics_1_1integrate_1_1mode__metadynamics-members.html">List of all members.</a></p>
 <table class="memberdecls">
@@ -336,7 +341,7 @@ Public Attributes</h2></td></tr>
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Wed Jun 27 2012 13:27:49 for metadynamics by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Jun 27 2012 14:48:32 for metadynamics by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.1.1
 </small></address>

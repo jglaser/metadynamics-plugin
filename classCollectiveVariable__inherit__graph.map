@@ -1,0 +1,5 @@
+<map id="G" name="G">
+<area shape="rect" id="node3" href="$classCollectiveVariableWrap.html" title="Wrapper for abstract class CollectiveVariable." alt="" coords="5,83,163,112"/>
+<area shape="rect" id="node5" href="$classLamellarOrderParameter.html" title="Collective variable for studying phase transitions in block copolymer systems." alt="" coords="187,83,349,112"/>
+<area shape="rect" id="node7" href="$classLamellarOrderParameterGPU.html" title="Class to calculate the lamellar order parameter on the GPU." alt="" coords="172,160,364,189"/>
+</map>
