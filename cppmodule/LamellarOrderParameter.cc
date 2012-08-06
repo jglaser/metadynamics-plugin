@@ -7,6 +7,10 @@
 
 #include <boost/python/suite/indexing/vector_indexing_suite.hpp>
 
+#ifdef ENABLE_MPI
+#include <boost/mpi.hpp>
+#endif
+
 using namespace boost::python;
 
 LamellarOrderParameter::LamellarOrderParameter(boost::shared_ptr<SystemDefinition> sysdef,
@@ -108,6 +112,12 @@ void LamellarOrderParameter::computeForces(unsigned int timestep)
         }
 
     m_sum /= V;
+
+#ifdef ENABLE_MPI
+    // reduce value of collective variable on root processor
+    if (m_pdata->getDomainDecomposition())
+        boost::mpi::reduce(*m_exec_conf->getMPICommunicator(), m_sum, std::plus<Scalar>(), m_pdata->getDomainDecomposition()->getRoot());
+#endif
 
     if (m_prof)
         m_prof->pop();

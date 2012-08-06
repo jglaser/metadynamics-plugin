@@ -13,6 +13,10 @@ using namespace std;
 #include <boost/python.hpp>
 #include <boost/filesystem.hpp>
 
+#ifdef ENABLE_MPI
+#include <boost/mpi.hpp>
+#endif
+
 using namespace boost::python;
 using namespace boost::filesystem;
 
@@ -90,45 +94,55 @@ void IntegratorMetaDynamics::writeFileHeader()
 
 void IntegratorMetaDynamics::prepRun(unsigned int timestep)
     {
-    // Set up file output
-    if (! m_is_initialized && m_filename != "")
+#ifdef ENABLE_MPI
+    bool is_root = true;
+
+    if (m_pdata->getDomainDecomposition())
+        is_root = m_pdata->getDomainDecomposition()->isRoot();
+
+    if (is_root)
+#endif
         {
-        openOutputFile();
-        if (! m_is_appending)
-            writeFileHeader();
-        }
-    
- 
-    // Set up colllective variables
-    if (! m_is_initialized)
-        {
-        m_cv_values.resize(m_variables.size());
-        std::vector< std::vector<Scalar> >::iterator it;
-
-        for (it = m_cv_values.begin(); it != m_cv_values.end(); ++it)
-            it->clear();
-
-        m_num_update_steps = 0;
-        m_bias_potential.clear();
-        }
-
-    // Set up grid if necessary
-    if (! m_is_initialized && m_use_grid)
-        {
-        setupGrid();
-
-        if (m_restart_filename != "")
+        // Set up file output
+        if (! m_is_initialized && m_filename != "")
             {
-            // restart from file
-            m_exec_conf->msg->notice(2) << "integrate.mode_metadynamics: Restarting from grid file \"" << m_restart_filename << "\"" << endl;
-
-            readGrid(m_restart_filename);
-
-            m_restart_filename = "";
+            openOutputFile();
+            if (! m_is_appending)
+                writeFileHeader();
             }
-        }
+        
+     
+        // Set up colllective variables
+        if (! m_is_initialized)
+            {
+            m_cv_values.resize(m_variables.size());
+            std::vector< std::vector<Scalar> >::iterator it;
 
-    m_is_initialized = true;
+            for (it = m_cv_values.begin(); it != m_cv_values.end(); ++it)
+                it->clear();
+
+            m_num_update_steps = 0;
+            m_bias_potential.clear();
+            }
+
+        // Set up grid if necessary
+        if (! m_is_initialized && m_use_grid)
+            {
+            setupGrid();
+
+            if (m_restart_filename != "")
+                {
+                // restart from file
+                m_exec_conf->msg->notice(2) << "integrate.mode_metadynamics: Restarting from grid file \"" << m_restart_filename << "\"" << endl;
+
+                readGrid(m_restart_filename);
+
+                m_restart_filename = "";
+                }
+            }
+
+        m_is_initialized = true;
+        } // endif isRoot()
 
     // initial update of the potential
     updateBiasPotential(timestep);
@@ -209,156 +223,181 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
     std::vector<CollectiveVariableItem>::iterator it;
     for (it = m_variables.begin(); it != m_variables.end(); ++it)
         {
-        unsigned int cv_index = it - m_variables.begin();
         Scalar val = it->m_cv->getCurrentValue(timestep);
-
-        if (! m_use_grid)
-            {
-            // append to history
-            m_cv_values[cv_index].push_back(val);
-            }
-
         current_val.push_back(val);
         }
 
-    if (m_prof)
-        m_prof->push("Metadynamics");
+        std::vector<double> bias(m_variables.size(), 0.0); 
 
-    // update biasing weights by summing up partial derivivatives of Gaussians deposited every m_stride steps
-    m_curr_bias_potential = 0.0;
-    std::vector<double> bias(m_variables.size(), 0.0); 
+#ifdef ENABLE_MPI
+    bool is_root = true;
 
-    if (m_use_grid)
+    if (m_pdata->getDomainDecomposition())
+        is_root = m_pdata->getDomainDecomposition()->isRoot();
+
+    if (is_root)
+#endif
         {
-        // interpolate current value of bias potential
-        Scalar V = interpolateBiasPotential(current_val);
-        m_curr_bias_potential = V;
 
-        if (m_add_hills && (m_num_update_steps % m_stride == 0))
+        if (m_prof)
+            m_prof->push("Metadynamics");
+
+        if (! m_use_grid)
             {
-            // add Gaussian to grid
-            
-            // scaling factor for well-tempered MetaD
-            Scalar scal = exp(-V/m_T_shift);
-
-            // loop over grid
-            unsigned int len = m_grid_index.getNumElements();
-            std::vector<unsigned int> coords(m_grid_index.getDimension()); 
-            for (unsigned int grid_idx = 0; grid_idx < len; grid_idx++)
+            // record history of CV values
+            std::vector<CollectiveVariableItem>::iterator it;
+            for (it = m_variables.begin(); it != m_variables.end(); ++it)
                 {
-                // obtain d-dimensional coordinates
-                m_grid_index.getCoordinates(grid_idx, coords);
+                unsigned int cv_index = it - m_variables.begin();
+                m_cv_values[cv_index].push_back(current_val[cv_index]);
+                }
+            }
 
-                Scalar gauss_exp(0.0);
-                // evaluate Gaussian on grid point
-                for (unsigned int cv_idx = 0; cv_idx < m_variables.size(); ++cv_idx)
+        // update biasing weights by summing up partial derivivatives of Gaussians deposited every m_stride steps
+        m_curr_bias_potential = 0.0;
+
+        if (m_use_grid)
+            {
+            // interpolate current value of bias potential
+            Scalar V = interpolateBiasPotential(current_val);
+            m_curr_bias_potential = V;
+
+            if (m_add_hills && (m_num_update_steps % m_stride == 0))
+                {
+                // add Gaussian to grid
+                
+                // scaling factor for well-tempered MetaD
+                Scalar scal = exp(-V/m_T_shift);
+
+                // loop over grid
+                unsigned int len = m_grid_index.getNumElements();
+                std::vector<unsigned int> coords(m_grid_index.getDimension()); 
+                for (unsigned int grid_idx = 0; grid_idx < len; grid_idx++)
                     {
-                    Scalar delta = (m_variables[cv_idx].m_cv_max - m_variables[cv_idx].m_cv_min)/
-                                   (m_variables[cv_idx].m_num_points - 1);
-                    Scalar val = m_variables[cv_idx].m_cv_min + coords[cv_idx]*delta;
-                    Scalar sigma = m_variables[cv_idx].m_sigma;
-                    double d = val - current_val[cv_idx];
-                    gauss_exp += d*d/2.0/sigma/sigma;
+                    // obtain d-dimensional coordinates
+                    m_grid_index.getCoordinates(grid_idx, coords);
+
+                    Scalar gauss_exp(0.0);
+                    // evaluate Gaussian on grid point
+                    for (unsigned int cv_idx = 0; cv_idx < m_variables.size(); ++cv_idx)
+                        {
+                        Scalar delta = (m_variables[cv_idx].m_cv_max - m_variables[cv_idx].m_cv_min)/
+                                       (m_variables[cv_idx].m_num_points - 1);
+                        Scalar val = m_variables[cv_idx].m_cv_min + coords[cv_idx]*delta;
+                        Scalar sigma = m_variables[cv_idx].m_sigma;
+                        double d = val - current_val[cv_idx];
+                        gauss_exp += d*d/2.0/sigma/sigma;
+                        }
+                    double gauss = exp(-gauss_exp);
+
+                    // add Gaussian to grid
+                    m_grid[grid_idx] += m_W*scal*gauss;
+                    }
+                }
+
+            // calculate partial derivatives numerically
+            for (unsigned int cv_idx = 0; cv_idx < m_variables.size(); ++cv_idx)
+                {
+                Scalar delta = (m_variables[cv_idx].m_cv_max - m_variables[cv_idx].m_cv_min)/
+                               (m_variables[cv_idx].m_num_points - 1);
+                if (current_val[cv_idx] - delta < m_variables[cv_idx].m_cv_min) 
+                    {
+                    // forward difference
+                    std::vector<Scalar> val2 = current_val;
+                    val2[cv_idx] += delta;
+
+                    Scalar y2 = interpolateBiasPotential(val2);
+                    Scalar y1 = interpolateBiasPotential(current_val);
+                    bias[cv_idx] = (y2-y1)/delta;
+                    }
+                else if (current_val[cv_idx] + delta > m_variables[cv_idx].m_cv_max)
+                    {
+                    // backward difference
+                    std::vector<Scalar> val2 = current_val;
+                    val2[cv_idx] -= delta;
+                    Scalar y1 = interpolateBiasPotential(val2);
+                    Scalar y2 = interpolateBiasPotential(current_val);
+                    bias[cv_idx] = (y2-y1)/delta;
+                    }
+                else
+                    {
+                    // central difference
+                    std::vector<Scalar> val2 = current_val;
+                    std::vector<Scalar> val1 = current_val;
+                    val1[cv_idx] -= delta;
+                    val2[cv_idx] += delta;
+                    Scalar y1 = interpolateBiasPotential(val1);
+                    Scalar y2 = interpolateBiasPotential(val2);
+                    bias[cv_idx] = (y2 - y1)/(Scalar(2.0)*delta);
+                    }
+                }
+
+            } 
+        else
+            {
+            // sum up all Gaussians accumulated until now
+            for (unsigned int step = 0; step < m_bias_potential.size()*m_stride; step += m_stride)
+                {
+                double gauss_exp = 0.0;
+                // calculate Gaussian contribution from t'=step
+                std::vector<Scalar>::iterator val_it;
+                for (val_it = current_val.begin(); val_it != current_val.end(); ++val_it)
+                    {
+                    Scalar val = *val_it;
+                    unsigned int cv_index = val_it - current_val.begin();
+                    Scalar sigma = m_variables[cv_index].m_sigma;
+                    double delta = val - m_cv_values[cv_index][step];
+                    gauss_exp += delta*delta/2.0/sigma/sigma;
                     }
                 double gauss = exp(-gauss_exp);
 
-                // add Gaussian to grid
-                m_grid[grid_idx] += m_W*scal*gauss;
+                // calculate partial derivatives
+                std::vector<CollectiveVariableItem>::iterator cv_item;
+                Scalar scal = exp(-m_bias_potential[step/m_stride]/m_T_shift);
+                for (cv_item = m_variables.begin(); cv_item != m_variables.end(); ++cv_item)
+                    {
+                    unsigned int cv_index = cv_item - m_variables.begin();
+                    Scalar val = current_val[cv_index];
+                    Scalar sigma = m_variables[cv_index].m_sigma;
+                    bias[cv_index] -= m_W*scal/sigma/sigma*(val - m_cv_values[cv_index][step])*gauss;
+                    }
+
+                m_curr_bias_potential += m_W*scal*gauss;
                 }
             }
 
-        // calculate partial derivatives numerically
-        for (unsigned int cv_idx = 0; cv_idx < m_variables.size(); ++cv_idx)
+        // write hills information
+        if (m_is_initialized && (m_num_update_steps % m_stride == 0) && m_add_hills)
             {
-            Scalar delta = (m_variables[cv_idx].m_cv_max - m_variables[cv_idx].m_cv_min)/
-                           (m_variables[cv_idx].m_num_points - 1);
-            if (current_val[cv_idx] - delta < m_variables[cv_idx].m_cv_min) 
-                {
-                // forward difference
-                std::vector<Scalar> val2 = current_val;
-                val2[cv_idx] += delta;
+            Scalar W = m_W*exp(-m_curr_bias_potential/m_T_shift);
+            m_file << setprecision(10) << timestep << m_delimiter;
+            m_file << setprecision(10) << W << m_delimiter;
 
-                Scalar y2 = interpolateBiasPotential(val2);
-                Scalar y1 = interpolateBiasPotential(current_val);
-                bias[cv_idx] = (y2-y1)/delta;
-                }
-            else if (current_val[cv_idx] + delta > m_variables[cv_idx].m_cv_max)
+            std::vector<Scalar>::iterator cv;
+            for (cv = current_val.begin(); cv != current_val.end(); ++cv)
                 {
-                // backward difference
-                std::vector<Scalar> val2 = current_val;
-                val2[cv_idx] -= delta;
-                Scalar y1 = interpolateBiasPotential(val2);
-                Scalar y2 = interpolateBiasPotential(current_val);
-                bias[cv_idx] = (y2-y1)/delta;
+                unsigned int cv_index = cv - current_val.begin();
+                m_file << setprecision(10) << *cv << m_delimiter;
+                m_file << setprecision(10) << m_variables[cv_index].m_sigma;
+                if (cv != current_val.end() -1) m_file << m_delimiter;
                 }
-            else
-                {
-                // central difference
-                std::vector<Scalar> val2 = current_val;
-                std::vector<Scalar> val1 = current_val;
-                val1[cv_idx] -= delta;
-                val2[cv_idx] += delta;
-                Scalar y1 = interpolateBiasPotential(val1);
-                Scalar y2 = interpolateBiasPotential(val2);
-                bias[cv_idx] = (y2 - y1)/(Scalar(2.0)*delta);
-                }
+
+            m_file << endl;
             }
+       
+        if (m_add_hills && (! m_use_grid) && (m_num_update_steps % m_stride == 0))
+            m_bias_potential.push_back(m_curr_bias_potential);
 
-        } 
-    else
-        {
-        // sum up all Gaussians accumulated until now
-        for (unsigned int step = 0; step < m_bias_potential.size()*m_stride; step += m_stride)
-            {
-            double gauss_exp = 0.0;
-            // calculate Gaussian contribution from t'=step
-            std::vector<Scalar>::iterator val_it;
-            for (val_it = current_val.begin(); val_it != current_val.end(); ++val_it)
-                {
-                Scalar val = *val_it;
-                unsigned int cv_index = val_it - current_val.begin();
-                Scalar sigma = m_variables[cv_index].m_sigma;
-                double delta = val - m_cv_values[cv_index][step];
-                gauss_exp += delta*delta/2.0/sigma/sigma;
-                }
-            double gauss = exp(-gauss_exp);
+        // increment number of updated steps
+        m_num_update_steps++;
+     
+        } // endif root processor
 
-            // calculate partial derivatives
-            std::vector<CollectiveVariableItem>::iterator cv_item;
-            Scalar scal = exp(-m_bias_potential[step/m_stride]/m_T_shift);
-            for (cv_item = m_variables.begin(); cv_item != m_variables.end(); ++cv_item)
-                {
-                unsigned int cv_index = cv_item - m_variables.begin();
-                Scalar val = current_val[cv_index];
-                Scalar sigma = m_variables[cv_index].m_sigma;
-                bias[cv_index] -= m_W*scal/sigma/sigma*(val - m_cv_values[cv_index][step])*gauss;
-                }
-
-            m_curr_bias_potential += m_W*scal*gauss;
-            }
-        }
-
-    // write hills information
-    if (m_is_initialized && (m_num_update_steps % m_stride == 0) && m_add_hills)
-        {
-        Scalar W = m_W*exp(-m_curr_bias_potential/m_T_shift);
-        m_file << setprecision(10) << timestep << m_delimiter;
-        m_file << setprecision(10) << W << m_delimiter;
-
-        std::vector<Scalar>::iterator cv;
-        for (cv = current_val.begin(); cv != current_val.end(); ++cv)
-            {
-            unsigned int cv_index = cv - current_val.begin();
-            m_file << setprecision(10) << *cv << m_delimiter;
-            m_file << setprecision(10) << m_variables[cv_index].m_sigma;
-            if (cv != current_val.end() -1) m_file << m_delimiter;
-            }
-
-        m_file << endl;
-        }
-   
-    if (m_add_hills && (! m_use_grid) && (m_num_update_steps % m_stride == 0))
-        m_bias_potential.push_back(m_curr_bias_potential);
+#ifdef ENABLE_MPI
+    // broadcast bias factors
+    if (m_pdata->getDomainDecomposition())
+        boost::mpi::broadcast(*m_exec_conf->getMPICommunicator(), bias, m_pdata->getDomainDecomposition()->getRoot());
+#endif
 
     // update current bias potential derivative for every collective variable
     std::vector<CollectiveVariableItem>::iterator cv_item;
@@ -368,10 +407,7 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
         cv_item->m_cv->setBiasFactor(bias[cv_index]);
         }
 
-    // increment number of updated steps
-    m_num_update_steps++;
-
-    if (m_prof)
+   if (m_prof)
         m_prof->pop();
     }
 
@@ -469,6 +505,11 @@ Scalar IntegratorMetaDynamics::interpolateBiasPotential(const std::vector<Scalar
 
 void IntegratorMetaDynamics::setGrid(bool use_grid)
     {
+#ifdef ENABLE_MPI
+    // Only on root processor
+    if (m_pdata->getDomainDecomposition() && ! m_pdata->getDomainDecomposition()->isRoot())
+        return;
+#endif
     if (m_is_initialized)
         {
         m_exec_conf->msg->error() << "integrate.mode_metadynamics: Cannot change grid mode after initialization." << endl;
@@ -502,6 +543,12 @@ void IntegratorMetaDynamics::setGrid(bool use_grid)
 
 void IntegratorMetaDynamics::dumpGrid(const std::string& filename)
     {
+#ifdef ENABLE_MPI
+    // Only on root processor
+    if (m_pdata->getDomainDecomposition() && ! m_pdata->getDomainDecomposition()->isRoot())
+        return;
+#endif
+
     if (! m_use_grid)
         {
         m_exec_conf->msg->error() << "integrate.mode_metadynamics: Grid information can only be dumped if grid is enabled.";
@@ -556,6 +603,12 @@ void IntegratorMetaDynamics::dumpGrid(const std::string& filename)
 
 void IntegratorMetaDynamics::readGrid(const std::string& filename)
     {
+#ifdef ENABLE_MPI
+    // Only on root processor
+    if (m_pdata->getDomainDecomposition() && ! m_pdata->getDomainDecomposition()->isRoot())
+        return;
+#endif
+
     if (! m_use_grid)
         {
         m_exec_conf->msg->error() << "integrate.mode_metadynamics: Grid information can only be read if grid is enabled.";
