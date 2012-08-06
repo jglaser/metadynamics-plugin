@@ -173,7 +173,7 @@ __global__ void kernel_compute_sq_forces(unsigned int N,
                                   unsigned int n_wave,
                                   Scalar3 *wave_vectors,
                                   Scalar *mode,
-                                  Scalar V,
+                                  Scalar n_global,
                                   Scalar bias,
                                   Scalar *phases)
     {
@@ -201,9 +201,9 @@ __global__ void kernel_compute_sq_forces(unsigned int N,
         force_energy.z += q.z*f;
         }
 
-    force_energy.x /= V;
-    force_energy.y /= V;
-    force_energy.z /= V;
+    force_energy.x /= n_global;
+    force_energy.y /= n_global;
+    force_energy.z /= n_global;
 
     force_energy.x *= bias;
     force_energy.y *= bias;
@@ -219,15 +219,12 @@ cudaError_t gpu_compute_sq_forces(unsigned int N,
                                   unsigned int n_wave,
                                   Scalar3 *d_wave_vectors,
                                   Scalar *d_mode,
-                                  const BoxDim global_box,
+                                  unsigned int n_global,
                                   Scalar bias,
                                   Scalar *d_phases)
     {
     cudaError_t cudaStatus;
     const unsigned int block_size = 512;
-
-    Scalar3 L = global_box.getL();
-    Scalar V = L.x*L.y*L.z;
 
     kernel_compute_sq_forces<<<N/block_size + 1, block_size>>>(N,
                                                                d_postype,
@@ -236,7 +233,7 @@ cudaError_t gpu_compute_sq_forces(unsigned int N,
                                                                n_wave,
                                                                d_wave_vectors,
                                                                d_mode,
-                                                               V,
+                                                               n_global,
                                                                bias,
                                                                d_phases);
 

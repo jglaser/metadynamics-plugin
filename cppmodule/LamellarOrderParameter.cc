@@ -67,7 +67,7 @@ void LamellarOrderParameter::computeForces(unsigned int timestep)
     ArrayHandle<Scalar> h_phases(m_phases, access_location::host, access_mode::read);
 
     Scalar3 L = m_pdata->getGlobalBox().getL();
-    Scalar V = L.x*L.y*L.z;
+    Scalar N = m_pdata->getNGlobal();
 
     for (unsigned int idx = 0; idx < m_pdata->getN(); idx++)
         {
@@ -96,9 +96,9 @@ void LamellarOrderParameter::computeForces(unsigned int timestep)
         force_energy.y *= m_bias;
         force_energy.z *= m_bias;
 
-        force_energy.x /= V;
-        force_energy.y /= V;
-        force_energy.z /= V;
+        force_energy.x /= N;
+        force_energy.y /= N;
+        force_energy.z /= N;
 
         h_force.data[idx] = force_energy;
         }
@@ -111,7 +111,7 @@ void LamellarOrderParameter::computeForces(unsigned int timestep)
         m_sum += fourier_mode.x;
         }
 
-    m_sum /= V;
+    m_sum /= N;
 
 #ifdef ENABLE_MPI
     // reduce value of collective variable on root processor

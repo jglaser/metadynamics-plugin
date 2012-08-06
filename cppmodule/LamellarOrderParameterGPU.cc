@@ -61,7 +61,7 @@ void LamellarOrderParameterGPU::computeForces(unsigned int timestep)
                              m_wave_vectors.getNumElements(),
                              d_wave_vectors.data,
                              d_gpu_mode.data,
-                             m_pdata->getGlobalBox(),
+                             m_pdata->getNGlobal(),
                              m_bias,
                              d_phases.data);
         CHECK_CUDA_ERROR();
@@ -69,7 +69,7 @@ void LamellarOrderParameterGPU::computeForces(unsigned int timestep)
 
     ArrayHandle<Scalar2> h_fourier_modes(m_fourier_modes, access_location::host, access_mode::read);
     Scalar3 L = m_pdata->getGlobalBox().getL();
-    Scalar V = L.x*L.y*L.z;
+    Scalar N = m_pdata->getNGlobal();
 
     // calculate value of collective variable (sum of real parts of fourier modes)
     m_sum = 0.0;
@@ -79,7 +79,7 @@ void LamellarOrderParameterGPU::computeForces(unsigned int timestep)
         m_sum += fourier_mode.x;
         }
 
-    m_sum /= V;
+    m_sum /= N;
 
     if (m_prof)
         m_prof->pop();

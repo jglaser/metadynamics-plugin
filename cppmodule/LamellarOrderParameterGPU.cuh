@@ -34,7 +34,7 @@ cudaError_t gpu_calculate_fourier_modes(unsigned int n_wave,
     \param n_wave Number of modes
     \param d_wave_vectors Device array of wave vectors
     \param d_mode Device array of per-type mode coefficients
-    \param global_box Dimensions of the global simulation box
+    \param n_global Total number of particles in system
     \param bias The bias factor to multiply the forces with
     \param d_phases Device array of per-mode phase shifts
 
@@ -47,6 +47,6 @@ cudaError_t gpu_compute_sq_forces(unsigned int N,
                                   unsigned int n_wave,
                                   Scalar3 *d_wave_vectors,
                                   Scalar *d_mode,
-                                  const BoxDim global_box,
+                                  unsigned int n_global,
                                   Scalar bias,
                                   Scalar *d_phases);
