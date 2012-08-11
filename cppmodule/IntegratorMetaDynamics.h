@@ -143,7 +143,11 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
          */
         std::vector< std::string > getProvidedLogQuantities()
             {
-            return m_log_names;
+            std::vector< std::string> ret = m_log_names;
+            std::vector< std::string> q = Integrator::getProvidedLogQuantities();
+
+            ret.insert(ret.end(), q.begin(), q.end());
+            return ret;
             }
 
         /*! Obtain the value of a specific log quantity
@@ -152,6 +156,13 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
          */
         Scalar getLogValue(const std::string& quantity, unsigned int timestep)
             {
+            // check if log quantity exists in base class
+            std::vector< std::string> q = Integrator::getProvidedLogQuantities();
+
+            std::vector< std::string >::iterator it;
+            for (it = q.begin(); it != q.end(); it++)
+                if (quantity == *it) return Integrator::getLogValue(quantity, timestep);
+                
             if (quantity == m_log_names[0])
                 {
                 return m_curr_bias_potential;

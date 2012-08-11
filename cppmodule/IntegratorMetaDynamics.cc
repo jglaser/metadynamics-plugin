@@ -144,6 +144,16 @@ void IntegratorMetaDynamics::prepRun(unsigned int timestep)
         m_is_initialized = true;
         } // endif isRoot()
 
+#ifdef ENABLE_MPI
+    if (m_comm)
+        {
+        // perform all necessary communication steps. This ensures
+        // a) that particles have migrated to the correct domains
+        // b) that forces are calculated correctly
+        m_comm->communicate(timestep);
+        }
+#endif
+
     // initial update of the potential
     updateBiasPotential(timestep);
 
@@ -176,6 +186,16 @@ void IntegratorMetaDynamics::update(unsigned int timestep)
 
     if (m_prof)
         m_prof->pop();
+
+#ifdef ENABLE_MPI
+    if (m_comm)
+        {
+        // perform all necessary communication steps. This ensures
+        // a) that particles have migrated to the correct domains
+        // b) that forces are calculated correctly
+        m_comm->communicate(timestep+1);
+        }
+#endif
 
     // update bias potential
     updateBiasPotential(timestep+1);
