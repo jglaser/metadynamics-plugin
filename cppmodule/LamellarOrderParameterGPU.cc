@@ -51,13 +51,11 @@ void LamellarOrderParameterGPU::computeForces(unsigned int timestep)
         CHECK_CUDA_ERROR();
 
         ArrayHandle<Scalar4> d_force(m_force, access_location::device, access_mode::overwrite);
-        ArrayHandle<Scalar> d_virial(m_virial, access_location::device, access_mode::overwrite);
 
         // calculate forces
         gpu_compute_sq_forces(m_pdata->getN(),
                              d_postype.data,
                              d_force.data,
-                             d_virial.data,
                              m_wave_vectors.getNumElements(),
                              d_wave_vectors.data,
                              d_gpu_mode.data,

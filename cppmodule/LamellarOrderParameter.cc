@@ -42,6 +42,10 @@ LamellarOrderParameter::LamellarOrderParameter(boost::shared_ptr<SystemDefinitio
 
     m_cv_name += suffix;
     m_log_name = m_cv_name;
+
+    // this collective variable does not contribute to the virial
+    ArrayHandle<Scalar> h_virial(m_virial, access_location::host, access_mode::overwrite);
+    memset(h_virial.data, 0, sizeof(Scalar)*6*m_virial.getPitch());
     }
 
 void LamellarOrderParameter::computeForces(unsigned int timestep)
@@ -56,10 +60,6 @@ void LamellarOrderParameter::computeForces(unsigned int timestep)
     ArrayHandle<Scalar4> h_postype(m_pdata->getPositions(), access_location::host, access_mode::read);
 
     ArrayHandle<Scalar4> h_force(m_force, access_location::host, access_mode::overwrite);
-    ArrayHandle<Scalar> h_virial(m_virial, access_location::host, access_mode::overwrite);
-
-    memset(h_virial.data, 0, sizeof(Scalar)*6*m_virial.getPitch());
-
     ArrayHandle<Scalar2> h_fourier_modes(m_fourier_modes, access_location::host, access_mode::read);
 
     ArrayHandle<Scalar3> h_wave_vectors(m_wave_vectors, access_location::host, access_mode::read);

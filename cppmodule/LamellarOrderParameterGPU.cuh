@@ -30,7 +30,6 @@ cudaError_t gpu_calculate_fourier_modes(unsigned int n_wave,
     \param N Number of particles
     \param d_postype Array of particle positions and types
     \param d_force Array of per-particle forces
-    \param d_virial Array of virial matrix elements per-particle
     \param n_wave Number of modes
     \param d_wave_vectors Device array of wave vectors
     \param d_mode Device array of per-type mode coefficients
@@ -43,7 +42,6 @@ cudaError_t gpu_calculate_fourier_modes(unsigned int n_wave,
 cudaError_t gpu_compute_sq_forces(unsigned int N,
                                   Scalar4 *d_postype,
                                   Scalar4 *d_force,
-                                  Scalar *d_virial,
                                   unsigned int n_wave,
                                   Scalar3 *d_wave_vectors,
                                   Scalar *d_mode,
