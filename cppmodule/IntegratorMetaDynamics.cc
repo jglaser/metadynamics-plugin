@@ -141,9 +141,9 @@ void IntegratorMetaDynamics::prepRun(unsigned int timestep)
                 }
             }
 
-        m_is_initialized = true;
         } // endif isRoot()
 
+    m_is_initialized = true;
 #ifdef ENABLE_MPI
     if (m_comm)
         {
