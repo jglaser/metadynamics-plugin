@@ -249,9 +249,9 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
 
         std::vector<double> bias(m_variables.size(), 0.0); 
 
-#ifdef ENABLE_MPI
     bool is_root = true;
 
+#ifdef ENABLE_MPI
     if (m_pdata->getDomainDecomposition())
         is_root = m_exec_conf->isMPIRoot();
 
