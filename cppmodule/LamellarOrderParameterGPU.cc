@@ -70,20 +70,22 @@ void LamellarOrderParameterGPU::computeForces(unsigned int timestep)
     Scalar N = m_pdata->getNGlobal();
 
     // calculate value of collective variable (sum of real parts of fourier modes)
-    m_sum = 0.0;
+    Scalar sum = 0.0;
     for (unsigned k = 0; k < m_fourier_modes.getNumElements(); k++)
         {
         Scalar2 fourier_mode = h_fourier_modes.data[k];
-        m_sum += fourier_mode.x;
+        sum += fourier_mode.x;
         }
 
-    m_sum /= N;
+    sum /= N;
 
 #ifdef ENABLE_MPI
     // reduce value of collective variable on root processor
     if (m_pdata->getDomainDecomposition())
-        boost::mpi::reduce(*m_exec_conf->getMPICommunicator(), m_sum, m_sum, std::plus<Scalar>(), 0);
+        boost::mpi::reduce(*m_exec_conf->getMPICommunicator(), sum, m_sum, std::plus<Scalar>(), 0);
+    else
 #endif
+        m_sum = sum;
 
     if (m_prof)
         m_prof->pop();
