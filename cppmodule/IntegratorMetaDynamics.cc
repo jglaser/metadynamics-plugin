@@ -526,8 +526,8 @@ void IntegratorMetaDynamics::setGrid(bool use_grid)
     {
 #ifdef ENABLE_MPI
     // Only on root processor
-    if (m_pdata->getDomainDecomposition() && ! m_exec_conf->isMPIRoot())
-        return;
+    if (m_pdata->getDomainDecomposition())
+        if (! m_exec_conf->isMPIRoot()) return;
 #endif
     if (m_is_initialized)
         {
@@ -564,8 +564,8 @@ void IntegratorMetaDynamics::dumpGrid(const std::string& filename)
     {
 #ifdef ENABLE_MPI
     // Only on root processor
-    if (m_pdata->getDomainDecomposition() && ! m_exec_conf->isMPIRoot())
-        return;
+    if (m_pdata->getDomainDecomposition())
+        if (! m_exec_conf->isMPIRoot()) return;
 #endif
 
     if (! m_use_grid)
@@ -624,8 +624,8 @@ void IntegratorMetaDynamics::readGrid(const std::string& filename)
     {
 #ifdef ENABLE_MPI
     // Only on root processor
-    if (m_pdata->getDomainDecomposition() && ! m_exec_conf->isMPIRoot())
-        return;
+    if (m_pdata->getDomainDecomposition())
+        if (! m_exec_conf->isMPIRoot()) return;
 #endif
 
     if (! m_use_grid)
