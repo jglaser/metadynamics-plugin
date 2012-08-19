@@ -82,7 +82,7 @@ void LamellarOrderParameterGPU::computeForces(unsigned int timestep)
 #ifdef ENABLE_MPI
     // reduce value of collective variable on root processor
     if (m_pdata->getDomainDecomposition())
-        boost::mpi::reduce(*m_exec_conf->getMPICommunicator(), m_sum, std::plus<Scalar>(), m_pdata->getDomainDecomposition()->getRoot());
+        boost::mpi::reduce(*m_exec_conf->getMPICommunicator(), m_sum, std::plus<Scalar>(), 0);
 #endif
 
     if (m_prof)

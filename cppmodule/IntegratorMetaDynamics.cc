@@ -97,8 +97,8 @@ void IntegratorMetaDynamics::prepRun(unsigned int timestep)
 #ifdef ENABLE_MPI
     bool is_root = true;
 
-    if (m_pdata->getDomainDecomposition())
-        is_root = m_pdata->getDomainDecomposition()->isRoot();
+    if (m_exec_conf)
+        is_root = m_exec_conf->isMPIRoot();
 
     if (is_root)
 #endif
@@ -141,7 +141,7 @@ void IntegratorMetaDynamics::prepRun(unsigned int timestep)
                 }
             }
 
-        } // endif isRoot()
+        } // endif isMPIRoot()
 
     m_is_initialized = true;
 #ifdef ENABLE_MPI
@@ -252,8 +252,8 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
 #ifdef ENABLE_MPI
     bool is_root = true;
 
-    if (m_pdata->getDomainDecomposition())
-        is_root = m_pdata->getDomainDecomposition()->isRoot();
+    if (m_exec_conf)
+        is_root = m_exec_conf->isMPIRoot();
 
     if (is_root)
 #endif
@@ -415,8 +415,8 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
 
 #ifdef ENABLE_MPI
     // broadcast bias factors
-    if (m_pdata->getDomainDecomposition())
-        boost::mpi::broadcast(*m_exec_conf->getMPICommunicator(), bias, m_pdata->getDomainDecomposition()->getRoot());
+    if (m_exec_conf)
+        boost::mpi::broadcast(*m_exec_conf->getMPICommunicator(), bias, 0);
 #endif
 
     // update current bias potential derivative for every collective variable
@@ -527,7 +527,7 @@ void IntegratorMetaDynamics::setGrid(bool use_grid)
     {
 #ifdef ENABLE_MPI
     // Only on root processor
-    if (m_pdata->getDomainDecomposition() && ! m_pdata->getDomainDecomposition()->isRoot())
+    if (m_exec_conf && ! m_exec_conf->isMPIRoot())
         return;
 #endif
     if (m_is_initialized)
@@ -565,7 +565,7 @@ void IntegratorMetaDynamics::dumpGrid(const std::string& filename)
     {
 #ifdef ENABLE_MPI
     // Only on root processor
-    if (m_pdata->getDomainDecomposition() && ! m_pdata->getDomainDecomposition()->isRoot())
+    if (m_exec_conf && ! m_exec_conf->isMPIRoot())
         return;
 #endif
 
@@ -625,7 +625,7 @@ void IntegratorMetaDynamics::readGrid(const std::string& filename)
     {
 #ifdef ENABLE_MPI
     // Only on root processor
-    if (m_pdata->getDomainDecomposition() && ! m_pdata->getDomainDecomposition()->isRoot())
+    if (m_exec_conf && ! m_exec_conf->isMPIRoot())
         return;
 #endif
 
