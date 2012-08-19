@@ -414,7 +414,7 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
 
 #ifdef ENABLE_MPI
     // broadcast bias factors
-    if (m_exec_conf)
+    if (m_pdata->getDomainDecomposition())
         boost::mpi::broadcast(*m_exec_conf->getMPICommunicator(), bias, 0);
 #endif
 
