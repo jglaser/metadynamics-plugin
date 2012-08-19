@@ -255,13 +255,12 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
     if (m_exec_conf)
         is_root = m_exec_conf->isMPIRoot();
 
+    if (m_prof)
+        m_prof->push("Metadynamics");
+
     if (is_root)
 #endif
         {
-
-        if (m_prof)
-            m_prof->push("Metadynamics");
-
         if (! m_use_grid)
             {
             // record history of CV values
