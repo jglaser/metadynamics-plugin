@@ -2,20 +2,19 @@
     \brief CUDA implementation of LamellarOrderParameter GPU routines
  */
 #include <cuda.h>
-#include <cuComplex.h>
 
 #include "LamellarOrderParameterGPU.cuh"
 
 __global__ void kernel_calculate_sq_partial(
             int n_particles,
-            cuComplex *fourier_mode_partial,
+            Scalar2 *fourier_mode_partial,
             Scalar4 *postype,
             int n_wave,
             Scalar3 *wave_vectors,
             Scalar *d_modes,
             Scalar *phases)
     {
-    extern __shared__ cuComplex sdata[];
+    extern __shared__ Scalar2 sdata[];
 
     unsigned int tidx = threadIdx.x;
 
@@ -25,7 +24,7 @@ __global__ void kernel_calculate_sq_partial(
         Scalar3 q = wave_vectors[i];
         Scalar phi = phases[i];
 
-        cuComplex mySum = make_cuComplex(0.0f,0.0f);
+        Scalar2 mySum = make_scalar2(0.0f,0.0f);
 
         if (j < n_particles) {
 
@@ -33,76 +32,112 @@ __global__ void kernel_calculate_sq_partial(
             Scalar dotproduct = q.x * p.x + q.y * p.y + q.z * p.z;
             unsigned int type = __float_as_int(postype[j].w);
             Scalar mode = d_modes[type];
-            cuComplex exponential = make_cuComplex(mode*cosf(dotproduct+phi),
+            Scalar2 exponential = make_scalar2(mode*cosf(dotproduct+phi),
                                                    mode*sinf(dotproduct+phi));
-            mySum = cuCaddf(mySum,exponential);
+            mySum.x += exponential.x;
+            mySum.y += exponential.y;
         }
         sdata[tidx] = mySum;
 
        __syncthreads();
         // reduce in shared memory
-        if (blockDim.x >= 512) {
-           if (tidx < 256) {sdata[tidx] = mySum = cuCaddf(mySum,sdata[tidx+256]); }
+        if (blockDim.x >= 512)
+            {
+            if (tidx < 256)
+                {
+                mySum.x += sdata[tidx+256].x;
+                mySum.y += sdata[tidx+256].y;
+                sdata[tidx] = mySum;
+                }
             __syncthreads();
-        }
+            }
 
         if (blockDim.x >= 256) {
-           if (tidx < 128) {sdata[tidx] = mySum = cuCaddf(mySum, sdata[tidx + 128]); }
-           __syncthreads();
-        }
+            if (tidx < 128)
+                {
+                mySum.x += sdata[tidx+128].x;
+                mySum.y += sdata[tidx+128].y;
+                sdata[tidx] = mySum;
+                }
+            __syncthreads();
+            }
 
-        if (blockDim.x >= 128) {
-           if (tidx <  64) {sdata[tidx] = mySum = cuCaddf(mySum, sdata[tidx +  64]); }
+        if (blockDim.x >= 128)
+            {
+            if (tidx < 64)
+                {
+                mySum.x += sdata[tidx+64].x;
+                mySum.y += sdata[tidx+64].y;
+                sdata[tidx] = mySum;
+                }
            __syncthreads();
-        }
+            }
 
         if (tidx < 32) {
-            volatile cuComplex* smem = sdata;
-            if (blockDim.x >= 64) {
-                cuComplex rhs = cuCaddf(mySum, smem[tidx + 32]);
+            volatile Scalar2* smem = sdata;
+            if (blockDim.x >= 64)
+                {
+                Scalar2 rhs;
+                rhs.x = mySum.x + smem[tidx + 32].x;
+                rhs.y = mySum.y + smem[tidx + 32].y;
                 smem[tidx].x = rhs.x;
                 smem[tidx].y = rhs.y;
                 mySum = rhs;
-            }
-            if (blockDim.x >= 32) {
-                cuComplex rhs = cuCaddf(mySum, smem[tidx + 16]);
+                }
+            if (blockDim.x >= 32)
+                {
+                Scalar2 rhs;
+                rhs.x = mySum.x + smem[tidx + 16].x;
+                rhs.y = mySum.y + smem[tidx + 16].y;
                 smem[tidx].x = rhs.x;
                 smem[tidx].y = rhs.y;
                 mySum = rhs;
-            }
-            if (blockDim.x >= 16) {
-                cuComplex rhs = cuCaddf(mySum, smem[tidx + 8]);
+                }
+            if (blockDim.x >= 16)
+                {
+                Scalar2 rhs;
+                rhs.x = mySum.x + smem[tidx + 8].x;
+                rhs.y = mySum.y + smem[tidx + 8].y;
                 smem[tidx].x = rhs.x;
                 smem[tidx].y = rhs.y;
                 mySum = rhs;
-            }
-             if (blockDim.x >=  8) {
-                cuComplex rhs = cuCaddf(mySum, smem[tidx + 4]);
+                }
+            if (blockDim.x >=  8)
+                {
+                Scalar2 rhs;
+                rhs.x = mySum.x + smem[tidx + 4].x;
+                rhs.y = mySum.y + smem[tidx + 4].y;
                 smem[tidx].x = rhs.x;
                 smem[tidx].y = rhs.y;
                 mySum = rhs;
-            }
-            if (blockDim.x >=  4) {
-                cuComplex rhs = cuCaddf(mySum, smem[tidx + 2]);
+                }
+            if (blockDim.x >=  4)
+                {
+                Scalar2 rhs;
+                rhs.x = mySum.x + smem[tidx + 2].x;
+                rhs.y = mySum.y + smem[tidx + 2].y;
                 smem[tidx].x = rhs.x;
                 smem[tidx].y = rhs.y;
                 mySum = rhs;
-            }
-            if (blockDim.x >=  2) {
-                cuComplex rhs = cuCaddf(mySum, smem[tidx + 1]);
+                }
+            if (blockDim.x >=  2)
+                { 
+                Scalar2 rhs;
+                rhs.x = mySum.x + smem[tidx + 1].x;
+                rhs.y = mySum.y + smem[tidx + 1].y;
                 smem[tidx].x = rhs.x;
                 smem[tidx].y = rhs.y;
                 mySum = rhs;
+                }
             }
-        }
 
         // write result to global memeory
         if (tidx == 0)
            fourier_mode_partial[blockIdx.x + gridDim.x*i] = sdata[0];
-    } // end loop over wave vectors
-} 
+        } // end loop over wave vectors
+    } 
 
-__global__ void kernel_final_reduce_fourier_modes(cuComplex* fourier_mode_partial,
+__global__ void kernel_final_reduce_fourier_modes(Scalar2* fourier_mode_partial,
                                        unsigned int nblocks,
                                        Scalar2 *fourier_modes,
                                        unsigned int n_wave)
@@ -112,9 +147,12 @@ __global__ void kernel_final_reduce_fourier_modes(cuComplex* fourier_mode_partia
         return;
 
     // do final reduction of fourier mode
-    cuComplex fourier_mode = make_cuComplex(0.0f,0.0f);
+    Scalar2 fourier_mode = make_scalar2(0.0f,0.0f);
     for (unsigned int j = 0; j < nblocks; j++)
-       fourier_mode = cuCaddf(fourier_mode, fourier_mode_partial[j + i*nblocks]);
+        { 
+        fourier_mode.x += fourier_mode_partial[j + i*nblocks].x;
+        fourier_mode.y += fourier_mode_partial[j + i*nblocks].y;
+        }
 
     fourier_modes[i] = make_scalar2(fourier_mode.x, fourier_mode.y); 
     }
@@ -128,16 +166,16 @@ cudaError_t gpu_calculate_fourier_modes(unsigned int n_wave,
                                  Scalar *d_phases
                                  )
     {
-    cuComplex *d_fourier_mode_partial;
+    Scalar2 *d_fourier_mode_partial;
 
     cudaError_t cudaStatus;
 
     const unsigned int block_size_x = 256;
     unsigned int n_blocks_x = n_particles/block_size_x + 1;
 
-    cudaMalloc(&d_fourier_mode_partial, sizeof(cuComplex)*n_wave*n_blocks_x);
+    cudaMalloc(&d_fourier_mode_partial, sizeof(Scalar2)*n_wave*n_blocks_x);
 
-    unsigned int shared_size = block_size_x * sizeof(cuComplex);
+    unsigned int shared_size = block_size_x * sizeof(Scalar2);
     kernel_calculate_sq_partial<<<n_blocks_x, block_size_x, shared_size>>>(
                n_particles,
                d_fourier_mode_partial,
