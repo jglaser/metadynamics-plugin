@@ -20,7 +20,7 @@
 # in the presence of a previously generated bias potential,
 # without updating the latter, to sample a histogram of values of the
 # collective variable (i.e. for error control)
-import _metadynamics
+from hoomd_plugins.metadynamics import _metadynamics
 
 from hoomd_script.integrate import _integrator
 from hoomd_script.force import _force
@@ -29,7 +29,7 @@ from hoomd_script import globals
 
 import hoomd
 
-import cv
+from hoomd_plugins.metadynamics import cv
 
 ## \brief Enables integration using metadynamics, a free energy technique
 #

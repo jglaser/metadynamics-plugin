@@ -663,6 +663,34 @@ void IntegratorMetaDynamics::readGrid(const std::string& filename)
     file.close();
     } 
 
+void IntegratorMetaDynamics::testInterpolation()
+    {
+    unsigned int num_elements = m_grid_index.getNumElements();
+    std::vector<unsigned int> coords(m_grid_index.getDimension()); 
+
+    std::vector<Scalar> val(m_variables.size());
+
+    for (unsigned int i = 0; i < num_elements; i++)
+        {
+        m_grid_index.getCoordinates(i, coords);
+
+        // evaluate Gaussian on grid point
+        for (unsigned int cv_idx = 0; cv_idx < m_variables.size(); ++cv_idx)
+            {
+            Scalar delta = (m_variables[cv_idx].m_cv_max - m_variables[cv_idx].m_cv_min)/
+                           (m_variables[cv_idx].m_num_points - 1);
+            val[cv_idx] = m_variables[cv_idx].m_cv_min + coords[cv_idx]*delta;
+
+            m_exec_conf->msg->notice(1) << val[cv_idx];
+            }
+
+        m_exec_conf->msg->notice(1) << std::endl;
+
+        m_exec_conf->msg->notice(1) << interpolateBiasPotential(val) << std::endl;;
+        }
+    }
+
+
 void export_IntegratorMetaDynamics()
     {
     class_<IntegratorMetaDynamics, boost::shared_ptr<IntegratorMetaDynamics>, bases<IntegratorTwoStep>, boost::noncopyable>
@@ -681,5 +709,6 @@ void export_IntegratorMetaDynamics()
     .def("dumpGrid", &IntegratorMetaDynamics::dumpGrid)
     .def("restartFromGridFile", &IntegratorMetaDynamics::restartFromGridFile)
     .def("setAddHills", &IntegratorMetaDynamics::setAddHills)
+    .def("testInterpolation", &IntegratorMetaDynamics::testInterpolation)
     ;
     }

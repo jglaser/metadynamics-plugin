@@ -212,6 +212,9 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
             m_add_hills = add_hills;
             }
 
+        //! Function to test the interpolation
+        void testInterpolation();
+
     private:
         Scalar m_W;                                       //!< Height of Gaussians
         Scalar m_T_shift;                                 //!< Temperature shift
@@ -258,7 +261,6 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
 
         //! Helper function to read in data from grid file
         void readGrid(const std::string& filename);
-
     };
 
 //! Export to python

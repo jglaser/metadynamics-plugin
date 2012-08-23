@@ -1,4 +1,4 @@
 ## \package metadynamics
 
-import integrate
-import cv
+import hoomd_plugins.metadynamics.integrate
+import hoomd_plugins.metadynamics.cv

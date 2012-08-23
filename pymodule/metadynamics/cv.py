@@ -6,7 +6,7 @@ from hoomd_script import util
 from hoomd_script import data
 from hoomd_script.force import _force
 
-import _metadynamics
+from hoomd_plugins.metadynamics import _metadynamics
 import hoomd
 
 ## \internal
