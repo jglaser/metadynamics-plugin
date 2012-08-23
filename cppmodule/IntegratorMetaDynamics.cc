@@ -261,9 +261,9 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
     if (is_root)
 #endif
         {
-        if (! m_use_grid)
+        if (! m_use_grid && (m_num_update_steps % m_stride == 0))
             {
-            // record history of CV values
+            // record history of CV values every m_stride steps
             std::vector<CollectiveVariableItem>::iterator it;
             for (it = m_variables.begin(); it != m_variables.end(); ++it)
                 {
@@ -322,30 +322,30 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
         else
             {
             // sum up all Gaussians accumulated until now
-            for (unsigned int step = 0; step < m_bias_potential.size()*m_stride; step += m_stride)
+            for (unsigned int gauss_idx = 0; gauss_idx < m_bias_potential.size(); ++gauss_idx)
                 {
                 double gauss_exp = 0.0;
-                // calculate Gaussian contribution from t'=step
+                // calculate Gaussian contribution from t'=gauss_idx*m_stride
                 std::vector<Scalar>::iterator val_it;
                 for (val_it = current_val.begin(); val_it != current_val.end(); ++val_it)
                     {
                     Scalar val = *val_it;
                     unsigned int cv_index = val_it - current_val.begin();
                     Scalar sigma = m_variables[cv_index].m_sigma;
-                    double delta = val - m_cv_values[cv_index][step];
+                    double delta = val - m_cv_values[cv_index][gauss_idx];
                     gauss_exp += delta*delta/2.0/sigma/sigma;
                     }
                 double gauss = exp(-gauss_exp);
 
                 // calculate partial derivatives
                 std::vector<CollectiveVariableItem>::iterator cv_item;
-                Scalar scal = exp(-m_bias_potential[step/m_stride]/m_T_shift);
+                Scalar scal = exp(-m_bias_potential[gauss_idx]/m_T_shift);
                 for (cv_item = m_variables.begin(); cv_item != m_variables.end(); ++cv_item)
                     {
                     unsigned int cv_index = cv_item - m_variables.begin();
                     Scalar val = current_val[cv_index];
                     Scalar sigma = m_variables[cv_index].m_sigma;
-                    bias[cv_index] -= m_W*scal/sigma/sigma*(val - m_cv_values[cv_index][step])*gauss;
+                    bias[cv_index] -= m_W*scal/sigma/sigma*(val - m_cv_values[cv_index][gauss_idx])*gauss;
                     }
 
                 m_curr_bias_potential += m_W*scal*gauss;
