@@ -213,7 +213,7 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
             }
 
         //! Function to test the interpolation
-        void testInterpolation();
+        void testInterpolation(const std::string& filename, const std::vector<unsigned int>& dim);
 
     private:
         Scalar m_W;                                       //!< Height of Gaussians
@@ -258,6 +258,9 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
 
         //! Helper function to get value of bias potential by multilinear interpolation
         Scalar interpolateBiasPotential(const std::vector<Scalar>& val);
+
+        //! Helper function to calculate the partial derivative of the bias potential in direction cv
+        Scalar biasPotentialDerivative(unsigned int cv, const std::vector<Scalar>& val);
 
         //! Helper function to read in data from grid file
         void readGrid(const std::string& filename);

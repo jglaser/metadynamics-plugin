@@ -316,40 +316,7 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
 
             // calculate partial derivatives numerically
             for (unsigned int cv_idx = 0; cv_idx < m_variables.size(); ++cv_idx)
-                {
-                Scalar delta = (m_variables[cv_idx].m_cv_max - m_variables[cv_idx].m_cv_min)/
-                               (m_variables[cv_idx].m_num_points - 1);
-                if (current_val[cv_idx] - delta < m_variables[cv_idx].m_cv_min) 
-                    {
-                    // forward difference
-                    std::vector<Scalar> val2 = current_val;
-                    val2[cv_idx] += delta;
-
-                    Scalar y2 = interpolateBiasPotential(val2);
-                    Scalar y1 = interpolateBiasPotential(current_val);
-                    bias[cv_idx] = (y2-y1)/delta;
-                    }
-                else if (current_val[cv_idx] + delta > m_variables[cv_idx].m_cv_max)
-                    {
-                    // backward difference
-                    std::vector<Scalar> val2 = current_val;
-                    val2[cv_idx] -= delta;
-                    Scalar y1 = interpolateBiasPotential(val2);
-                    Scalar y2 = interpolateBiasPotential(current_val);
-                    bias[cv_idx] = (y2-y1)/delta;
-                    }
-                else
-                    {
-                    // central difference
-                    std::vector<Scalar> val2 = current_val;
-                    std::vector<Scalar> val1 = current_val;
-                    val1[cv_idx] -= delta;
-                    val2[cv_idx] += delta;
-                    Scalar y1 = interpolateBiasPotential(val1);
-                    Scalar y2 = interpolateBiasPotential(val2);
-                    bias[cv_idx] = (y2 - y1)/(Scalar(2.0)*delta);
-                    }
-                }
+                bias[cv_idx] = biasPotentialDerivative(cv_idx, current_val);
 
             } 
         else
@@ -453,45 +420,29 @@ Scalar IntegratorMetaDynamics::interpolateBiasPotential(const std::vector<Scalar
     assert(val.size() == m_grid_index.getDimension());
 
     // find closest d-dimensional sub-block
-    std::vector<Scalar> lower_x(m_grid_index.getDimension());
-    std::vector<Scalar> upper_x(m_grid_index.getDimension());
     std::vector<unsigned int> lower_idx(m_grid_index.getDimension());
     std::vector<unsigned int> upper_idx(m_grid_index.getDimension());
     std::vector<Scalar> rel_delta(m_grid_index.getDimension());
 
-    for (unsigned int i = 0; i < m_grid_index.getDimension(); i++)
+    for (unsigned int cv_idx = 0; cv_idx < m_variables.size(); cv_idx++)
         {
-        bool found = false;
-        unsigned int h;
-        Scalar lower_bound(0.0), upper_bound(0.0);
-        Scalar delta = (m_variables[i].m_cv_max - m_variables[i].m_cv_min)/(m_variables[i].m_num_points - 1);
-        upper_bound = m_variables[i].m_cv_min;
-        for (h=0; h < m_variables[i].m_num_points-1; h++)
-            {
-            lower_bound = upper_bound;
-            upper_bound += delta;
+        Scalar delta = (m_variables[cv_idx].m_cv_max - m_variables[cv_idx].m_cv_min)/(m_variables[cv_idx].m_num_points - 1);
+        int lower = (int) ((val[cv_idx] - m_variables[cv_idx].m_cv_min)/delta);
+        int upper = lower+1;
 
-            if ( (val[i] >= lower_bound) && (val[i] < upper_bound))
-                {
-                found = true;
-                break;
-                }
-            }
-
-        if (!found)
+        if (lower < 0 || upper >= m_variables[cv_idx].m_num_points)
             {
-            m_exec_conf->msg->warning() << "integrate.mode_metadynamics: Value " << val[i]
-                                        << " of collective variable " << i << " out of bounds." << endl
+            m_exec_conf->msg->warning() << "integrate.mode_metadynamics: Value " << val[cv_idx]
+                                        << " of collective variable " << cv_idx << " out of bounds." << endl
                                         << "Assuming bias potential of zero." << endl;
             return Scalar(0.0);
             }
-        
-        lower_x[i] = lower_bound;
-        upper_x[i] = upper_bound;
-        rel_delta[i] = (val[i]-lower_bound)/(upper_bound-lower_bound);
 
-        lower_idx[i] = h;
-        upper_idx[i] = h+1;
+        Scalar lower_bound = m_variables[cv_idx].m_cv_min + delta * lower;
+        Scalar upper_bound = m_variables[cv_idx].m_cv_min + delta * upper;
+        lower_idx[cv_idx] = lower;
+        upper_idx[cv_idx] = upper;
+        rel_delta[cv_idx] = (val[cv_idx]-lower_bound)/(upper_bound-lower_bound);
         }
 
     // construct multilinear interpolation
@@ -520,6 +471,43 @@ Scalar IntegratorMetaDynamics::interpolateBiasPotential(const std::vector<Scalar
         }
 
     return res;
+    }
+
+Scalar IntegratorMetaDynamics::biasPotentialDerivative(unsigned int cv, const std::vector<Scalar>& val)
+    {
+    Scalar delta = (m_variables[cv].m_cv_max - m_variables[cv].m_cv_min)/
+                   (m_variables[cv].m_num_points - 1);
+
+    if (val[cv] - delta < m_variables[cv].m_cv_min) 
+        {
+        // forward difference
+        std::vector<Scalar> val2 = val;
+        val2[cv] += delta;
+
+        Scalar y2 = interpolateBiasPotential(val2);
+        Scalar y1 = interpolateBiasPotential(val);
+        return (y2-y1)/delta;
+        }
+    else if (val[cv] + delta > m_variables[cv].m_cv_max)
+        {
+        // backward difference
+        std::vector<Scalar> val2 = val;
+        val2[cv] -= delta;
+        Scalar y1 = interpolateBiasPotential(val2);
+        Scalar y2 = interpolateBiasPotential(val);
+        return (y2-y1)/delta;
+        }
+    else
+        {
+        // central difference
+        std::vector<Scalar> val2 = val;
+        std::vector<Scalar> val1 = val;
+        val1[cv] -= delta;
+        val2[cv] += delta;
+        Scalar y1 = interpolateBiasPotential(val1);
+        Scalar y2 = interpolateBiasPotential(val2);
+        return (y2 - y1)/(Scalar(2.0)*delta);
+        }
     }
 
 void IntegratorMetaDynamics::setGrid(bool use_grid)
@@ -663,30 +651,36 @@ void IntegratorMetaDynamics::readGrid(const std::string& filename)
     file.close();
     } 
 
-void IntegratorMetaDynamics::testInterpolation()
+void IntegratorMetaDynamics::testInterpolation(const std::string& filename, const std::vector<unsigned int>& dim)
     {
-    unsigned int num_elements = m_grid_index.getNumElements();
     std::vector<unsigned int> coords(m_grid_index.getDimension()); 
 
     std::vector<Scalar> val(m_variables.size());
 
-    for (unsigned int i = 0; i < num_elements; i++)
+    IndexGrid test_grid(dim);
+    std::ofstream f;
+    f.open(filename.c_str(), std::ios::out);
+    for (unsigned int i = 0; i < test_grid.getNumElements(); i++)
         {
-        m_grid_index.getCoordinates(i, coords);
+        test_grid.getCoordinates(i, coords);
 
         // evaluate Gaussian on grid point
         for (unsigned int cv_idx = 0; cv_idx < m_variables.size(); ++cv_idx)
             {
-            Scalar delta = (m_variables[cv_idx].m_cv_max - m_variables[cv_idx].m_cv_min)/
-                           (m_variables[cv_idx].m_num_points - 1);
+            Scalar delta = (m_variables[cv_idx].m_cv_max - m_variables[cv_idx].m_cv_min)/ dim[cv_idx];
             val[cv_idx] = m_variables[cv_idx].m_cv_min + coords[cv_idx]*delta;
 
-            m_exec_conf->msg->notice(1) << val[cv_idx];
+            f << val[cv_idx];
             }
 
-        m_exec_conf->msg->notice(1) << std::endl;
+        f << " ";
 
-        m_exec_conf->msg->notice(1) << interpolateBiasPotential(val) << std::endl;;
+        f << interpolateBiasPotential(val);
+
+        for (unsigned int cv_idx = 0; cv_idx < m_variables.size(); ++cv_idx)
+            f << " " << biasPotentialDerivative(cv_idx, val);
+
+        f << std::endl;
         }
     }
 
