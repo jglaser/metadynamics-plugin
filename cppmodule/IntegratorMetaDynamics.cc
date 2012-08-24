@@ -251,12 +251,12 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
 
     bool is_root = true;
 
+    if (m_prof)
+        m_prof->push("Metadynamics");
+
 #ifdef ENABLE_MPI
     if (m_pdata->getDomainDecomposition())
         is_root = m_exec_conf->isMPIRoot();
-
-    if (m_prof)
-        m_prof->push("Metadynamics");
 
     if (is_root)
 #endif
