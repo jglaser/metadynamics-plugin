@@ -142,19 +142,55 @@ __global__ void kernel_final_reduce_fourier_modes(Scalar2* fourier_mode_partial,
                                        Scalar2 *fourier_modes,
                                        unsigned int n_wave)
     {
-    unsigned int i = blockDim.x * blockIdx.x + threadIdx.x;
-    if (i >= n_wave)
-        return;
+    extern __shared__ Scalar2 sdata[];
 
-    // do final reduction of fourier mode
-    Scalar2 fourier_mode = make_scalar2(0.0f,0.0f);
-    for (unsigned int j = 0; j < nblocks; j++)
-        { 
-        fourier_mode.x += fourier_mode_partial[j + i*nblocks].x;
-        fourier_mode.y += fourier_mode_partial[j + i*nblocks].y;
+    if (threadIdx.x == 0)
+        {
+        for (unsigned int j = 0; j < n_wave; j++)
+            fourier_modes[j] = make_scalar2(0.0,0.0);
         }
 
-    fourier_modes[i] = make_scalar2(fourier_mode.x, fourier_mode.y); 
+    for (int start = 0; start< nblocks; start += blockDim.x)
+        {
+        __syncthreads();
+        if (start + threadIdx.x < nblocks)
+            {
+            for (unsigned int j = 0; j < n_wave; ++j)
+                sdata[j*blockDim.x + threadIdx.x] = fourier_mode_partial[j*nblocks+start + threadIdx.x];
+            }
+        else
+            {
+            for (unsigned int j = 0; j < n_wave; ++j)
+                sdata[j*blockDim.x + threadIdx.x] = make_scalar2(0.0,0.0);
+            }
+
+        __syncthreads();
+
+        // reduce the sum
+        int offs = blockDim.x >> 1;
+        while (offs > 0)
+            {
+            if (threadIdx.x < offs)
+                {
+                for (unsigned int j = 0; j < n_wave; ++j)
+                    {
+                    sdata[j*blockDim.x + threadIdx.x].x += sdata[j*blockDim.x + threadIdx.x + offs].x;
+                    sdata[j*blockDim.x + threadIdx.x].y += sdata[j*blockDim.x + threadIdx.x + offs].y;
+                    }
+                }
+            offs >>= 1;
+            __syncthreads();
+            }
+
+        if (threadIdx.x == 0)
+            {
+            for (unsigned int j = 0; j < n_wave; ++j)
+                {
+                fourier_modes[j].x += sdata[j*blockDim.x].x;
+                fourier_modes[j].y += sdata[j*blockDim.x].y;
+                }
+            }
+        }
     }
 
 cudaError_t gpu_calculate_fourier_modes(unsigned int n_wave,
@@ -187,7 +223,8 @@ cudaError_t gpu_calculate_fourier_modes(unsigned int n_wave,
 
     // calculate final S(q) values 
     const unsigned int final_block_size = 512;
-    kernel_final_reduce_fourier_modes<<<n_wave/final_block_size + 1, final_block_size>>>(d_fourier_mode_partial,
+    shared_size = final_block_size*sizeof(Scalar2);
+    kernel_final_reduce_fourier_modes<<<1, final_block_size,shared_size>>>(d_fourier_mode_partial,
                                                                   n_blocks,
                                                                   d_fourier_modes,
                                                                   n_wave);
