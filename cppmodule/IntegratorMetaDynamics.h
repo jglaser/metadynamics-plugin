@@ -238,11 +238,19 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         std::string m_delimiter;                          //!< Delimiting string
 
         bool m_use_grid;                                  //!< True if we are using a grid
-        std::vector<Scalar> m_grid;                       //!< d-dimensional grid to store values of bias potential
+        GPUArray<Scalar> m_grid;                          //!< d-dimensional grid to store values of bias potential
         IndexGrid m_grid_index;                           //!< Indexer for the d-dimensional grid
 
         bool m_add_hills;                                 //!< True if hills should be added during the simulation
         std::string m_restart_filename;                   //!< Name of file to read restart information from
+
+#ifdef ENABLE_CUDA
+        GPUArray<unsigned int> m_lengths;                 //!< Grid dimensions in every direction
+        GPUArray<Scalar> m_cv_min;                        //!< Minimum grid values per CV
+        GPUArray<Scalar> m_cv_max;                        //!< Maximum grid values per CV
+        GPUArray<Scalar> m_sigma;                         //!< Standard deviations of Gaussians per CV
+        GPUArray<Scalar> m_current_val;                   //!< Current CV values array
+#endif
 
         //! Internal helper function to update the bias potential
         void updateBiasPotential(unsigned int timestep);
@@ -264,6 +272,13 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
 
         //! Helper function to read in data from grid file
         void readGrid(const std::string& filename);
+
+        //! Helper function to update the grid values
+        void updateGrid(std::vector<Scalar>& current_val, Scalar scal);
+
+#ifdef ENABLE_CUDA
+        void updateGridGPU(std::vector<Scalar>& current_val, Scalar scal);
+#endif
     };
 
 //! Export to python

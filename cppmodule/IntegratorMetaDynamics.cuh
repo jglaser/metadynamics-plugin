@@ -1,0 +1,10 @@
+cudaError_t gpu_update_grid(unsigned int num_elements,
+                     unsigned int *d_lengths,
+                     unsigned int dim,
+                     Scalar *d_current_val,
+                     Scalar *d_grid,
+                     Scalar *d_cv_min,
+                     Scalar *d_cv_max,
+                     Scalar *d_cv_sigma,
+                     Scalar scal,
+                     Scalar W);

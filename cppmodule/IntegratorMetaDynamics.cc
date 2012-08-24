@@ -17,6 +17,10 @@ using namespace std;
 #include <boost/mpi.hpp>
 #endif
 
+#ifdef ENABLE_CUDA
+#include "IntegratorMetaDynamics.cuh"
+#endif 
+
 using namespace boost::python;
 using namespace boost::filesystem;
 
@@ -121,6 +125,39 @@ void IntegratorMetaDynamics::prepRun(unsigned int timestep)
             for (it = m_cv_values.begin(); it != m_cv_values.end(); ++it)
                 it->clear();
 
+#ifdef ENABLE_CUDA
+            if (m_exec_conf->isCUDAEnabled())
+                {
+                // initialize GPU mirror values for collective variable data
+                GPUArray<Scalar> cv_min(m_variables.size(), m_exec_conf);
+                m_cv_min.swap(cv_min);
+
+                GPUArray<Scalar> cv_max(m_variables.size(), m_exec_conf);
+                m_cv_max.swap(cv_max);
+
+                GPUArray<Scalar> current_val(m_variables.size(), m_exec_conf);
+                m_current_val.swap(current_val);
+
+                GPUArray<unsigned int> lengths(m_variables.size(), m_exec_conf);
+                m_lengths.swap(lengths);
+
+                GPUArray<Scalar> sigma(m_variables.size(), m_exec_conf);
+                m_sigma.swap(sigma);
+    
+                ArrayHandle<Scalar> h_cv_min(m_cv_min, access_location::host, access_mode::overwrite);
+                ArrayHandle<Scalar> h_cv_max(m_cv_max, access_location::host, access_mode::overwrite);
+                ArrayHandle<unsigned int> h_lengths(m_lengths, access_location::host, access_mode::overwrite);
+                ArrayHandle<Scalar> h_sigma(m_sigma, access_location::host, access_mode::overwrite);
+                
+                for (unsigned int cv_idx = 0; cv_idx < m_variables.size(); cv_idx++)
+                    {
+                    h_cv_min.data[cv_idx] = m_variables[cv_idx].m_cv_min;
+                    h_cv_max.data[cv_idx] = m_variables[cv_idx].m_cv_max;
+                    h_sigma.data[cv_idx] = m_variables[cv_idx].m_sigma;
+                    h_lengths.data[cv_idx] = m_variables[cv_idx].m_num_points;
+                    }
+                }
+#endif
             m_num_update_steps = 0;
             m_bias_potential.clear();
             }
@@ -288,32 +325,15 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
                 // scaling factor for well-tempered MetaD
                 Scalar scal = exp(-V/m_T_shift);
 
-                // loop over grid
-                unsigned int len = m_grid_index.getNumElements();
-                std::vector<unsigned int> coords(m_grid_index.getDimension()); 
-                for (unsigned int grid_idx = 0; grid_idx < len; grid_idx++)
-                    {
-                    // obtain d-dimensional coordinates
-                    m_grid_index.getCoordinates(grid_idx, coords);
-
-                    Scalar gauss_exp(0.0);
-                    // evaluate Gaussian on grid point
-                    for (unsigned int cv_idx = 0; cv_idx < m_variables.size(); ++cv_idx)
-                        {
-                        Scalar delta = (m_variables[cv_idx].m_cv_max - m_variables[cv_idx].m_cv_min)/
-                                       (m_variables[cv_idx].m_num_points - 1);
-                        Scalar val = m_variables[cv_idx].m_cv_min + coords[cv_idx]*delta;
-                        Scalar sigma = m_variables[cv_idx].m_sigma;
-                        double d = val - current_val[cv_idx];
-                        gauss_exp += d*d/2.0/sigma/sigma;
-                        }
-                    double gauss = exp(-gauss_exp);
-
-                    // add Gaussian to grid
-                    m_grid[grid_idx] += m_W*scal*gauss;
-                    }
+#ifdef ENABLE_CUDA
+                if (m_exec_conf->isCUDAEnabled())
+                    updateGridGPU(current_val, scal);
+                else
+                    updateGrid(current_val, scal);
+#else
+                updateGrid(current_val, scal);
+#endif
                 }
-
             // calculate partial derivatives numerically
             for (unsigned int cv_idx = 0; cv_idx < m_variables.size(); ++cv_idx)
                 bias[cv_idx] = biasPotentialDerivative(cv_idx, current_val);
@@ -412,7 +432,9 @@ void IntegratorMetaDynamics::setupGrid()
         }
 
     m_grid_index.setLengths(lengths);
-    m_grid.resize(m_grid_index.getNumElements(),0.0);
+
+    GPUArray<Scalar> grid(m_grid_index.getNumElements(),m_exec_conf);
+    m_grid.swap(grid);
     } 
 
 Scalar IntegratorMetaDynamics::interpolateBiasPotential(const std::vector<Scalar>& val)
@@ -448,6 +470,9 @@ Scalar IntegratorMetaDynamics::interpolateBiasPotential(const std::vector<Scalar
     // construct multilinear interpolation
     unsigned int n_term = 1 << m_grid_index.getDimension();
     Scalar res(0.0);
+
+    ArrayHandle<Scalar> h_grid(m_grid, access_location::host, access_mode::read);
+
     for (unsigned int bits = 0; bits < n_term; ++bits)
         {
         std::vector<unsigned int> coords(m_grid_index.getDimension());
@@ -466,7 +491,7 @@ Scalar IntegratorMetaDynamics::interpolateBiasPotential(const std::vector<Scalar
                 }
             }
         
-        term *= m_grid[m_grid_index.getIndex(coords)];
+        term *= h_grid.data[m_grid_index.getIndex(coords)];
         res += term;
         }
 
@@ -584,6 +609,7 @@ void IntegratorMetaDynamics::dumpGrid(const std::string& filename)
     file << std::endl;
 
     // loop over grid
+    ArrayHandle<Scalar> h_grid(m_grid, access_location::host, access_mode::read);
     unsigned int len = m_grid_index.getNumElements();
     std::vector<unsigned int> coords(m_grid_index.getDimension()); 
     for (unsigned int grid_idx = 0; grid_idx < len; grid_idx++)
@@ -591,7 +617,7 @@ void IntegratorMetaDynamics::dumpGrid(const std::string& filename)
         // obtain d-dimensional coordinates
         m_grid_index.getCoordinates(grid_idx, coords);
 
-        file << setprecision(10) << m_grid[grid_idx];
+        file << setprecision(10) << h_grid.data[grid_idx];
 
         for (unsigned int cv_idx = 0; cv_idx < m_variables.size(); ++cv_idx)
             {
@@ -635,6 +661,7 @@ void IntegratorMetaDynamics::readGrid(const std::string& filename)
 
     unsigned int len = m_grid_index.getNumElements();
     std::vector<unsigned int> coords(m_grid_index.getDimension()); 
+    ArrayHandle<Scalar> h_grid(m_grid, access_location::host, access_mode::overwrite);
     for (unsigned int grid_idx = 0; grid_idx < len; grid_idx++)
         {
         if (! file.good())
@@ -645,11 +672,81 @@ void IntegratorMetaDynamics::readGrid(const std::string& filename)
      
         getline(file, line);
         istringstream iss(line);
-        iss >> m_grid[grid_idx];
+        iss >> h_grid.data[grid_idx];
         }
     
     file.close();
     } 
+
+void IntegratorMetaDynamics::updateGrid(std::vector<Scalar>& current_val, Scalar scal)
+    {
+    if (m_prof) m_prof->push("update grid");
+
+    ArrayHandle<Scalar> h_grid(m_grid, access_location::host, access_mode::readwrite);
+
+    // loop over grid
+    unsigned int len = m_grid_index.getNumElements();
+    std::vector<unsigned int> coords(m_grid_index.getDimension()); 
+    for (unsigned int grid_idx = 0; grid_idx < len; grid_idx++)
+        {
+        // obtain d-dimensional coordinates
+        m_grid_index.getCoordinates(grid_idx, coords);
+
+        Scalar gauss_exp(0.0);
+        // evaluate Gaussian on grid point
+        for (unsigned int cv_idx = 0; cv_idx < m_variables.size(); ++cv_idx)
+            {
+            Scalar delta = (m_variables[cv_idx].m_cv_max - m_variables[cv_idx].m_cv_min)/
+                           (m_variables[cv_idx].m_num_points - 1);
+            Scalar val = m_variables[cv_idx].m_cv_min + coords[cv_idx]*delta;
+            Scalar sigma = m_variables[cv_idx].m_sigma;
+            double d = val - current_val[cv_idx];
+            gauss_exp += d*d/2.0/sigma/sigma;
+            }
+        double gauss = exp(-gauss_exp);
+
+        // add Gaussian to grid
+        h_grid.data[grid_idx] += m_W*scal*gauss;
+        }
+
+    if (m_prof) m_prof->pop();
+    }
+
+#ifdef ENABLE_CUDA
+void IntegratorMetaDynamics::updateGridGPU(std::vector<Scalar>& current_val, Scalar scal)
+    {
+    if (m_prof)
+        m_prof->push(m_exec_conf, "update grid");
+
+        { 
+        // copy current CV values into array
+        ArrayHandle<Scalar> h_current_val(m_current_val, access_location::host, access_mode::overwrite);
+
+        for (unsigned int cv_idx = 0; cv_idx < m_variables.size(); cv_idx++)
+            h_current_val.data[cv_idx] = current_val[cv_idx];
+        }
+
+    ArrayHandle<Scalar> d_grid(m_grid, access_location::device, access_mode::readwrite);
+    ArrayHandle<unsigned int> d_lengths(m_lengths, access_location::device, access_mode::read);
+    ArrayHandle<Scalar> d_cv_min(m_cv_min, access_location::device, access_mode::read);
+    ArrayHandle<Scalar> d_cv_max(m_cv_max, access_location::device, access_mode::read);
+    ArrayHandle<Scalar> d_sigma(m_sigma, access_location::device, access_mode::read);
+    ArrayHandle<Scalar> d_current_val(m_current_val, access_location::device, access_mode::overwrite);
+
+    gpu_update_grid(m_grid_index.getNumElements(),
+                    d_lengths.data,
+                    m_variables.size(),
+                    d_current_val.data,
+                    d_grid.data,
+                    d_cv_min.data,
+                    d_cv_max.data,
+                    d_sigma.data,
+                    scal,
+                    m_W);
+
+    if (m_prof) m_prof->pop(m_exec_conf);
+    }
+#endif
 
 void IntegratorMetaDynamics::testInterpolation(const std::string& filename, const std::vector<unsigned int>& dim)
     {
