@@ -13,6 +13,8 @@
     \param d_mode Device array of per-type mode coefficients
     \param d_fourier_modes The fourier modes (Output device array)
     \param d_phases Device array of per-mode phase shifts
+    \param block_size Block size for fourier mode reduction
+    \param d_fourier_mode_scratch Scratch space for fourier mode reduction
 
     \returns the CUDA status
  */
@@ -22,7 +24,9 @@ cudaError_t gpu_calculate_fourier_modes(unsigned int n_wave,
                                  Scalar4 *d_postype,
                                  Scalar *d_mode,
                                  Scalar2 *d_fourier_modes,
-                                 Scalar *d_phases);
+                                 Scalar *d_phases,
+                                 unsigned int block_size,
+                                 Scalar2 *d_fourier_mode_scratch);
 
 /*! Calculates the negative derivative of the collective variable with
     respect to particle positions

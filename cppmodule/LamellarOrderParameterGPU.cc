@@ -22,6 +22,12 @@ LamellarOrderParameterGPU::LamellarOrderParameterGPU(boost::shared_ptr<SystemDef
     for (unsigned int i = 0; i < mode.size(); i++)
         h_gpu_mode.data[i] = mode[i];
 
+    m_block_size = 256;
+    unsigned int max_n_blocks = m_pdata->getMaxN()/m_block_size + 1;
+
+    GPUArray<Scalar2> fourier_mode_scratch(mode.size()*max_n_blocks, m_exec_conf);
+    m_fourier_mode_scratch.swap(fourier_mode_scratch);
+
     m_wave_vectors_updated = 0;
     }
 
@@ -39,11 +45,18 @@ void LamellarOrderParameterGPU::computeCV(unsigned int timestep)
         m_wave_vectors_updated = timestep;
         }
 
+    if (m_fourier_mode_scratch.getNumElements() != m_pdata->getMaxN())
+        {
+        unsigned int max_n_blocks = m_pdata->getMaxN()/m_block_size + 1;
+        m_fourier_mode_scratch.resize(max_n_blocks*m_fourier_modes.getNumElements());
+        }
+
         {
         ArrayHandle<Scalar3> d_wave_vectors(m_wave_vectors, access_location::device, access_mode::read);
         ArrayHandle<Scalar2> d_fourier_modes(m_fourier_modes, access_location::device, access_mode::overwrite);
         ArrayHandle<Scalar> d_gpu_mode(m_gpu_mode, access_location::device, access_mode::read);
         ArrayHandle<Scalar> d_phases(m_phases, access_location::device, access_mode::read);
+        ArrayHandle<Scalar2> d_fourier_mode_scratch(m_fourier_mode_scratch, access_location::device, access_mode::overwrite);
 
         // calculate Fourier modes
         gpu_calculate_fourier_modes(m_wave_vectors.getNumElements(),
@@ -52,7 +65,10 @@ void LamellarOrderParameterGPU::computeCV(unsigned int timestep)
                                     d_postype.data,
                                     d_gpu_mode.data,
                                     d_fourier_modes.data,
-                                    d_phases.data);
+                                    d_phases.data,
+                                    m_block_size,
+                                    d_fourier_mode_scratch.data
+                                    );
 
         CHECK_CUDA_ERROR();
         }

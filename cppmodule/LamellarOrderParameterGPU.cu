@@ -163,20 +163,17 @@ cudaError_t gpu_calculate_fourier_modes(unsigned int n_wave,
                                  Scalar4 *d_postype,
                                  Scalar *d_mode,
                                  Scalar2 *d_fourier_modes,
-                                 Scalar *d_phases
+                                 Scalar *d_phases,
+                                 unsigned int block_size,
+                                 Scalar2 *d_fourier_mode_partial
                                  )
     {
-    Scalar2 *d_fourier_mode_partial;
-
     cudaError_t cudaStatus;
 
-    const unsigned int block_size_x = 256;
-    unsigned int n_blocks_x = n_particles/block_size_x + 1;
+    unsigned int n_blocks = n_particles/block_size + 1;
 
-    cudaMalloc(&d_fourier_mode_partial, sizeof(Scalar2)*n_wave*n_blocks_x);
-
-    unsigned int shared_size = block_size_x * sizeof(Scalar2);
-    kernel_calculate_sq_partial<<<n_blocks_x, block_size_x, shared_size>>>(
+    unsigned int shared_size = block_size * sizeof(Scalar2);
+    kernel_calculate_sq_partial<<<n_blocks, block_size, shared_size>>>(
                n_particles,
                d_fourier_mode_partial,
                d_postype,
@@ -189,17 +186,15 @@ cudaError_t gpu_calculate_fourier_modes(unsigned int n_wave,
            return cudaStatus;
 
     // calculate final S(q) values 
-    const unsigned int block_size = 512;
-    kernel_final_reduce_fourier_modes<<<n_wave/block_size + 1, block_size>>>(d_fourier_mode_partial,
-                                                                  n_blocks_x,
+    const unsigned int final_block_size = 512;
+    kernel_final_reduce_fourier_modes<<<n_wave/final_block_size + 1, final_block_size>>>(d_fourier_mode_partial,
+                                                                  n_blocks,
                                                                   d_fourier_modes,
                                                                   n_wave);
                                                                   
 
     if (cudaStatus = cudaGetLastError())
         return cudaStatus;
-
-    cudaFree(d_fourier_mode_partial);
 
     return cudaSuccess;
     }
