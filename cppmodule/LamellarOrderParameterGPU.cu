@@ -126,53 +126,33 @@ __global__ void kernel_final_reduce_fourier_modes(Scalar* fourier_mode_partial,
     {
     extern __shared__ volatile Scalar smem[];
 
-    if (threadIdx.x == 0)
+    for (unsigned int j = 0; j < n_wave; ++j)
         {
-        for (unsigned int j = 0; j < n_wave; j++)
-            fourier_modes[j] = Scalar(0.0);
-        }
+        if (threadIdx.x == 0)
+           fourier_modes[j] = Scalar(0.0);
 
-    for (int start = 0; start< nblocks; start += blockDim.x)
-        {
-        __syncthreads();
-        if (start + threadIdx.x < nblocks)
+        for (int start = 0; start< nblocks; start += blockDim.x)
             {
-            for (unsigned int j = 0; j < n_wave; ++j)
-                {
-                smem[j*blockDim.x + threadIdx.x] = fourier_mode_partial[j*nblocks+start + threadIdx.x];
-                }
-            }
-        else
-            {
-            for (unsigned int j = 0; j < n_wave; ++j)
-                {
-                smem[j*blockDim.x + threadIdx.x] = Scalar(0.0);
-                }
-            }
-
-        __syncthreads();
-
-        // reduce the sum
-        int offs = blockDim.x >> 1;
-        while (offs > 0)
-            {
-            if (threadIdx.x < offs)
-                {
-                for (unsigned int j = 0; j < n_wave; ++j)
-                    {
-                    smem[j*blockDim.x + threadIdx.x] += smem[j*blockDim.x + threadIdx.x + offs];
-                    }
-                }
-            offs >>= 1;
             __syncthreads();
-            }
+            if (start + threadIdx.x < nblocks)
+                smem[threadIdx.x] = fourier_mode_partial[j*nblocks+start + threadIdx.x];
+            else
+                smem[threadIdx.x] = Scalar(0.0);
 
-         if (threadIdx.x == 0)
-            {
-            for (unsigned int j = 0; j < n_wave; ++j)
+            __syncthreads();
+
+            // reduce the sum
+            int offs = blockDim.x >> 1;
+            while (offs > 0)
                 {
-                fourier_modes[j] += smem[j*blockDim.x];
+                if (threadIdx.x < offs)
+                    smem[threadIdx.x] += smem[threadIdx.x + offs];
+                offs >>= 1;
+                __syncthreads();
                 }
+
+             if (threadIdx.x == 0)
+                fourier_modes[j] += smem[0];
             }
         }
     }
@@ -207,7 +187,7 @@ cudaError_t gpu_calculate_fourier_modes(unsigned int n_wave,
 
     // calculate final S(q) values 
     const unsigned int final_block_size = 512;
-    shared_size = final_block_size*n_wave*sizeof(Scalar);
+    shared_size = final_block_size*sizeof(Scalar);
     kernel_final_reduce_fourier_modes<<<1, final_block_size,shared_size>>>(d_fourier_mode_partial,
                                                                   n_blocks,
                                                                   d_fourier_modes,
