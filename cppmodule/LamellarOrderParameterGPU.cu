@@ -223,7 +223,7 @@ cudaError_t gpu_calculate_fourier_modes(unsigned int n_wave,
 
     // calculate final S(q) values 
     const unsigned int final_block_size = 512;
-    shared_size = final_block_size*sizeof(Scalar2);
+    shared_size = final_block_size*n_wave*sizeof(Scalar2);
     kernel_final_reduce_fourier_modes<<<1, final_block_size,shared_size>>>(d_fourier_mode_partial,
                                                                   n_blocks,
                                                                   d_fourier_modes,
