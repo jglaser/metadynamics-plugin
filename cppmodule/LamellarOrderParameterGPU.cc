@@ -22,7 +22,7 @@ LamellarOrderParameterGPU::LamellarOrderParameterGPU(boost::shared_ptr<SystemDef
     for (unsigned int i = 0; i < mode.size(); i++)
         h_gpu_mode.data[i] = mode[i];
 
-    m_block_size = 256;
+    m_block_size = 512;
     unsigned int max_n_blocks = m_pdata->getMaxN()/m_block_size + 1;
 
     GPUArray<Scalar2> fourier_mode_scratch(mode.size()*max_n_blocks, m_exec_conf);

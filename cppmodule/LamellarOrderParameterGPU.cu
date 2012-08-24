@@ -142,7 +142,7 @@ __global__ void kernel_final_reduce_fourier_modes(Scalar2* fourier_mode_partial,
                                        Scalar2 *fourier_modes,
                                        unsigned int n_wave)
     {
-    extern __shared__ Scalar2 sdata[];
+    extern __shared__ volatile Scalar2 smem[];
 
     if (threadIdx.x == 0)
         {
@@ -156,12 +156,18 @@ __global__ void kernel_final_reduce_fourier_modes(Scalar2* fourier_mode_partial,
         if (start + threadIdx.x < nblocks)
             {
             for (unsigned int j = 0; j < n_wave; ++j)
-                sdata[j*blockDim.x + threadIdx.x] = fourier_mode_partial[j*nblocks+start + threadIdx.x];
+                {
+                smem[j*blockDim.x + threadIdx.x].x = fourier_mode_partial[j*nblocks+start + threadIdx.x].x;
+                smem[j*blockDim.x + threadIdx.x].y = fourier_mode_partial[j*nblocks+start + threadIdx.x].y;
+                }
             }
         else
             {
             for (unsigned int j = 0; j < n_wave; ++j)
-                sdata[j*blockDim.x + threadIdx.x] = make_scalar2(0.0,0.0);
+                {
+                smem[j*blockDim.x + threadIdx.x].x = Scalar(0.0);
+                smem[j*blockDim.x + threadIdx.x].y = Scalar(0.0);
+                }
             }
 
         __syncthreads();
@@ -174,20 +180,20 @@ __global__ void kernel_final_reduce_fourier_modes(Scalar2* fourier_mode_partial,
                 {
                 for (unsigned int j = 0; j < n_wave; ++j)
                     {
-                    sdata[j*blockDim.x + threadIdx.x].x += sdata[j*blockDim.x + threadIdx.x + offs].x;
-                    sdata[j*blockDim.x + threadIdx.x].y += sdata[j*blockDim.x + threadIdx.x + offs].y;
+                    smem[j*blockDim.x + threadIdx.x].x += smem[j*blockDim.x + threadIdx.x + offs].x;
+                    smem[j*blockDim.x + threadIdx.x].y += smem[j*blockDim.x + threadIdx.x + offs].y;
                     }
                 }
             offs >>= 1;
             __syncthreads();
             }
 
-        if (threadIdx.x == 0)
+         if (threadIdx.x == 0)
             {
             for (unsigned int j = 0; j < n_wave; ++j)
                 {
-                fourier_modes[j].x += sdata[j*blockDim.x].x;
-                fourier_modes[j].y += sdata[j*blockDim.x].y;
+                fourier_modes[j].x += smem[j*blockDim.x].x;
+                fourier_modes[j].y += smem[j*blockDim.x].y;
                 }
             }
         }
