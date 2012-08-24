@@ -23,8 +23,12 @@ class LamellarOrderParameterGPU : public LamellarOrderParameter
 
         virtual void computeForces(unsigned int timestep);
 
+    protected:
+        // calculates current CV value
+        virtual void computeCV(unsigned int timestep);
     private:
         GPUArray<Scalar> m_gpu_mode;       //!< Factors multiplying per-type densities to obtain scalar quantity
+        unsigned int m_wave_vectors_updated; //!< Timestep wave vectors were last updated
     };
 
 void export_LamellarOrderParameterGPU();

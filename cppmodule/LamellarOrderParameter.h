@@ -78,7 +78,7 @@ class LamellarOrderParameter : public CollectiveVariable
          */
         Scalar getCurrentValue(unsigned int timestep)
             {
-            this->compute(timestep);
+            this->computeCV(timestep);
             return m_sum;
             } 
 
@@ -95,6 +95,9 @@ class LamellarOrderParameter : public CollectiveVariable
 
         //! Helper function to update the wave vectors
         void calculateWaveVectors();
+
+        //! Calculates the current value of the collective variable
+        virtual void computeCV(unsigned int timestep);
 
     private:
         //! Helper function to calculate the Fourier modes

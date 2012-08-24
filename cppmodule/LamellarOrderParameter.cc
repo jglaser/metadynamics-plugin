@@ -48,22 +48,52 @@ LamellarOrderParameter::LamellarOrderParameter(boost::shared_ptr<SystemDefinitio
     memset(h_virial.data, 0, sizeof(Scalar)*6*m_virial.getPitch());
     }
 
-void LamellarOrderParameter::computeForces(unsigned int timestep)
+void LamellarOrderParameter::computeCV(unsigned int timestep)
     {
     if (m_prof)
-        m_prof->push("cv lamellar");
+        m_prof->push("Lamellar");
 
     calculateWaveVectors();
 
     calculateFourierModes();
 
-    ArrayHandle<Scalar4> h_postype(m_pdata->getPositions(), access_location::host, access_mode::read);
-
-    ArrayHandle<Scalar4> h_force(m_force, access_location::host, access_mode::overwrite);
     ArrayHandle<Scalar2> h_fourier_modes(m_fourier_modes, access_location::host, access_mode::read);
 
-    ArrayHandle<Scalar3> h_wave_vectors(m_wave_vectors, access_location::host, access_mode::read);
+    Scalar N = m_pdata->getNGlobal();
 
+    // Calculate value of collective variable (sum of real parts of fourier modes)
+    Scalar sum = 0.0;
+    for (unsigned k = 0; k < m_fourier_modes.getNumElements(); k++)
+        {
+        Scalar2 fourier_mode = h_fourier_modes.data[k];
+        sum += fourier_mode.x;
+        }
+
+    sum /= N;
+
+#ifdef ENABLE_MPI
+    // reduce value of collective variable on root processor
+    if (m_pdata->getDomainDecomposition())
+        boost::mpi::reduce(*m_exec_conf->getMPICommunicator(), sum, m_sum, std::plus<Scalar>(), 0);
+    else
+#endif
+        m_sum = sum;
+
+    if (m_prof)
+        m_prof->pop();
+    }
+
+
+void LamellarOrderParameter::computeForces(unsigned int timestep)
+    {
+    if (m_prof)
+        m_prof->push("Lamellar");
+
+    calculateWaveVectors();
+
+    ArrayHandle<Scalar4> h_postype(m_pdata->getPositions(), access_location::host, access_mode::read);
+    ArrayHandle<Scalar4> h_force(m_force, access_location::host, access_mode::overwrite);
+    ArrayHandle<Scalar3> h_wave_vectors(m_wave_vectors, access_location::host, access_mode::read);
     ArrayHandle<Scalar> h_phases(m_phases, access_location::host, access_mode::read);
 
     Scalar3 L = m_pdata->getGlobalBox().getL();
@@ -102,24 +132,6 @@ void LamellarOrderParameter::computeForces(unsigned int timestep)
 
         h_force.data[idx] = force_energy;
         }
-
-    // Calculate value of collective variable (sum of real parts of fourier modes)
-    Scalar sum = 0.0;
-    for (unsigned k = 0; k < m_fourier_modes.getNumElements(); k++)
-        {
-        Scalar2 fourier_mode = h_fourier_modes.data[k];
-        sum += fourier_mode.x;
-        }
-
-    sum /= N;
-
-#ifdef ENABLE_MPI
-    // reduce value of collective variable on root processor
-    if (m_pdata->getDomainDecomposition())
-        boost::mpi::reduce(*m_exec_conf->getMPICommunicator(), sum, m_sum, std::plus<Scalar>(), 0);
-    else
-#endif
-        m_sum = sum;
 
     if (m_prof)
         m_prof->pop();
@@ -171,7 +183,7 @@ Scalar LamellarOrderParameter::getLogValue(const std::string& quantity, unsigned
     {
     if (quantity == m_log_name)
         {
-        this->compute(timestep);
+        computeCV(timestep);
         return m_sum;
         }
     else

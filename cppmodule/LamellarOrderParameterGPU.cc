@@ -22,16 +22,22 @@ LamellarOrderParameterGPU::LamellarOrderParameterGPU(boost::shared_ptr<SystemDef
     for (unsigned int i = 0; i < mode.size(); i++)
         h_gpu_mode.data[i] = mode[i];
 
+    m_wave_vectors_updated = 0;
     }
 
-void LamellarOrderParameterGPU::computeForces(unsigned int timestep)
+void LamellarOrderParameterGPU::computeCV(unsigned int timestep)
     {
     if (m_prof)
-        m_prof->push("cv lamellar");
+        m_prof->push(m_exec_conf, "Lamellar");
+
     ArrayHandle<Scalar4> d_postype(m_pdata->getPositions(), access_location::device, access_mode::read);
 
     // initialize wave vectors
-    calculateWaveVectors();
+    if (m_wave_vectors_updated < timestep)
+        {
+        calculateWaveVectors();
+        m_wave_vectors_updated = timestep;
+        }
 
         {
         ArrayHandle<Scalar3> d_wave_vectors(m_wave_vectors, access_location::device, access_mode::read);
@@ -48,20 +54,6 @@ void LamellarOrderParameterGPU::computeForces(unsigned int timestep)
                                     d_fourier_modes.data,
                                     d_phases.data);
 
-        CHECK_CUDA_ERROR();
-
-        ArrayHandle<Scalar4> d_force(m_force, access_location::device, access_mode::overwrite);
-
-        // calculate forces
-        gpu_compute_sq_forces(m_pdata->getN(),
-                             d_postype.data,
-                             d_force.data,
-                             m_wave_vectors.getNumElements(),
-                             d_wave_vectors.data,
-                             d_gpu_mode.data,
-                             m_pdata->getNGlobal(),
-                             m_bias,
-                             d_phases.data);
         CHECK_CUDA_ERROR();
         }
 
@@ -88,7 +80,45 @@ void LamellarOrderParameterGPU::computeForces(unsigned int timestep)
         m_sum = sum;
 
     if (m_prof)
-        m_prof->pop();
+        m_prof->pop(m_exec_conf);
+    }
+
+
+void LamellarOrderParameterGPU::computeForces(unsigned int timestep)
+    {
+    if (m_prof)
+        m_prof->push(m_exec_conf, "Lamellar");
+
+    ArrayHandle<Scalar4> d_postype(m_pdata->getPositions(), access_location::device, access_mode::read);
+
+    // initialize wave vectors
+    if (m_wave_vectors_updated < timestep)
+        {
+        calculateWaveVectors();
+        m_wave_vectors_updated = timestep;
+        }
+
+        {
+        ArrayHandle<Scalar3> d_wave_vectors(m_wave_vectors, access_location::device, access_mode::read);
+        ArrayHandle<Scalar> d_gpu_mode(m_gpu_mode, access_location::device, access_mode::read);
+        ArrayHandle<Scalar> d_phases(m_phases, access_location::device, access_mode::read);
+        ArrayHandle<Scalar4> d_force(m_force, access_location::device, access_mode::overwrite);
+
+        // calculate forces
+        gpu_compute_sq_forces(m_pdata->getN(),
+                             d_postype.data,
+                             d_force.data,
+                             m_wave_vectors.getNumElements(),
+                             d_wave_vectors.data,
+                             d_gpu_mode.data,
+                             m_pdata->getNGlobal(),
+                             m_bias,
+                             d_phases.data);
+        CHECK_CUDA_ERROR();
+        }
+
+    if (m_prof)
+        m_prof->pop(m_exec_conf);
 
     }
 
