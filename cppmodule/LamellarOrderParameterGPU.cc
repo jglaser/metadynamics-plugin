@@ -25,7 +25,7 @@ LamellarOrderParameterGPU::LamellarOrderParameterGPU(boost::shared_ptr<SystemDef
     m_block_size = 512;
     unsigned int max_n_blocks = m_pdata->getMaxN()/m_block_size + 1;
 
-    GPUArray<Scalar2> fourier_mode_scratch(mode.size()*max_n_blocks, m_exec_conf);
+    GPUArray<Scalar> fourier_mode_scratch(mode.size()*max_n_blocks, m_exec_conf);
     m_fourier_mode_scratch.swap(fourier_mode_scratch);
 
     m_wave_vectors_updated = 0;
@@ -53,10 +53,10 @@ void LamellarOrderParameterGPU::computeCV(unsigned int timestep)
 
         {
         ArrayHandle<Scalar3> d_wave_vectors(m_wave_vectors, access_location::device, access_mode::read);
-        ArrayHandle<Scalar2> d_fourier_modes(m_fourier_modes, access_location::device, access_mode::overwrite);
+        ArrayHandle<Scalar> d_fourier_modes(m_fourier_modes, access_location::device, access_mode::overwrite);
         ArrayHandle<Scalar> d_gpu_mode(m_gpu_mode, access_location::device, access_mode::read);
         ArrayHandle<Scalar> d_phases(m_phases, access_location::device, access_mode::read);
-        ArrayHandle<Scalar2> d_fourier_mode_scratch(m_fourier_mode_scratch, access_location::device, access_mode::overwrite);
+        ArrayHandle<Scalar> d_fourier_mode_scratch(m_fourier_mode_scratch, access_location::device, access_mode::overwrite);
 
         // calculate Fourier modes
         gpu_calculate_fourier_modes(m_wave_vectors.getNumElements(),
@@ -73,17 +73,14 @@ void LamellarOrderParameterGPU::computeCV(unsigned int timestep)
         CHECK_CUDA_ERROR();
         }
 
-    ArrayHandle<Scalar2> h_fourier_modes(m_fourier_modes, access_location::host, access_mode::read);
+    ArrayHandle<Scalar> h_fourier_modes(m_fourier_modes, access_location::host, access_mode::read);
     Scalar3 L = m_pdata->getGlobalBox().getL();
     Scalar N = m_pdata->getNGlobal();
 
     // calculate value of collective variable (sum of real parts of fourier modes)
     Scalar sum = 0.0;
     for (unsigned k = 0; k < m_fourier_modes.getNumElements(); k++)
-        {
-        Scalar2 fourier_mode = h_fourier_modes.data[k];
-        sum += fourier_mode.x;
-        }
+        sum += h_fourier_modes.data[k];
 
     sum /= N;
 

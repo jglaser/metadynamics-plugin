@@ -23,10 +23,10 @@ cudaError_t gpu_calculate_fourier_modes(unsigned int n_wave,
                                  unsigned int n_particles,
                                  Scalar4 *d_postype,
                                  Scalar *d_mode,
-                                 Scalar2 *d_fourier_modes,
+                                 Scalar *d_fourier_modes,
                                  Scalar *d_phases,
                                  unsigned int block_size,
-                                 Scalar2 *d_fourier_mode_scratch);
+                                 Scalar *d_fourier_mode_scratch);
 
 /*! Calculates the negative derivative of the collective variable with
     respect to particle positions

@@ -90,7 +90,7 @@ class LamellarOrderParameter : public CollectiveVariable
         Scalar m_sum;                         //!< The current value of the collective variable
 
         GPUArray<Scalar3> m_wave_vectors;     //!< GPUArray of wave vectors
-        GPUArray<Scalar2> m_fourier_modes;    //!< Fourier modes
+        GPUArray<Scalar> m_fourier_modes;    //!< Fourier modes
         GPUArray<Scalar> m_phases;            //!< Phase shifts
 
         //! Helper function to update the wave vectors
