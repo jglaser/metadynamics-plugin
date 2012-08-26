@@ -382,7 +382,8 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
 #ifdef ENABLE_MPI
     // broadcast bias factors
     if (m_pdata->getDomainDecomposition())
-        boost::mpi::broadcast(*m_exec_conf->getMPICommunicator(), bias, 0);
+        MPI_Bcast(&bias[0], bias.size(), MPI_FLOAT, 0, *m_exec_conf->getMPICommunicator());
+
 #endif
 
     // update current bias potential derivative for every collective variable
@@ -651,40 +652,6 @@ void IntegratorMetaDynamics::readGrid(const std::string& filename)
     file.close();
     } 
 
-void IntegratorMetaDynamics::testInterpolation(const std::string& filename, const std::vector<unsigned int>& dim)
-    {
-    std::vector<unsigned int> coords(m_grid_index.getDimension()); 
-
-    std::vector<Scalar> val(m_variables.size());
-
-    IndexGrid test_grid(dim);
-    std::ofstream f;
-    f.open(filename.c_str(), std::ios::out);
-    for (unsigned int i = 0; i < test_grid.getNumElements(); i++)
-        {
-        test_grid.getCoordinates(i, coords);
-
-        // evaluate Gaussian on grid point
-        for (unsigned int cv_idx = 0; cv_idx < m_variables.size(); ++cv_idx)
-            {
-            Scalar delta = (m_variables[cv_idx].m_cv_max - m_variables[cv_idx].m_cv_min)/ dim[cv_idx];
-            val[cv_idx] = m_variables[cv_idx].m_cv_min + coords[cv_idx]*delta;
-
-            f << val[cv_idx];
-            }
-
-        f << " ";
-
-        f << interpolateBiasPotential(val);
-
-        for (unsigned int cv_idx = 0; cv_idx < m_variables.size(); ++cv_idx)
-            f << " " << biasPotentialDerivative(cv_idx, val);
-
-        f << std::endl;
-        }
-    }
-
-
 void export_IntegratorMetaDynamics()
     {
     class_<IntegratorMetaDynamics, boost::shared_ptr<IntegratorMetaDynamics>, bases<IntegratorTwoStep>, boost::noncopyable>
@@ -703,6 +670,5 @@ void export_IntegratorMetaDynamics()
     .def("dumpGrid", &IntegratorMetaDynamics::dumpGrid)
     .def("restartFromGridFile", &IntegratorMetaDynamics::restartFromGridFile)
     .def("setAddHills", &IntegratorMetaDynamics::setAddHills)
-    .def("testInterpolation", &IntegratorMetaDynamics::testInterpolation)
     ;
     }

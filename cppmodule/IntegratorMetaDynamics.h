@@ -212,9 +212,6 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
             m_add_hills = add_hills;
             }
 
-        //! Function to test the interpolation
-        void testInterpolation(const std::string& filename, const std::vector<unsigned int>& dim);
-
     private:
         Scalar m_W;                                       //!< Height of Gaussians
         Scalar m_T_shift;                                 //!< Temperature shift
