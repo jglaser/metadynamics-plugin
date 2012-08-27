@@ -43,7 +43,11 @@ IntegratorMetaDynamics::IntegratorMetaDynamics(boost::shared_ptr<SystemDefinitio
       m_delimiter("\t"),
       m_use_grid(use_grid),
       m_add_hills(add_hills),
-      m_restart_filename("")
+      m_restart_filename(""),
+      m_grid_fname1(""),
+      m_grid_fname2(""),
+      m_grid_period(0),
+      m_cur_file(0)
     {
     assert(m_T_shift>0);
     assert(m_W > 0);
@@ -353,7 +357,7 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
             }
 
         // write hills information
-        if (m_is_initialized && (m_num_update_steps % m_stride == 0) && m_add_hills)
+        if (m_is_initialized && (m_num_update_steps % m_stride == 0) && m_add_hills && m_file.is_open())
             {
             Scalar W = m_W*exp(-m_curr_bias_potential/m_T_shift);
             m_file << setprecision(10) << timestep << m_delimiter;
@@ -373,6 +377,18 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
        
         if (m_add_hills && (! m_use_grid) && (m_num_update_steps % m_stride == 0))
             m_bias_potential.push_back(m_curr_bias_potential);
+
+        // dump grid information if required using alternating scheme
+        if (m_grid_period && (timestep % m_grid_period == 0))
+            {
+            if (m_grid_fname2 != "")
+                {
+                writeGrid(m_cur_file ? m_grid_fname2 : m_grid_fname1);
+                m_cur_file = m_cur_file ? 0 : 1;
+                }
+            else
+                writeGrid(m_grid_fname1);
+            }
 
         // increment number of updated steps
         m_num_update_steps++;
@@ -549,8 +565,24 @@ void IntegratorMetaDynamics::setGrid(bool use_grid)
         }
     }
 
-void IntegratorMetaDynamics::dumpGrid(const std::string& filename)
+void IntegratorMetaDynamics::dumpGrid(const std::string& filename1, const std::string& filename2, unsigned int period)
     {
+    if (period == 0)
+        {
+        // dump grid immediately
+        writeGrid(filename1);
+        return;
+        }
+
+    m_grid_period = period;
+    m_grid_fname1 = filename1;
+    m_grid_fname2 = filename2;
+    }
+
+void IntegratorMetaDynamics::writeGrid(const std::string& filename)
+    {
+    std::ofstream file;
+
 #ifdef ENABLE_MPI
     // Only on root processor
     if (m_pdata->getDomainDecomposition())
@@ -562,9 +594,8 @@ void IntegratorMetaDynamics::dumpGrid(const std::string& filename)
         m_exec_conf->msg->error() << "integrate.mode_metadynamics: Grid information can only be dumped if grid is enabled.";
         throw std::runtime_error("Error dumping grid.");
         }
- 
-    std::ofstream file;
 
+ 
     // open output file
     file.open(filename.c_str(), ios_base::out);
 

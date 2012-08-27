@@ -190,9 +190,11 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
             }
 
         /*! Output the grid to a file
-            \param filename Name of file to dump grid to
+            \param filename1 Name of first file to dump grid to
+            \param filename2 Name of second file to dump grid to
+            \param period Number of timesteps between dumps
          */
-        void dumpGrid(const std::string& filename);
+        void dumpGrid(const std::string& filename1, const std::string& filename2, unsigned int period);
 
         /*! Restart from a grid file. Upon running the simulation,
             the information will be read in.
@@ -241,6 +243,11 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         bool m_add_hills;                                 //!< True if hills should be added during the simulation
         std::string m_restart_filename;                   //!< Name of file to read restart information from
 
+        std::string m_grid_fname1;                        //!< File name for first file of periodic dumping of grid
+        std::string m_grid_fname2;                        //!< File name for second file of periodic dumping of grid
+        unsigned int m_grid_period;                       //!< Number of timesteps between dumping of grid data
+        unsigned int m_cur_file;                          //!< Current index of file we are accessing (0 or 1)
+
         //! Internal helper function to update the bias potential
         void updateBiasPotential(unsigned int timestep);
 
@@ -261,6 +268,9 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
 
         //! Helper function to read in data from grid file
         void readGrid(const std::string& filename);
+
+        //! Helper function to write grid data
+        void writeGrid(const std::string& filename);
     };
 
 //! Export to python

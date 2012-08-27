@@ -242,13 +242,19 @@ class mode_metadynamics(_integrator):
     # If a grid has been previously defined for the collective variables,
     # this method dumps the values of the bias potential evaluated on the grid
     # points to a file, for later restart or analysis. This method can
-    # be used after the simulation has been run.
+    # be used to dump the grid during the simulation or at any time before
+    # or after the simulation.
     #
-    # \param filename The file to dump the information to
-    def dump_grid(self, filename):
+    # \param filename1 First file to dump the grid to
+    # \param filename2 Second file to dump the grid to, if a period has been
+    #                  set. If this parameter is given, files are dumped
+    #                  in an alternating fashion.
+    # \param period    Number of timesteps between periodic dumps. If zero
+    #                  (default), file is written when the command is called.
+    def dump_grid(self, filename1, filename2="", period=0):
         util.print_status_line();
 
-        self.cpp_integrator.dumpGrid(filename)
+        self.cpp_integrator.dumpGrid(filename1,filename2, period)
 
     ## Restart from a previously saved grid file
     # This command may be used before starting the simulation with the 
