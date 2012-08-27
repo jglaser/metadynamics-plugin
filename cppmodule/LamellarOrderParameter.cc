@@ -93,8 +93,7 @@ void LamellarOrderParameter::computeForces(unsigned int timestep)
     ArrayHandle<Scalar3> h_wave_vectors(m_wave_vectors, access_location::host, access_mode::read);
     ArrayHandle<Scalar> h_phases(m_phases, access_location::host, access_mode::read);
 
-    Scalar3 L = m_pdata->getGlobalBox().getL();
-    Scalar N = m_pdata->getNGlobal();
+    unsigned int N = m_pdata->getNGlobal();
 
     for (unsigned int idx = 0; idx < m_pdata->getN(); idx++)
         {
@@ -123,9 +122,9 @@ void LamellarOrderParameter::computeForces(unsigned int timestep)
         force_energy.y *= m_bias;
         force_energy.z *= m_bias;
 
-        force_energy.x /= N;
-        force_energy.y /= N;
-        force_energy.z /= N;
+        force_energy.x /= (Scalar)N;
+        force_energy.y /= (Scalar)N;
+        force_energy.z /= (Scalar)N;
 
         h_force.data[idx] = force_energy;
         }

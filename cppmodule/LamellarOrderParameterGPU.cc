@@ -74,15 +74,14 @@ void LamellarOrderParameterGPU::computeCV(unsigned int timestep)
         }
 
     ArrayHandle<Scalar> h_fourier_modes(m_fourier_modes, access_location::host, access_mode::read);
-    Scalar3 L = m_pdata->getGlobalBox().getL();
-    Scalar N = m_pdata->getNGlobal();
+    unsigned int N = m_pdata->getNGlobal();
 
     // calculate value of collective variable (sum of real parts of fourier modes)
     Scalar sum = 0.0;
     for (unsigned k = 0; k < m_fourier_modes.getNumElements(); k++)
         sum += h_fourier_modes.data[k];
 
-    sum /= N;
+    sum /= (Scalar) N;
 
 #ifdef ENABLE_MPI
     // reduce value of collective variable on root processor

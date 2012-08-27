@@ -247,7 +247,7 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
         current_val.push_back(val);
         }
 
-        std::vector<double> bias(m_variables.size(), 0.0); 
+    std::vector<Scalar> bias(m_variables.size(), 0.0); 
 
     bool is_root = true;
 
@@ -304,10 +304,10 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
                                        (m_variables[cv_idx].m_num_points - 1);
                         Scalar val = m_variables[cv_idx].m_cv_min + coords[cv_idx]*delta;
                         Scalar sigma = m_variables[cv_idx].m_sigma;
-                        double d = val - current_val[cv_idx];
+                        Scalar d = val - current_val[cv_idx];
                         gauss_exp += d*d/2.0/sigma/sigma;
                         }
-                    double gauss = exp(-gauss_exp);
+                    Scalar gauss = exp(-gauss_exp);
 
                     // add Gaussian to grid
                     m_grid[grid_idx] += m_W*scal*gauss;
@@ -324,7 +324,7 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
             // sum up all Gaussians accumulated until now
             for (unsigned int gauss_idx = 0; gauss_idx < m_bias_potential.size(); ++gauss_idx)
                 {
-                double gauss_exp = 0.0;
+                Scalar gauss_exp = 0.0;
                 // calculate Gaussian contribution from t'=gauss_idx*m_stride
                 std::vector<Scalar>::iterator val_it;
                 for (val_it = current_val.begin(); val_it != current_val.end(); ++val_it)
@@ -332,10 +332,10 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
                     Scalar val = *val_it;
                     unsigned int cv_index = val_it - current_val.begin();
                     Scalar sigma = m_variables[cv_index].m_sigma;
-                    double delta = val - m_cv_values[cv_index][gauss_idx];
+                    Scalar delta = val - m_cv_values[cv_index][gauss_idx];
                     gauss_exp += delta*delta/2.0/sigma/sigma;
                     }
-                double gauss = exp(-gauss_exp);
+                Scalar gauss = exp(-gauss_exp);
 
                 // calculate partial derivatives
                 std::vector<CollectiveVariableItem>::iterator cv_item;
@@ -382,7 +382,7 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
 #ifdef ENABLE_MPI
     // broadcast bias factors
     if (m_pdata->getDomainDecomposition())
-        MPI_Bcast(&bias[0], bias.size(), MPI_FLOAT, 0, *m_exec_conf->getMPICommunicator());
+        MPI_Bcast(&bias.front(), bias.size(), MPI_FLOAT, 0, *m_exec_conf->getMPICommunicator());
 
 #endif
 
