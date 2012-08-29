@@ -254,7 +254,7 @@ class mode_metadynamics(_integrator):
     def dump_grid(self, filename1, filename2="", period=0):
         util.print_status_line();
 
-        self.cpp_integrator.dumpGrid(filename1,filename2, period)
+        self.cpp_integrator.dumpGrid(filename1,filename2, int(period))
 
     ## Restart from a previously saved grid file
     # This command may be used before starting the simulation with the 
