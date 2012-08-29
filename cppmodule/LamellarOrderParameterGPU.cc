@@ -4,6 +4,7 @@
 #include "LamellarOrderParameterGPU.h"
 
 #ifdef ENABLE_CUDA
+
 #include "LamellarOrderParameterGPU.cuh"
 
 LamellarOrderParameterGPU::LamellarOrderParameterGPU(boost::shared_ptr<SystemDefinition> sysdef,
@@ -86,7 +87,7 @@ void LamellarOrderParameterGPU::computeCV(unsigned int timestep)
 #ifdef ENABLE_MPI
     // reduce value of collective variable on root processor
     if (m_pdata->getDomainDecomposition())
-        boost::mpi::reduce(*m_exec_conf->getMPICommunicator(), sum, m_sum, std::plus<Scalar>(), 0);
+        MPI_Reduce(&sum,& m_sum,1, MPI_HOOMD_SCALAR, MPI_SUM, 0, m_exec_conf->getMPICommunicator());
     else
 #endif
         m_sum = sum;

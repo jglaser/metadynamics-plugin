@@ -13,10 +13,6 @@ using namespace std;
 #include <boost/python.hpp>
 #include <boost/filesystem.hpp>
 
-#ifdef ENABLE_MPI
-#include <boost/mpi.hpp>
-#endif
-
 using namespace boost::python;
 using namespace boost::filesystem;
 
@@ -102,7 +98,7 @@ void IntegratorMetaDynamics::prepRun(unsigned int timestep)
     bool is_root = true;
 
     if (m_pdata->getDomainDecomposition())
-        is_root = m_exec_conf->isMPIRoot();
+        is_root = m_exec_conf->isRoot();
 
     if (is_root)
 #endif
@@ -145,7 +141,7 @@ void IntegratorMetaDynamics::prepRun(unsigned int timestep)
                 }
             }
 
-        } // endif isMPIRoot()
+        } // endif isRoot()
 
     m_is_initialized = true;
 #ifdef ENABLE_MPI
@@ -260,7 +256,7 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
 
 #ifdef ENABLE_MPI
     if (m_pdata->getDomainDecomposition())
-        is_root = m_exec_conf->isMPIRoot();
+        is_root = m_exec_conf->isRoot();
 
     if (is_root)
 #endif
@@ -398,7 +394,7 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
 #ifdef ENABLE_MPI
     // broadcast bias factors
     if (m_pdata->getDomainDecomposition())
-        MPI_Bcast(&bias.front(), bias.size(), MPI_FLOAT, 0, *m_exec_conf->getMPICommunicator());
+        MPI_Bcast(&bias.front(), bias.size(), MPI_HOOMD_SCALAR, 0, m_exec_conf->getMPICommunicator());
 
 #endif
 
@@ -532,7 +528,7 @@ void IntegratorMetaDynamics::setGrid(bool use_grid)
 #ifdef ENABLE_MPI
     // Only on root processor
     if (m_pdata->getDomainDecomposition())
-        if (! m_exec_conf->isMPIRoot()) return;
+        if (! m_exec_conf->isRoot()) return;
 #endif
     if (m_is_initialized)
         {
@@ -586,7 +582,7 @@ void IntegratorMetaDynamics::writeGrid(const std::string& filename)
 #ifdef ENABLE_MPI
     // Only on root processor
     if (m_pdata->getDomainDecomposition())
-        if (! m_exec_conf->isMPIRoot()) return;
+        if (! m_exec_conf->isRoot()) return;
 #endif
 
     if (! m_use_grid)
@@ -645,7 +641,7 @@ void IntegratorMetaDynamics::readGrid(const std::string& filename)
 #ifdef ENABLE_MPI
     // Only on root processor
     if (m_pdata->getDomainDecomposition())
-        if (! m_exec_conf->isMPIRoot()) return;
+        if (! m_exec_conf->isRoot()) return;
 #endif
 
     if (! m_use_grid)
