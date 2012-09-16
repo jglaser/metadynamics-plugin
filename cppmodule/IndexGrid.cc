@@ -14,9 +14,6 @@ IndexGrid::IndexGrid()
 
 IndexGrid::IndexGrid(const std::vector<unsigned int>& lengths)
     {
-    m_lengths.resize(lengths.size());
-    m_factors.resize(lengths.size());
-
     setLengths(lengths);
     }
 
@@ -24,6 +21,8 @@ void IndexGrid::setLengths(const std::vector<unsigned int>& lengths)
     {
     assert(lengths.size() == m_lengths.size());
     assert(lengths.size() == m_factors.size());
+    m_lengths.resize(lengths.size());
+    m_factors.resize(lengths.size());
 
     m_lengths = lengths;
 

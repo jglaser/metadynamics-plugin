@@ -2,6 +2,7 @@
 #include "IntegratorMetaDynamics.h"
 #include "CollectiveVariable.h"
 #include "LamellarOrderParameter.h"
+#include "AspectRatio.h"
 
 #ifdef ENABLE_CUDA
 #include "LamellarOrderParameterGPU.h"
@@ -19,6 +20,7 @@ BOOST_PYTHON_MODULE(_metadynamics)
     export_CollectiveVariable();
     export_IntegratorMetaDynamics();
     export_LamellarOrderParameter();
+    export_AspectRatio();
 
 #ifdef ENABLE_CUDA
     export_LamellarOrderParameterGPU();

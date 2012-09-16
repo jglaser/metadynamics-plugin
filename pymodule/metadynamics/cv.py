@@ -97,7 +97,7 @@ class _collective_variable(_force):
 # is \b cv_lamellar.
 class lamellar(_collective_variable):
     ## Construct a lamellar order parameter
-    # \param sigma Width of deposited Gaussians
+    # \param sigma Standard deviation of deposited Gaussians
     # \param mode Per-type list (dictionary) of mode coefficients
     # \param lattice_vectors List of reciprocal lattice vectors (Miller indices) for every mode
     # \param phi Per-mode list of phase shifts
@@ -149,6 +149,32 @@ class lamellar(_collective_variable):
             self.cpp_force = _metadynamics.LamellarOrderParameter(globals.system_definition, cpp_mode, cpp_lattice_vectors, cpp_phases, suffix)
         else:
             self.cpp_force = _metadynamics.LamellarOrderParameterGPU(globals.system_definition, cpp_mode, cpp_lattice_vectors, cpp_phases, suffix)
+
+        globals.system.addCompute(self.cpp_force, self.force_name)
+
+    ## \var cpp_force
+    # \internal 
+
+    ## \internal
+    def update_coeffs(self):
+        pass
+
+## \brief Aspect ratio of the tetragonal simulation box as collective variable
+#
+class aspect_ratio(_collective_variable):
+    ## Construct a lamellar order parameter
+    # The aspect ratio is defined as the ratio between box lengths in 
+    # direction 1 and 2
+    #
+    # \param dir1 Cartesian index of first direction 
+    # \param dir2 Cartesian index of second direction
+    # \param sigma Standard deviation of deposited Gaussians
+    def __init__(self, sigma, dir1, dir2, name=""):
+        util.print_status_line()
+
+        _collective_variable.__init__(self, sigma, name)
+
+        self.cpp_force = _metadynamics.AspectRatio(globals.system_definition, int(dir1), int(dir2))
 
         globals.system.addCompute(self.cpp_force, self.force_name)
 
