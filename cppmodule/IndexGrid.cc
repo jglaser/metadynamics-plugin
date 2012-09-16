@@ -39,7 +39,7 @@ unsigned int IndexGrid::getIndex(const std::vector<unsigned int>& coords)
     unsigned int idx = 0;
     for (unsigned int i = 0; i < m_lengths.size(); i++)
         {
-        idx = coords[i] * m_factors[i];
+        idx += coords[i] * m_factors[i];
         }
 
     return idx;

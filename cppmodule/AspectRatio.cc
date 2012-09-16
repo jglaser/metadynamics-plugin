@@ -109,12 +109,12 @@ void AspectRatio::computeForces(unsigned int timestep)
             break;
         }
 
-    m_pdata->setExternalVirial(0, d_l_x * L.x);
-    m_pdata->setExternalVirial(1, Scalar(1.0/2.0)*(d_l_x * L.y + d_l_y * L.x));
-    m_pdata->setExternalVirial(2, Scalar(1.0/2.0)*(d_l_x * L.z + d_l_z * L.x));
-    m_pdata->setExternalVirial(3, d_l_y * L.y);
-    m_pdata->setExternalVirial(4, Scalar(1.0/2.0)*(d_l_y * L.z + d_l_z * L.y));
-    m_pdata->setExternalVirial(5, d_l_z * L.z);
+    m_external_virial[0] = d_l_x * L.x;
+    m_external_virial[1] = Scalar(1.0/2.0)*(d_l_x * L.y + d_l_y * L.x);
+    m_external_virial[2] = Scalar(1.0/2.0)*(d_l_x * L.z + d_l_z * L.x);
+    m_external_virial[3] = d_l_y * L.y;
+    m_external_virial[4] = Scalar(1.0/2.0)*(d_l_y * L.z + d_l_z * L.y);
+    m_external_virial[5] = d_l_z * L.z;
     }
 
 void export_AspectRatio()
