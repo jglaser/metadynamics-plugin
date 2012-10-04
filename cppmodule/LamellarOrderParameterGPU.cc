@@ -10,9 +10,8 @@
 LamellarOrderParameterGPU::LamellarOrderParameterGPU(boost::shared_ptr<SystemDefinition> sysdef,
                           const std::vector<Scalar>& mode,
                           const std::vector<int3>& lattice_vectors,
-                          const std::vector<Scalar>& phases,
                           const std::string& suffix)
-    : LamellarOrderParameter(sysdef, mode, lattice_vectors, phases, suffix)
+    : LamellarOrderParameter(sysdef, mode, lattice_vectors, suffix)
     {
 
     GPUArray<Scalar> gpu_mode(mode.size(), m_exec_conf);
@@ -26,7 +25,7 @@ LamellarOrderParameterGPU::LamellarOrderParameterGPU(boost::shared_ptr<SystemDef
     m_block_size = 512;
     unsigned int max_n_blocks = m_pdata->getMaxN()/m_block_size + 1;
 
-    GPUArray<Scalar> fourier_mode_scratch(mode.size()*max_n_blocks, m_exec_conf);
+    GPUArray<Scalar2> fourier_mode_scratch(mode.size()*max_n_blocks, m_exec_conf);
     m_fourier_mode_scratch.swap(fourier_mode_scratch);
 
     m_wave_vectors_updated = 0;
@@ -40,7 +39,7 @@ void LamellarOrderParameterGPU::computeCV(unsigned int timestep)
     ArrayHandle<Scalar4> d_postype(m_pdata->getPositions(), access_location::device, access_mode::read);
 
     // initialize wave vectors
-    if (m_wave_vectors_updated < timestep)
+    if (m_wave_vectors_updated < timestep || timestep==0)
         {
         calculateWaveVectors();
         m_wave_vectors_updated = timestep;
@@ -54,10 +53,9 @@ void LamellarOrderParameterGPU::computeCV(unsigned int timestep)
 
         {
         ArrayHandle<Scalar3> d_wave_vectors(m_wave_vectors, access_location::device, access_mode::read);
-        ArrayHandle<Scalar> d_fourier_modes(m_fourier_modes, access_location::device, access_mode::overwrite);
+        ArrayHandle<Scalar2> d_fourier_modes(m_fourier_modes, access_location::device, access_mode::overwrite);
         ArrayHandle<Scalar> d_gpu_mode(m_gpu_mode, access_location::device, access_mode::read);
-        ArrayHandle<Scalar> d_phases(m_phases, access_location::device, access_mode::read);
-        ArrayHandle<Scalar> d_fourier_mode_scratch(m_fourier_mode_scratch, access_location::device, access_mode::overwrite);
+        ArrayHandle<Scalar2> d_fourier_mode_scratch(m_fourier_mode_scratch, access_location::device, access_mode::overwrite);
 
         // calculate Fourier modes
         gpu_calculate_fourier_modes(m_wave_vectors.getNumElements(),
@@ -66,34 +64,38 @@ void LamellarOrderParameterGPU::computeCV(unsigned int timestep)
                                     d_postype.data,
                                     d_gpu_mode.data,
                                     d_fourier_modes.data,
-                                    d_phases.data,
                                     m_block_size,
-                                    d_fourier_mode_scratch.data
-                                    );
+                                    d_fourier_mode_scratch.data);
 
         CHECK_CUDA_ERROR();
         }
 
-    ArrayHandle<Scalar> h_fourier_modes(m_fourier_modes, access_location::host, access_mode::read);
+    ArrayHandle<Scalar2> h_fourier_modes(m_fourier_modes, access_location::host, access_mode::readwrite);
     unsigned int N = m_pdata->getNGlobal();
+
+#ifdef ENABLE_MPI
+    // reduce Fourier modes on all processors
+    if (m_pdata->getDomainDecomposition())
+        MPI_Allreduce(MPI_IN_PLACE,h_fourier_modes.data,m_fourier_modes.getNumElements(), MPI_HOOMD_SCALAR, MPI_SUM, m_exec_conf->getMPICommunicator());
+#endif
 
     // calculate value of collective variable (sum of real parts of fourier modes)
     Scalar sum = 0.0;
     for (unsigned k = 0; k < m_fourier_modes.getNumElements(); k++)
-        sum += h_fourier_modes.data[k];
+        {
+        Scalar2 fmode = h_fourier_modes.data[k];
+        Scalar norm_sq = fmode.x*fmode.x+fmode.y*fmode.y;
+        sum += norm_sq*norm_sq;
+        }
 
-    sum /= (Scalar) N;
+    sum /= (Scalar) N*(Scalar)N;
 
-#ifdef ENABLE_MPI
-    // reduce value of collective variable on root processor
-    if (m_pdata->getDomainDecomposition())
-        MPI_Reduce(&sum,& m_sum,1, MPI_HOOMD_SCALAR, MPI_SUM, 0, m_exec_conf->getMPICommunicator());
-    else
-#endif
-        m_sum = sum;
+    m_cv = sqrt(sum);
 
     if (m_prof)
         m_prof->pop(m_exec_conf);
+
+    m_cv_last_updated = timestep;
     }
 
 
@@ -102,10 +104,13 @@ void LamellarOrderParameterGPU::computeForces(unsigned int timestep)
     if (m_prof)
         m_prof->push(m_exec_conf, "Lamellar");
 
+    if (m_cv_last_updated < timestep || timestep == 0)
+        computeCV(timestep);
+
     ArrayHandle<Scalar4> d_postype(m_pdata->getPositions(), access_location::device, access_mode::read);
 
     // initialize wave vectors
-    if (m_wave_vectors_updated < timestep)
+    if (m_wave_vectors_updated < timestep || timestep==0)
         {
         calculateWaveVectors();
         m_wave_vectors_updated = timestep;
@@ -114,8 +119,8 @@ void LamellarOrderParameterGPU::computeForces(unsigned int timestep)
         {
         ArrayHandle<Scalar3> d_wave_vectors(m_wave_vectors, access_location::device, access_mode::read);
         ArrayHandle<Scalar> d_gpu_mode(m_gpu_mode, access_location::device, access_mode::read);
-        ArrayHandle<Scalar> d_phases(m_phases, access_location::device, access_mode::read);
         ArrayHandle<Scalar4> d_force(m_force, access_location::device, access_mode::overwrite);
+        ArrayHandle<Scalar2> d_fourier_modes(m_fourier_modes, access_location::device, access_mode::read);
 
         // calculate forces
         gpu_compute_sq_forces(m_pdata->getN(),
@@ -126,7 +131,8 @@ void LamellarOrderParameterGPU::computeForces(unsigned int timestep)
                              d_gpu_mode.data,
                              m_pdata->getNGlobal(),
                              m_bias,
-                             d_phases.data);
+                             d_fourier_modes.data,
+                             m_cv);
         CHECK_CUDA_ERROR();
         }
 
@@ -141,7 +147,6 @@ void export_LamellarOrderParameterGPU()
         ("LamellarOrderParameterGPU", init< boost::shared_ptr<SystemDefinition>,
                                          const std::vector<Scalar>&,
                                          const std::vector<int3>&,
-                                         const std::vector<Scalar>&,
                                          const std::string& >());
     }
 #endif

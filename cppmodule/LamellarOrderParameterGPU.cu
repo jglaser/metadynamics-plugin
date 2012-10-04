@@ -7,14 +7,13 @@
 
 __global__ void kernel_calculate_sq_partial(
             int n_particles,
-            Scalar *fourier_mode_partial,
+            Scalar2 *fourier_mode_partial,
             Scalar4 *postype,
             int n_wave,
             Scalar3 *wave_vectors,
-            Scalar *d_modes,
-            Scalar *phases)
+            Scalar *d_modes)
     {
-    extern __shared__ Scalar sdata[];
+    extern __shared__ Scalar2 sdata[];
 
     unsigned int tidx = threadIdx.x;
 
@@ -22,95 +21,32 @@ __global__ void kernel_calculate_sq_partial(
 
     for (unsigned int i = 0; i < n_wave; i++) {
         Scalar3 q = wave_vectors[i];
-        Scalar phi = phases[i];
 
-        Scalar mySum = Scalar(0.0);
+        Scalar2 mySum = make_scalar2(0.0,0.0);
 
         if (j < n_particles) {
-
             Scalar3 p = make_scalar3(postype[j].x, postype[j].y, postype[j].z);
             Scalar dotproduct = q.x * p.x + q.y * p.y + q.z * p.z;
             unsigned int type = __float_as_int(postype[j].w);
             Scalar mode = d_modes[type];
-            mySum +=mode*cosf(dotproduct+phi);
-        }
+            mySum.x = mode*cosf(dotproduct);
+            mySum.y = mode*sinf(dotproduct);
+            }
         sdata[tidx] = mySum;
 
        __syncthreads();
-        // reduce in shared memory
-        if (blockDim.x >= 512)
+
+        // reduce the sum
+        int offs = blockDim.x >> 1;
+        while (offs > 0)
             {
-            if (tidx < 256)
+            if (tidx < offs)
                 {
-                mySum += sdata[tidx+256];
-                sdata[tidx] = mySum;
+                sdata[tidx].x += sdata[tidx + offs].x;
+                sdata[tidx].y += sdata[tidx + offs].y;
                 }
+            offs >>= 1;
             __syncthreads();
-            }
-
-        if (blockDim.x >= 256) {
-            if (tidx < 128)
-                {
-                mySum += sdata[tidx+128];
-                sdata[tidx] = mySum;
-                }
-            __syncthreads();
-            }
-
-        if (blockDim.x >= 128)
-            {
-            if (tidx < 64)
-                {
-                mySum += sdata[tidx+64];
-                sdata[tidx] = mySum;
-                }
-           __syncthreads();
-            }
-
-        if (tidx < 32) {
-            volatile Scalar* smem = sdata;
-            if (blockDim.x >= 64)
-                {
-                Scalar rhs;
-                rhs = mySum + smem[tidx + 32];
-                smem[tidx] = rhs;
-                mySum = rhs;
-                }
-            if (blockDim.x >= 32)
-                {
-                Scalar rhs;
-                rhs = mySum + smem[tidx + 16];
-                smem[tidx] = rhs;
-                mySum = rhs;
-                }
-            if (blockDim.x >= 16)
-                {
-                Scalar rhs;
-                rhs = mySum + smem[tidx + 8];
-                smem[tidx] = rhs;
-                mySum = rhs;
-                }
-            if (blockDim.x >=  8)
-                {
-                Scalar rhs;
-                rhs = mySum + smem[tidx + 4];
-                smem[tidx] = rhs;
-                mySum = rhs;
-                }
-            if (blockDim.x >=  4)
-                {
-                Scalar rhs;
-                rhs = mySum + smem[tidx + 2];
-                smem[tidx] = rhs;
-                mySum = rhs;
-                }
-            if (blockDim.x >=  2)
-                { 
-                Scalar rhs;
-                rhs = mySum + smem[tidx + 1];
-                smem[tidx] = rhs;
-                mySum = rhs;
-                }
             }
 
         // write result to global memeory
@@ -119,17 +55,17 @@ __global__ void kernel_calculate_sq_partial(
         } // end loop over wave vectors
     } 
 
-__global__ void kernel_final_reduce_fourier_modes(Scalar* fourier_mode_partial,
+__global__ void kernel_final_reduce_fourier_modes(Scalar2* fourier_mode_partial,
                                        unsigned int nblocks,
-                                       Scalar *fourier_modes,
+                                       Scalar2 *fourier_modes,
                                        unsigned int n_wave)
     {
-    extern __shared__ volatile Scalar smem[];
+    extern __shared__ Scalar2 smem[];
 
     unsigned int j = blockIdx.x;
 
     if (threadIdx.x == 0)
-       fourier_modes[j] = Scalar(0.0);
+       fourier_modes[j] =make_scalar2(0.0,0.0);
 
     for (int start = 0; start< nblocks; start += blockDim.x)
         {
@@ -137,7 +73,7 @@ __global__ void kernel_final_reduce_fourier_modes(Scalar* fourier_mode_partial,
         if (start + threadIdx.x < nblocks)
             smem[threadIdx.x] = fourier_mode_partial[j*nblocks+start + threadIdx.x];
         else
-            smem[threadIdx.x] = Scalar(0.0);
+            smem[threadIdx.x] = make_scalar2(0.0,0.0);
 
         __syncthreads();
 
@@ -146,13 +82,19 @@ __global__ void kernel_final_reduce_fourier_modes(Scalar* fourier_mode_partial,
         while (offs > 0)
             {
             if (threadIdx.x < offs)
-                smem[threadIdx.x] += smem[threadIdx.x + offs];
+                {
+                smem[threadIdx.x].x += smem[threadIdx.x + offs].x;
+                smem[threadIdx.x].y += smem[threadIdx.x + offs].y;
+                }
             offs >>= 1;
             __syncthreads();
             }
 
          if (threadIdx.x == 0)
-            fourier_modes[j] += smem[0];
+            {
+            fourier_modes[j].x += smem[0].x;
+            fourier_modes[j].y += smem[0].y;
+            }
         }
     }
 
@@ -161,32 +103,30 @@ cudaError_t gpu_calculate_fourier_modes(unsigned int n_wave,
                                  unsigned int n_particles,
                                  Scalar4 *d_postype,
                                  Scalar *d_mode,
-                                 Scalar *d_fourier_modes,
-                                 Scalar *d_phases,
+                                 Scalar2 *d_fourier_modes,
                                  unsigned int block_size,
-                                 Scalar *d_fourier_mode_partial
+                                 Scalar2 *d_fourier_mode_partial
                                  )
     {
     cudaError_t cudaStatus;
 
     unsigned int n_blocks = n_particles/block_size + 1;
 
-    unsigned int shared_size = block_size * sizeof(Scalar);
+    unsigned int shared_size = block_size * sizeof(Scalar2);
     kernel_calculate_sq_partial<<<n_blocks, block_size, shared_size>>>(
                n_particles,
                d_fourier_mode_partial,
                d_postype,
                n_wave,
                d_wave_vectors,
-               d_mode,
-               d_phases);
+               d_mode);
 
     if (cudaStatus = cudaGetLastError()) 
            return cudaStatus;
 
     // calculate final S(q) values 
     const unsigned int final_block_size = 512;
-    shared_size = final_block_size*sizeof(Scalar);
+    shared_size = final_block_size*sizeof(Scalar2);
     kernel_final_reduce_fourier_modes<<<n_wave, final_block_size,shared_size>>>(d_fourier_mode_partial,
                                                                   n_blocks,
                                                                   d_fourier_modes,
@@ -205,9 +145,10 @@ __global__ void kernel_compute_sq_forces(unsigned int N,
                                   unsigned int n_wave,
                                   Scalar3 *wave_vectors,
                                   Scalar *mode,
-                                  Scalar n_global,
+                                  unsigned int n_global,
                                   Scalar bias,
-                                  Scalar *phases)
+                                  Scalar2 *fourier_modes,
+                                  Scalar cv) 
     {
     unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= N)
@@ -223,19 +164,21 @@ __global__ void kernel_compute_sq_forces(unsigned int N,
 
     for (unsigned int k = 0; k < n_wave; k++)
         {
+        Scalar2 fourier_mode = fourier_modes[k];
         Scalar3 q = wave_vectors[k];
         Scalar dotproduct = dot(pos,q);
 
-        Scalar f = m*sinf(dotproduct + phases[k]);
+        Scalar norm_sq = fourier_mode.x*fourier_mode.x+fourier_mode.y*fourier_mode.y;
+        Scalar f = Scalar(2.0)*m*(sinf(dotproduct)*fourier_mode.x-cosf(dotproduct)*fourier_mode.y)*norm_sq;
         
         force_energy.x += q.x*f;
         force_energy.y += q.y*f;
         force_energy.z += q.z*f;
         }
 
-    force_energy.x /= n_global;
-    force_energy.y /= n_global;
-    force_energy.z /= n_global;
+    force_energy.x /= cv*(Scalar)n_global*(Scalar)n_global;
+    force_energy.y /= cv*(Scalar)n_global*(Scalar)n_global;
+    force_energy.z /= cv*(Scalar)n_global*(Scalar)n_global;
 
     force_energy.x *= bias;
     force_energy.y *= bias;
@@ -252,7 +195,8 @@ cudaError_t gpu_compute_sq_forces(unsigned int N,
                                   Scalar *d_mode,
                                   unsigned int n_global,
                                   Scalar bias,
-                                  Scalar *d_phases)
+                                  Scalar2 *fourier_modes,
+                                  Scalar cv_val)
     {
     cudaError_t cudaStatus;
     const unsigned int block_size = 512;
@@ -265,7 +209,8 @@ cudaError_t gpu_compute_sq_forces(unsigned int N,
                                                                d_mode,
                                                                n_global,
                                                                bias,
-                                                               d_phases);
+                                                               fourier_modes,
+                                                               cv_val);
 
     cudaStatus = cudaGetLastError();
     return cudaStatus;

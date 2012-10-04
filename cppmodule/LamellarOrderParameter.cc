@@ -12,9 +12,8 @@ using namespace boost::python;
 LamellarOrderParameter::LamellarOrderParameter(boost::shared_ptr<SystemDefinition> sysdef,
                                const std::vector<Scalar>& mode,
                                const std::vector<int3>& lattice_vectors,
-                               const std::vector<Scalar>& phases,
                                const std::string& suffix)
-    : CollectiveVariable(sysdef, "cv_lamellar"), m_lattice_vectors(lattice_vectors), m_mode(mode), m_sum(0.0)
+    : CollectiveVariable(sysdef, "cv_lamellar"), m_lattice_vectors(lattice_vectors), m_mode(mode), m_cv(0.0)
     {
     if (mode.size() != m_pdata->getNTypes())
         {
@@ -26,15 +25,8 @@ LamellarOrderParameter::LamellarOrderParameter(boost::shared_ptr<SystemDefinitio
     GPUArray<Scalar3> wave_vectors(m_lattice_vectors.size(), m_exec_conf);
     m_wave_vectors.swap(wave_vectors);
 
-    GPUArray<Scalar> fourier_modes(m_lattice_vectors.size(), m_exec_conf);
+    GPUArray<Scalar2> fourier_modes(m_lattice_vectors.size(), m_exec_conf);
     m_fourier_modes.swap(fourier_modes);
-
-    GPUArray<Scalar> phase_array(m_lattice_vectors.size(), m_exec_conf);
-    m_phases.swap(phase_array);
-
-    // Copy over phase shifts
-    ArrayHandle<Scalar> h_phases(m_phases, access_location::host, access_mode::overwrite);
-    std::copy(phases.begin(), phases.end(), h_phases.data);
 
     m_cv_name += suffix;
     m_log_name = m_cv_name;
@@ -42,6 +34,8 @@ LamellarOrderParameter::LamellarOrderParameter(boost::shared_ptr<SystemDefinitio
     // this collective variable does not contribute to the virial
     ArrayHandle<Scalar> h_virial(m_virial, access_location::host, access_mode::overwrite);
     memset(h_virial.data, 0, sizeof(Scalar)*6*m_virial.getPitch());
+
+    m_cv_last_updated = 0;
     }
 
 void LamellarOrderParameter::computeCV(unsigned int timestep)
@@ -53,27 +47,32 @@ void LamellarOrderParameter::computeCV(unsigned int timestep)
 
     calculateFourierModes();
 
-    ArrayHandle<Scalar> h_fourier_modes(m_fourier_modes, access_location::host, access_mode::read);
+    ArrayHandle<Scalar2> h_fourier_modes(m_fourier_modes, access_location::host, access_mode::readwrite);
 
-    Scalar N = m_pdata->getNGlobal();
+    unsigned int N = m_pdata->getNGlobal();
+
+#ifdef ENABLE_MPI
+    // reduce Fourier modes on on all processors
+    if (m_pdata->getDomainDecomposition())
+        MPI_Allreduce(MPI_IN_PLACE,h_fourier_modes.data,m_fourier_modes.getNumElements(), MPI_HOOMD_SCALAR, MPI_SUM, m_exec_conf->getMPICommunicator());
+#endif
 
     // Calculate value of collective variable (sum of real parts of fourier modes)
     Scalar sum = 0.0;
     for (unsigned k = 0; k < m_fourier_modes.getNumElements(); k++)
-        sum += h_fourier_modes.data[k];
+        {
+        Scalar2 fourier_mode = h_fourier_modes.data[k];
+        Scalar norm_sq = fourier_mode.x*fourier_mode.x+fourier_mode.y*fourier_mode.y;
+        sum += norm_sq*norm_sq;
+        }
+    sum /= (Scalar)N*(Scalar)N;
 
-    sum /= N;
-
-#ifdef ENABLE_MPI
-    // reduce value of collective variable on root processor
-    if (m_pdata->getDomainDecomposition())
-        MPI_Reduce(&sum,& m_sum,1, MPI_HOOMD_SCALAR, MPI_SUM, 0, m_exec_conf->getMPICommunicator());
-    else
-#endif
-        m_sum = sum;
+    m_cv = sqrt(sum);
 
     if (m_prof)
         m_prof->pop();
+
+    m_cv_last_updated = timestep;
     }
 
 
@@ -84,10 +83,13 @@ void LamellarOrderParameter::computeForces(unsigned int timestep)
 
     calculateWaveVectors();
 
+    if (m_cv_last_updated < timestep)
+        computeCV(timestep);
+
     ArrayHandle<Scalar4> h_postype(m_pdata->getPositions(), access_location::host, access_mode::read);
     ArrayHandle<Scalar4> h_force(m_force, access_location::host, access_mode::overwrite);
     ArrayHandle<Scalar3> h_wave_vectors(m_wave_vectors, access_location::host, access_mode::read);
-    ArrayHandle<Scalar> h_phases(m_phases, access_location::host, access_mode::read);
+    ArrayHandle<Scalar2> h_fourier_modes(m_fourier_modes, access_location::host, access_mode::read);
 
     unsigned int N = m_pdata->getNGlobal();
 
@@ -107,7 +109,9 @@ void LamellarOrderParameter::computeForces(unsigned int timestep)
             Scalar dotproduct = dot(pos,q);
 
             Scalar f; 
-            f = mode*sin(dotproduct + h_phases.data[k]);
+            Scalar2 fourier_mode = h_fourier_modes.data[k];
+            Scalar norm_sq = fourier_mode.x*fourier_mode.x+fourier_mode.y*fourier_mode.y;
+            f = Scalar(2.0)*mode*(sin(dotproduct)*fourier_mode.x-cos(dotproduct)*fourier_mode.y)*norm_sq;
 
             force_energy.x += q.x*f;
             force_energy.y += q.y*f;
@@ -118,9 +122,9 @@ void LamellarOrderParameter::computeForces(unsigned int timestep)
         force_energy.y *= m_bias;
         force_energy.z *= m_bias;
 
-        force_energy.x /= (Scalar)N;
-        force_energy.y /= (Scalar)N;
-        force_energy.z /= (Scalar)N;
+        force_energy.x /= m_cv*(Scalar)N*(Scalar)N;
+        force_energy.y /= m_cv*(Scalar)N*(Scalar)N;
+        force_energy.z /= m_cv*(Scalar)N*(Scalar)N;
 
         h_force.data[idx] = force_energy;
         }
@@ -146,15 +150,14 @@ void LamellarOrderParameter::calculateWaveVectors()
 //! Returns a list of fourier modes (for all wave vectors)
 void LamellarOrderParameter::calculateFourierModes()
     {
-    ArrayHandle<Scalar> h_fourier_modes(m_fourier_modes, access_location::host, access_mode::overwrite);
+    ArrayHandle<Scalar2> h_fourier_modes(m_fourier_modes, access_location::host, access_mode::overwrite);
     ArrayHandle<Scalar3> h_wave_vectors(m_wave_vectors, access_location::host, access_mode::read);
-    ArrayHandle<Scalar> h_phases(m_phases, access_location::host, access_mode::read);
 
     ArrayHandle<Scalar4> h_postype(m_pdata->getPositions(), access_location::host, access_mode::read);
 
     for (unsigned int k = 0; k < m_wave_vectors.getNumElements(); k++)
         {
-        h_fourier_modes.data[k] = Scalar(0.0);
+        h_fourier_modes.data[k] = make_scalar2(0.0,0.0);
         Scalar3 q = h_wave_vectors.data[k];
         
         for (unsigned int idx = 0; idx < m_pdata->getN(); idx++)
@@ -165,7 +168,8 @@ void LamellarOrderParameter::calculateFourierModes()
             unsigned int type = __scalar_as_int(postype.w);
             Scalar mode = m_mode[type];
             Scalar dotproduct = dot(q,pos);
-            h_fourier_modes.data[k] += mode * cos(dotproduct + h_phases.data[k]);
+            h_fourier_modes.data[k].x += mode * cos(dotproduct);
+            h_fourier_modes.data[k].y += mode * sin(dotproduct);
             }
         }
     }
@@ -175,7 +179,7 @@ Scalar LamellarOrderParameter::getLogValue(const std::string& quantity, unsigned
     if (quantity == m_log_name)
         {
         computeCV(timestep);
-        return m_sum;
+        return m_cv;
         }
     else
         {
@@ -191,7 +195,6 @@ void export_LamellarOrderParameter()
         ("LamellarOrderParameter", init< boost::shared_ptr<SystemDefinition>,
                                          const std::vector<Scalar>&,
                                          const std::vector<int3>,
-                                         const std::vector<Scalar>,
                                          const std::string&>());
 
     class_<std::vector<int3> >("std_vector_int3")

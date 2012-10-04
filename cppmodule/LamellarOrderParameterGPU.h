@@ -16,7 +16,6 @@ class LamellarOrderParameterGPU : public LamellarOrderParameter
         LamellarOrderParameterGPU(boost::shared_ptr<SystemDefinition> sysdef,
                                const std::vector<Scalar>& mode,
                                const std::vector<int3>& lattice_vectors,
-                               const std::vector<Scalar>& phases,
                                const std::string& suffix = "");
 
         virtual ~LamellarOrderParameterGPU() {}
@@ -30,7 +29,7 @@ class LamellarOrderParameterGPU : public LamellarOrderParameter
         GPUArray<Scalar> m_gpu_mode;       //!< Factors multiplying per-type densities to obtain scalar quantity
         unsigned int m_wave_vectors_updated; //!< Timestep wave vectors were last updated
         unsigned int m_block_size;          //!< Block size for fourier mode calculation
-        GPUArray<Scalar> m_fourier_mode_scratch; //!< Scratch memory for fourier mode calculation
+        GPUArray<Scalar2> m_fourier_mode_scratch; //!< Scratch memory for fourier mode calculation
     };
 
 void export_LamellarOrderParameterGPU();

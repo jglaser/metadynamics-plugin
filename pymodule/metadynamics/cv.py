@@ -100,9 +100,8 @@ class lamellar(_collective_variable):
     # \param sigma Standard deviation of deposited Gaussians
     # \param mode Per-type list (dictionary) of mode coefficients
     # \param lattice_vectors List of reciprocal lattice vectors (Miller indices) for every mode
-    # \param phi Per-mode list of phase shifts
     # \param name Name given to this collective variable
-    def __init__(self, sigma, mode, lattice_vectors, phi, name=None):
+    def __init__(self, sigma, mode, lattice_vectors, name=None):
         util.print_status_line()
 
         if name is not None:
@@ -137,18 +136,10 @@ class lamellar(_collective_variable):
                 raise RuntimeError('Error creating collective variable.')
             cpp_lattice_vectors.append(hoomd.make_int3(l[0], l[1], l[2]))
 
-        cpp_phases = hoomd.std_vector_float()
-        if len(phi) != len(lattice_vectors):
-                globals.msg.error("cv.lamellar: List of phase shifts not equal to length of lattice vectors.\n")
-                raise RuntimeError('Error creating collective variable.')
-
-        for phase in phi:
-            cpp_phases.append(phase)
-
         if not globals.exec_conf.isCUDAEnabled():
-            self.cpp_force = _metadynamics.LamellarOrderParameter(globals.system_definition, cpp_mode, cpp_lattice_vectors, cpp_phases, suffix)
+            self.cpp_force = _metadynamics.LamellarOrderParameter(globals.system_definition, cpp_mode, cpp_lattice_vectors, suffix)
         else:
-            self.cpp_force = _metadynamics.LamellarOrderParameterGPU(globals.system_definition, cpp_mode, cpp_lattice_vectors, cpp_phases, suffix)
+            self.cpp_force = _metadynamics.LamellarOrderParameterGPU(globals.system_definition, cpp_mode, cpp_lattice_vectors, suffix)
 
         globals.system.addCompute(self.cpp_force, self.force_name)
 

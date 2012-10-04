@@ -39,13 +39,11 @@ class LamellarOrderParameter : public CollectiveVariable
             \param sysdef The system definition
             \param mode The per-type coefficients of the Fourier mode
             \param lattice_vectors The Miller indices of the mode vector
-            \param phases The phases for every mode
             \param suffix The suffix appended to the log name for this quantity
          */
         LamellarOrderParameter(boost::shared_ptr<SystemDefinition> sysdef,
                                const std::vector<Scalar>& mode,
                                const std::vector<int3>& lattice_vectors,
-                               const std::vector<Scalar>& phases,
                                const std::string& suffix = ""
                                );
         virtual ~LamellarOrderParameter() {}
@@ -79,7 +77,7 @@ class LamellarOrderParameter : public CollectiveVariable
         Scalar getCurrentValue(unsigned int timestep)
             {
             this->computeCV(timestep);
-            return m_sum;
+            return m_cv;
             } 
 
     protected:
@@ -87,11 +85,12 @@ class LamellarOrderParameter : public CollectiveVariable
         std::vector<int3> m_lattice_vectors;  //!< Stores the list of miller indices
         std::vector<Scalar> m_mode;           //!< Stores the per-type mode coefficients
 
-        Scalar m_sum;                         //!< The current value of the collective variable
+        Scalar m_cv;                          //!< The current value of the collective variable
 
         GPUArray<Scalar3> m_wave_vectors;     //!< GPUArray of wave vectors
-        GPUArray<Scalar> m_fourier_modes;    //!< Fourier modes
-        GPUArray<Scalar> m_phases;            //!< Phase shifts
+        GPUArray<Scalar2> m_fourier_modes;    //!< Fourier modes
+
+        unsigned int m_cv_last_updated;       //!< Timestep the collective variable was last updated
 
         //! Helper function to update the wave vectors
         void calculateWaveVectors();

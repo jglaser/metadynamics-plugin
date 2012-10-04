@@ -23,10 +23,9 @@ cudaError_t gpu_calculate_fourier_modes(unsigned int n_wave,
                                  unsigned int n_particles,
                                  Scalar4 *d_postype,
                                  Scalar *d_mode,
-                                 Scalar *d_fourier_modes,
-                                 Scalar *d_phases,
+                                 Scalar2 *d_fourier_modes,
                                  unsigned int block_size,
-                                 Scalar *d_fourier_mode_scratch);
+                                 Scalar2 *d_fourier_mode_scratch);
 
 /*! Calculates the negative derivative of the collective variable with
     respect to particle positions
@@ -39,8 +38,8 @@ cudaError_t gpu_calculate_fourier_modes(unsigned int n_wave,
     \param d_mode Device array of per-type mode coefficients
     \param n_global Total number of particles in system
     \param bias The bias factor to multiply the forces with
-    \param d_phases Device array of per-mode phase shifts
-
+    \param fourier_modes Array of fourier modes
+    \param sum_of_sq Sum of structure factors
     \returns the CUDA status
 */
 cudaError_t gpu_compute_sq_forces(unsigned int N,
@@ -51,4 +50,5 @@ cudaError_t gpu_compute_sq_forces(unsigned int N,
                                   Scalar *d_mode,
                                   unsigned int n_global,
                                   Scalar bias,
-                                  Scalar *d_phases);
+                                  Scalar2 *fourier_modes,
+                                  Scalar cv_val);
