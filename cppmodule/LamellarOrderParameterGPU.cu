@@ -162,6 +162,7 @@ __global__ void kernel_compute_sq_forces(unsigned int N,
 
     Scalar4 force_energy = make_scalar4(0.0f,0.0f,0.0f,0.0f);
 
+    Scalar denom = cv*cv*cv*(Scalar)n_global*(Scalar)n_global;
     for (unsigned int k = 0; k < n_wave; k++)
         {
         Scalar2 fourier_mode = fourier_modes[k];
@@ -169,16 +170,16 @@ __global__ void kernel_compute_sq_forces(unsigned int N,
         Scalar dotproduct = dot(pos,q);
 
         Scalar norm_sq = fourier_mode.x*fourier_mode.x+fourier_mode.y*fourier_mode.y;
-        Scalar f = Scalar(2.0)*m*(sinf(dotproduct)*fourier_mode.x-cosf(dotproduct)*fourier_mode.y)*norm_sq;
+        Scalar f = m*(sinf(dotproduct)*fourier_mode.x-cosf(dotproduct)*fourier_mode.y)*norm_sq;
         
         force_energy.x += q.x*f;
         force_energy.y += q.y*f;
         force_energy.z += q.z*f;
         }
 
-    force_energy.x /= cv*(Scalar)n_global*(Scalar)n_global;
-    force_energy.y /= cv*(Scalar)n_global*(Scalar)n_global;
-    force_energy.z /= cv*(Scalar)n_global*(Scalar)n_global;
+    force_energy.x /= denom;
+    force_energy.y /= denom;
+    force_energy.z /= denom;
 
     force_energy.x *= bias;
     force_energy.y *= bias;

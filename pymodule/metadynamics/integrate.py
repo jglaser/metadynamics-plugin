@@ -143,7 +143,7 @@ from hoomd_plugins.metadynamics import cv
 #
 # \code
 # all = group.all
-# meta = metadynamics.integrate.mode_metadynamics(dt=0.005, W=1,stride=5000, deltaT=dT)
+# meta = metadynamics.integrate.mode_metadynamics(dt=0.005, mode="well_tempered", W=1,stride=5000, deltaT=dT)
 #
 # # Use the NVT integration method 
 # integrate.nvt(group=all, T=1, tau=0.5)
@@ -162,7 +162,7 @@ from hoomd_plugins.metadynamics import cv
 # If the saved bias potential should be used to continue the simulation from,
 # this can be accomplished by the following piece of code
 # \code
-# meta = metadynamics.integrate.mode_metadynamics(dt=0.005, W=1,
+# meta = metadynamics.integrate.mode_metadynamics(dt=0.005, W=1)
 # integrate.nvt(group=all, T=1, tau=0.5)
 #
 # # set up a collective variable on a grid
@@ -177,20 +177,33 @@ from hoomd_plugins.metadynamics import cv
 class mode_metadynamics(_integrator):
     ## Specifies the metadynamics integration mode
     # \param dt Each time step of the simulation run() will advance the real time of the system forward by \a dt (in time units) 
-    # \param W Height of Gaussians (in energy units) deposited 
     # \param stride Interval (number of time steps) between depositions of Gaussians
-    # \param deltaT Temperature shift (in temperature units) for well-tempered metadynamics
+    # \param mode Metadynamics mode - "standard" (default), "well_tempered" or "flux_tempered"
+    # \param W (only in mode="standard" or "well_tempered") Height of Gaussians (in energy units) deposited 
+    # \param deltaT (only in mode="well_tempered") Temperature shift (in temperature units) for well-tempered metadynamics
+    # \param T (only in mode="flux_tempered") Temperature
     # \param filename (optional) Name of the log file to write hills information to
     # \param overwrite (optional) True if the hills file should be overwritten
     # \param add_hills (optional) True if Gaussians should be deposited during the simulation
-    def __init__(self, dt, W, stride, deltaT, filename="", overwrite=False, add_hills=True):
+    # \param T (optiona
+    def __init__(self, dt, stride, mode="standard", W=1.0,  deltaT=1.0, T=1.0, filename="", overwrite=False, add_hills=True):
         util.print_status_line();
     
         # initialize base class
         _integrator.__init__(self);
-        
+  
+        if (mode == "standard"):
+            cpp_mode = _metadynamics.IntegratorMetaDynamics.mode.standard
+        elif (mode == "well_tempered"):
+            cpp_mode = _metadynamics.IntegratorMetaDynamics.mode.well_tempered
+        elif (mode == "flux_tempered"):
+            cpp_mode = _metadynamics.IntegratorMetaDynamics.mode.flux_tempered
+        else:
+            globals.msg.error("integrate.mode_metadynamics: Unsupported metadynamics mode.\n")
+            raise RuntimeError('Error setting up Metadynamics.');
+
         # initialize the reflected c++ class
-        self.cpp_integrator = _metadynamics.IntegratorMetaDynamics(globals.system_definition, dt, W, deltaT, stride, add_hills, filename, overwrite);
+        self.cpp_integrator = _metadynamics.IntegratorMetaDynamics(globals.system_definition, dt, W, deltaT, T, stride, add_hills, filename, overwrite, cpp_mode);
 
         self.supports_methods = True;
 
@@ -206,35 +219,43 @@ class mode_metadynamics(_integrator):
             num_cv = 0
             for f in globals.forces:
                 if f.enabled and isinstance(f, cv._collective_variable):
-                    if f.name not in self.cv_names:
+                    if f.name != self.cv_names[num_cv]:
                         notfound = True
                     num_cv += 1;
 
             if (len(self.cv_names) != num_cv) or notfound:
                 globals.msg.error("integrate.mode_metadynamics: Set of collective variables has changed since last run. This is unsupported.\n")
                 raise RuntimeError('Error setting up Metadynamics.');
-        else:
-            self.cpp_integrator.removeAllVariables()
 
-            use_grid = False;
-            for f in globals.forces:
-                if f.enabled and isinstance(f, cv._collective_variable):
-                    self.cpp_integrator.registerCollectiveVariable(f.cpp_force, f.sigma, f.cv_min, f.cv_max, f.num_points)
+        # (re-) register collective variables with integrator
+        self.cv_names = []
+        self.cpp_integrator.removeAllVariables()
 
-                    if f.use_grid is True:
-                        if len(self.cv_names) == 0:
-                            use_grid = True
-                        else:
-                            if use_grid is False:
-                                globals.msg.error("integrate.mode_metadynamics: Not all collective variables have been set up for grid mode.\n")
-                                raise RuntimeError('Error setting up Metadynamics.');
-                                
-                    self.cv_names.append(f.name)
+        use_grid = False;
+        for f in globals.forces:
+            if f.enabled and isinstance(f, cv._collective_variable):
 
-            if len(self.cv_names) == 0:
-                globals.msg.warning("integrate.mode_metadynamics: No collective variables defined. Continuing with simulation anyway.\n")
+                # enable histograms if required
+                if f.ftm_parameters_set and not self.cpp_integrator.isInitialized():
+                    self.cpp_integrator.setHistograms(True)
 
-            self.cpp_integrator.setGrid(use_grid)
+                self.cpp_integrator.registerCollectiveVariable(f.cpp_force, f.sigma, f.cv_min, f.cv_max, f.num_points, f.ftm_min, f.ftm_max)
+
+                if f.use_grid is True:
+                    if len(self.cv_names) == 0:
+                        use_grid = True
+                    else:
+                        if use_grid is False:
+                            globals.msg.error("integrate.mode_metadynamics: Not all collective variables have been set up for grid mode.\n")
+                            raise RuntimeError('Error setting up Metadynamics.');
+                            
+                self.cv_names.append(f.name)
+
+        if len(self.cv_names) == 0:
+            globals.msg.warning("integrate.mode_metadynamics: No collective variables defined. Continuing with simulation anyway.\n")
+
+        if not self.cpp_integrator.isInitialized():
+           self.cpp_integrator.setGrid(use_grid)
 
         _integrator.update_forces(self)
 
@@ -268,9 +289,35 @@ class mode_metadynamics(_integrator):
         self.cpp_integrator.restartFromGridFile(filename)
 
     ## Set parameters of the integration
+    # \param mode The variant of metadynamics to be used
     # \param add_hills True if new Gaussians should be added during the simulation
-    def set_params(self, add_hills=True):
+    # \param stride The stride for bias potential updates
+    # \param stride_multiply The factor with which the stride is multiplied after every update
+    # \param min_label_change The threshold for the number of walker label changes before the bias potential is updated
+    def set_params(self, add_hills=None, mode=None, stride=None, stride_multiply=None, min_label_change=None):
         util.print_status_line();
-       
-        self.cpp_integrator.setAddHills(add_hills)
+      
+        if add_hills is not None:
+            self.cpp_integrator.setAddHills(add_hills)
 
+        if mode is not None:
+            if (mode == "standard"):
+                cpp_mode = _metadynamics.IntegratorMetaDynamics.mode.standard
+            elif (mode == "well_tempered"):
+                cpp_mode = _metadynamics.IntegratorMetaDynamics.mode.well_tempered
+            elif (mode == "flux_tempered"):
+                cpp_mode = _metadynamics.IntegratorMetaDynamics.mode.flux_tempered
+            else:
+                globals.msg.error("integrate.mode_metadynamics: Unsupported metadynamics mode.\n")
+                raise RuntimeError('Error setting up Metadynamics.');
+
+            self.cpp_integrator.setMode(cpp_mode)
+
+        if stride is not None:
+            self.cpp_integrator.setStride(int(stride))
+
+        if stride_multiply is not None:
+            self.cpp_integrator.setStrideMultiply(int(stride_multiply))
+
+        if min_label_change is not None:
+            self.cpp_integrator.setMinimumLabelChanges(int(min_label_change))

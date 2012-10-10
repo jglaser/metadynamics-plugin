@@ -67,7 +67,7 @@ void LamellarOrderParameter::computeCV(unsigned int timestep)
         }
     sum /= (Scalar)N*(Scalar)N;
 
-    m_cv = sqrt(sum);
+    m_cv = pow(sum,Scalar(1.0/4.0));
 
     if (m_prof)
         m_prof->pop();
@@ -93,6 +93,8 @@ void LamellarOrderParameter::computeForces(unsigned int timestep)
 
     unsigned int N = m_pdata->getNGlobal();
 
+    Scalar denom = m_cv*m_cv*m_cv*(Scalar)N*(Scalar)N;
+
     for (unsigned int idx = 0; idx < m_pdata->getN(); idx++)
         {
         Scalar4 postype = h_postype.data[idx];
@@ -111,7 +113,7 @@ void LamellarOrderParameter::computeForces(unsigned int timestep)
             Scalar f; 
             Scalar2 fourier_mode = h_fourier_modes.data[k];
             Scalar norm_sq = fourier_mode.x*fourier_mode.x+fourier_mode.y*fourier_mode.y;
-            f = Scalar(2.0)*mode*(sin(dotproduct)*fourier_mode.x-cos(dotproduct)*fourier_mode.y)*norm_sq;
+            f = mode*(sin(dotproduct)*fourier_mode.x-cos(dotproduct)*fourier_mode.y)*norm_sq;
 
             force_energy.x += q.x*f;
             force_energy.y += q.y*f;
@@ -122,9 +124,9 @@ void LamellarOrderParameter::computeForces(unsigned int timestep)
         force_energy.y *= m_bias;
         force_energy.z *= m_bias;
 
-        force_energy.x /= m_cv*(Scalar)N*(Scalar)N;
-        force_energy.y /= m_cv*(Scalar)N*(Scalar)N;
-        force_energy.z /= m_cv*(Scalar)N*(Scalar)N;
+        force_energy.x /= denom;
+        force_energy.y /= denom;
+        force_energy.z /= denom;
 
         h_force.data[idx] = force_energy;
         }

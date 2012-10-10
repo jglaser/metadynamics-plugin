@@ -7,4 +7,20 @@ cudaError_t gpu_update_grid(unsigned int num_elements,
                      Scalar *d_cv_max,
                      Scalar *d_cv_sigma,
                      Scalar scal,
-                     Scalar W);
+                     Scalar W,
+                     bool flux_tempered,
+                     Scalar T,
+                     Scalar *d_histogram,
+                     Scalar *d_histogram_plus,
+                     unsigned int num_histogram_entries,
+                     Scalar ftm_min,
+                     Scalar ftm_max); 
+
+cudaError_t gpu_update_histograms(Scalar val,
+                                  Scalar cv_min,
+                                  Scalar delta,
+                                  unsigned int num_points,
+                                  Scalar sigma,
+                                  bool state,
+                                  Scalar *d_histogram,
+                                  Scalar *d_histogram_plus);

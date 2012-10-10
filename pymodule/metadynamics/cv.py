@@ -21,7 +21,7 @@ class _collective_variable(_force):
     #
     # This mainly sets some parameters of the collective variable
     #
-    # \param sigma Standard deviation of Gaussians added for this collective variable
+    # \param sigma Standard deviation of Gaussians added for this collective variable - only relevant in "well-tempered" or "standard" metadynamics
     # \param name Name of the collective variable
     def __init__(self, sigma, name=None):
         _force.__init__(self, name)
@@ -34,6 +34,11 @@ class _collective_variable(_force):
         self.num_points = 0
         
         self.use_grid = False
+
+        self.ftm_min = 0.0
+        self.ftm_max = 0.0
+
+        self.ftm_parameters_set = False
 
     ## \var sigma
     # \internal
@@ -50,6 +55,15 @@ class _collective_variable(_force):
     ## \var use_grid
     # \internal
 
+    ## \var ftm_min
+    # \internal
+
+    ## \var ftm_max
+    # \internal
+
+    ## \var ftm_num_points
+    # \internal
+
     ## Sets grid mode for this collective variable
     # \param cv_min Minimum of the collective variable (smallest grid value)
     # \param cv_max Maximum of the collective variable (largest grid value)
@@ -62,6 +76,26 @@ class _collective_variable(_force):
         self.num_points = num_points
 
         self.use_grid = True
+
+    ## Sets parameters for the histogram of flux-tempered metadynamics
+    # \param ftm_min Minimum of the collective variable (smallest grid value)
+    # \param ftm_max Maximum of the collective variable (largest grid value)
+    # \param num_points Dimension of the grid for this collective variable 
+    def enable_histograms(self,ftm_min, ftm_max):
+        util.print_status_line()
+
+        self.ftm_min = ftm_min
+        self.ftm_max = ftm_max
+
+        self.ftm_parameters_set = True
+
+    ## Set parameters for this collective variable
+    # \param sigma The standard deviation
+    def set_params(self, sigma=None):
+        util.print_status_line()
+
+        if sigma is not None:
+            self.sigma = sigma
 
 ## \brief Lamellar order parameter as a collective variable to study phase transitions in block copolymer systems
 #
