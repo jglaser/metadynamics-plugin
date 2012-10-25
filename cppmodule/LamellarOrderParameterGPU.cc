@@ -84,7 +84,7 @@ void LamellarOrderParameterGPU::computeCV(unsigned int timestep)
         sum += norm_sq*norm_sq;
         }
 
-    sum /= (Scalar) N*(Scalar)N;
+    sum /= (Scalar) N*(Scalar)N*(Scalar)N*(Scalar)N;
 
     m_cv = pow(sum,Scalar(1.0/4.0));
 

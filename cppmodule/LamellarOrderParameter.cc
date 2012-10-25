@@ -68,7 +68,7 @@ void LamellarOrderParameter::computeCV(unsigned int timestep)
         Scalar norm_sq = fourier_mode.x*fourier_mode.x+fourier_mode.y*fourier_mode.y;
         sum += norm_sq*norm_sq;
         }
-    sum /= (Scalar)N*(Scalar)N;
+    sum /= (Scalar) N*(Scalar)N*(Scalar)N*(Scalar)N;
 
     m_cv = pow(sum,Scalar(1.0/4.0));
 
@@ -96,7 +96,7 @@ void LamellarOrderParameter::computeForces(unsigned int timestep)
 
     unsigned int N = m_pdata->getNGlobal();
 
-    Scalar denom = m_cv*m_cv*m_cv*(Scalar)N*(Scalar)N;
+    Scalar denom = m_cv*m_cv*m_cv*(Scalar)N*(Scalar)N*(Scalar)N*(Scalar)N;
 
     for (unsigned int idx = 0; idx < m_pdata->getN(); idx++)
         {
