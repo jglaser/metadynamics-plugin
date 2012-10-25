@@ -169,7 +169,7 @@ __global__ void kernel_compute_sq_forces(unsigned int N,
         Scalar dotproduct = dot(pos,q);
 
         Scalar norm_sq = fourier_mode.x*fourier_mode.x+fourier_mode.y*fourier_mode.y;
-        Scalar f = m*(sinf(dotproduct)*fourier_mode.x-cosf(dotproduct)*fourier_mode.y)*norm_sq;
+        Scalar f = m*(__sinf(dotproduct)*fourier_mode.x-__cosf(dotproduct)*fourier_mode.y)*norm_sq;
         
         force_energy.x += q.x*f;
         force_energy.y += q.y*f;
