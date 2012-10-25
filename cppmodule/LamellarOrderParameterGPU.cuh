@@ -7,7 +7,7 @@
 /*! Calculates the fourier modes for the collective variable
 
     \param n_wave Number of modes
-    \param d_wave_vectors Device array of wave vectors
+    \param d_lattice_vectors Device array of wave vectors
     \param n_particles Number of particles
     \param d_postype Device array of particle positions and types
     \param d_mode Device array of per-type mode coefficients
@@ -19,13 +19,14 @@
     \returns the CUDA status
  */
 cudaError_t gpu_calculate_fourier_modes(unsigned int n_wave,
-                                 Scalar3 *d_wave_vectors,
+                                 const int3 *d_lattice_vectors,
                                  unsigned int n_particles,
                                  Scalar4 *d_postype,
                                  Scalar *d_mode,
                                  Scalar2 *d_fourier_modes,
                                  unsigned int block_size,
-                                 Scalar2 *d_fourier_mode_scratch);
+                                 Scalar2 *d_fourier_mode_scratch,
+                                 const BoxDim& global_box);
 
 /*! Calculates the negative derivative of the collective variable with
     respect to particle positions
@@ -34,7 +35,7 @@ cudaError_t gpu_calculate_fourier_modes(unsigned int n_wave,
     \param d_postype Array of particle positions and types
     \param d_force Array of per-particle forces
     \param n_wave Number of modes
-    \param d_wave_vectors Device array of wave vectors
+    \param d_lattice_vectors Device array of wave vectors
     \param d_mode Device array of per-type mode coefficients
     \param n_global Total number of particles in system
     \param bias The bias factor to multiply the forces with
@@ -46,9 +47,10 @@ cudaError_t gpu_compute_sq_forces(unsigned int N,
                                   Scalar4 *d_postype,
                                   Scalar4 *d_force,
                                   unsigned int n_wave,
-                                  Scalar3 *d_wave_vectors,
+                                  const int3 *d_lattice_vectors,
                                   Scalar *d_mode,
                                   unsigned int n_global,
                                   Scalar bias,
                                   Scalar2 *fourier_modes,
-                                  Scalar cv_val);
+                                  Scalar cv_val,
+                                  const BoxDim& global_box);
