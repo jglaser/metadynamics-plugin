@@ -209,3 +209,57 @@ class aspect_ratio(_collective_variable):
     ## \internal
     def update_coeffs(self):
         pass
+
+class mesh(_collective_variable):
+    ## Construct a lamellar order parameter
+    # \param sigma Standard deviation of deposited Gaussians
+    # \param qstar Short-wavelength cutoff
+    # \param mode Per-type list (dictionary) of mode coefficients
+    # \param nx Number of mesh points along first axis
+    # \param ny Number of mesh points along second axis
+    # \param nz Number of mesh points along third axis
+    # \param name Name given to this collective variable
+    def __init__(self, sigma, qstar, mode, nx, ny=None, nz=None, name=None):
+        util.print_status_line()
+
+        if name is not None:
+            name = "_" + name
+            suffix = name
+        else:
+            suffix = "" 
+
+        if ny is None:
+            ny = nx
+
+        if nz is None:
+            nz = nx
+
+        _collective_variable.__init__(self, sigma, name)
+
+        if type(mode) != type(dict()):
+                globals.msg.error("cv.mesh: Mode amplitudes specified incorrectly.\n")
+                raise RuntimeEror('Error creating collective variable.')
+
+        cpp_mode = hoomd.std_vector_float()
+        for i in range(0, globals.system_definition.getParticleData().getNTypes()):
+            t = globals.system_definition.getParticleData().getNameByType(i)
+
+            if t not in mode.keys():
+                globals.msg.error("cv.mesh: Missing mode amplitude for particle type " + t + ".\n")
+                raise RuntimeEror('Error creating collective variable.')
+            cpp_mode.append(mode[t])
+
+#        if not globals.exec_conf.isCUDAEnabled():
+        self.cpp_force = _metadynamics.OrderParameterMesh(globals.system_definition, nx,ny,nz,qstar, cpp_mode)
+#        else:
+
+        globals.system.addCompute(self.cpp_force, self.force_name)
+
+    ## \var cpp_force
+    # \internal 
+
+    ## \internal
+    def update_coeffs(self):
+        pass
+
+
