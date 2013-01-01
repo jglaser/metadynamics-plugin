@@ -13,7 +13,7 @@ LamellarOrderParameter::LamellarOrderParameter(boost::shared_ptr<SystemDefinitio
                                const std::vector<Scalar>& mode,
                                const std::vector<int3>& lattice_vectors,
                                const std::string& suffix)
-    : CollectiveVariable(sysdef, "cv_lamellar"), m_lattice_vectors(lattice_vectors), m_mode(mode), m_cv(0.0)
+    : CollectiveVariable(sysdef, "cv_lamellar"), m_mode(mode), m_cv(0.0)
     {
     if (mode.size() != m_pdata->getNTypes())
         {
@@ -22,10 +22,10 @@ LamellarOrderParameter::LamellarOrderParameter(boost::shared_ptr<SystemDefinitio
         }
 
     // allocate array of wave vectors
-    GPUArray<Scalar3> wave_vectors(m_lattice_vectors.size(), m_exec_conf);
-    m_wave_vectors.swap(wave_vectors);
+    GPUArray<int3> lattice_vectors_gpuarray(lattice_vectors.size(), m_exec_conf);
+    m_lattice_vectors.swap(lattice_vectors_gpuarray);
 
-    GPUArray<Scalar2> fourier_modes(m_lattice_vectors.size(), m_exec_conf);
+    GPUArray<Scalar2> fourier_modes(lattice_vectors.size(), m_exec_conf);
     m_fourier_modes.swap(fourier_modes);
 
     m_cv_name += suffix;
@@ -36,14 +36,17 @@ LamellarOrderParameter::LamellarOrderParameter(boost::shared_ptr<SystemDefinitio
     memset(h_virial.data, 0, sizeof(Scalar)*6*m_virial.getPitch());
 
     m_cv_last_updated = 0;
+
+    // copy over lattice vectors
+    ArrayHandle<int3> h_lattice_vectors(m_lattice_vectors, access_location::host, access_mode::overwrite);
+    for (unsigned int k = 0; k < lattice_vectors.size(); k++)
+        h_lattice_vectors.data[k] = lattice_vectors[k];
     }
 
 void LamellarOrderParameter::computeCV(unsigned int timestep)
     {
     if (m_prof)
         m_prof->push("Lamellar");
-
-    calculateWaveVectors();
 
     calculateFourierModes();
 
@@ -65,7 +68,7 @@ void LamellarOrderParameter::computeCV(unsigned int timestep)
         Scalar norm_sq = fourier_mode.x*fourier_mode.x+fourier_mode.y*fourier_mode.y;
         sum += norm_sq*norm_sq;
         }
-    sum /= (Scalar)N*(Scalar)N;
+    sum /= (Scalar) N*(Scalar)N*(Scalar)N*(Scalar)N;
 
     m_cv = pow(sum,Scalar(1.0/4.0));
 
@@ -81,19 +84,19 @@ void LamellarOrderParameter::computeForces(unsigned int timestep)
     if (m_prof)
         m_prof->push("Lamellar");
 
-    calculateWaveVectors();
-
     if (m_cv_last_updated < timestep)
         computeCV(timestep);
 
     ArrayHandle<Scalar4> h_postype(m_pdata->getPositions(), access_location::host, access_mode::read);
     ArrayHandle<Scalar4> h_force(m_force, access_location::host, access_mode::overwrite);
-    ArrayHandle<Scalar3> h_wave_vectors(m_wave_vectors, access_location::host, access_mode::read);
+    ArrayHandle<int3> h_lattice_vectors(m_lattice_vectors, access_location::host, access_mode::read);
     ArrayHandle<Scalar2> h_fourier_modes(m_fourier_modes, access_location::host, access_mode::read);
+
+    Scalar3 L = m_pdata->getGlobalBox().getL();
 
     unsigned int N = m_pdata->getNGlobal();
 
-    Scalar denom = m_cv*m_cv*m_cv*(Scalar)N*(Scalar)N;
+    Scalar denom = m_cv*m_cv*m_cv*(Scalar)N*(Scalar)N*(Scalar)N*(Scalar)N;
 
     for (unsigned int idx = 0; idx < m_pdata->getN(); idx++)
         {
@@ -105,9 +108,10 @@ void LamellarOrderParameter::computeForces(unsigned int timestep)
 
         Scalar4 force_energy = make_scalar4(0,0,0,0);
 
-        for (unsigned int k = 0; k < m_wave_vectors.getNumElements(); k++)
+        for (unsigned int k = 0; k < m_lattice_vectors.getNumElements(); k++)
             {
-            Scalar3 q = h_wave_vectors.data[k];
+            Scalar3 q = make_scalar3(h_lattice_vectors.data[k].x, h_lattice_vectors.data[k].y, h_lattice_vectors.data[k].z);
+            q = Scalar(2.0*M_PI)*make_scalar3(q.x/L.x,q.y/L.y,q.z/L.z);
             Scalar dotproduct = dot(pos,q);
 
             Scalar f; 
@@ -135,32 +139,21 @@ void LamellarOrderParameter::computeForces(unsigned int timestep)
         m_prof->pop();
     }
 
-//! Calculate wave vectors
-void LamellarOrderParameter::calculateWaveVectors()
-    {
-    ArrayHandle<Scalar3> h_wave_vectors(m_wave_vectors, access_location::host, access_mode::overwrite);
-
-    const BoxDim &box = m_pdata->getGlobalBox();
-    const Scalar3 L = box.getL();
-
-    for (unsigned int k = 0; k < m_lattice_vectors.size(); k++)
-        h_wave_vectors.data[k] = 2*M_PI*make_scalar3(m_lattice_vectors[k].x/L.x,
-                                              m_lattice_vectors[k].y/L.y,
-                                              m_lattice_vectors[k].z/L.z);
-    }
-
 //! Returns a list of fourier modes (for all wave vectors)
 void LamellarOrderParameter::calculateFourierModes()
     {
     ArrayHandle<Scalar2> h_fourier_modes(m_fourier_modes, access_location::host, access_mode::overwrite);
-    ArrayHandle<Scalar3> h_wave_vectors(m_wave_vectors, access_location::host, access_mode::read);
+    ArrayHandle<int3> h_lattice_vectors(m_lattice_vectors, access_location::host, access_mode::read);
 
     ArrayHandle<Scalar4> h_postype(m_pdata->getPositions(), access_location::host, access_mode::read);
 
-    for (unsigned int k = 0; k < m_wave_vectors.getNumElements(); k++)
+    Scalar3 L = m_pdata->getGlobalBox().getL();
+    
+    for (unsigned int k = 0; k < m_lattice_vectors.getNumElements(); k++)
         {
         h_fourier_modes.data[k] = make_scalar2(0.0,0.0);
-        Scalar3 q = h_wave_vectors.data[k];
+        Scalar3 q = make_scalar3(h_lattice_vectors.data[k].x, h_lattice_vectors.data[k].y, h_lattice_vectors.data[k].z);
+        q = Scalar(2.0*M_PI)*make_scalar3(q.x/L.x,q.y/L.y,q.z/L.z);
         
         for (unsigned int idx = 0; idx < m_pdata->getN(); idx++)
             {

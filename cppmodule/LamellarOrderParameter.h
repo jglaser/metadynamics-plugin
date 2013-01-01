@@ -82,18 +82,14 @@ class LamellarOrderParameter : public CollectiveVariable
 
     protected:
         std::string m_log_name;               //!< The log name for this collective variable
-        std::vector<int3> m_lattice_vectors;  //!< Stores the list of miller indices
         std::vector<Scalar> m_mode;           //!< Stores the per-type mode coefficients
 
         Scalar m_cv;                          //!< The current value of the collective variable
 
-        GPUArray<Scalar3> m_wave_vectors;     //!< GPUArray of wave vectors
+        GPUArray<int3> m_lattice_vectors;     //!< GPUArray of lattice vectors
         GPUArray<Scalar2> m_fourier_modes;    //!< Fourier modes
 
         unsigned int m_cv_last_updated;       //!< Timestep the collective variable was last updated
-
-        //! Helper function to update the wave vectors
-        void calculateWaveVectors();
 
         //! Calculates the current value of the collective variable
         virtual void computeCV(unsigned int timestep);

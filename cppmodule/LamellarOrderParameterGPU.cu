@@ -10,8 +10,9 @@ __global__ void kernel_calculate_sq_partial(
             Scalar2 *fourier_mode_partial,
             Scalar4 *postype,
             int n_wave,
-            Scalar3 *wave_vectors,
-            Scalar *d_modes)
+            const int3 *lattice_vectors,
+            Scalar *d_modes,
+            const Scalar3 L)
     {
     extern __shared__ Scalar2 sdata[];
 
@@ -19,40 +20,41 @@ __global__ void kernel_calculate_sq_partial(
 
     int j = blockIdx.x * blockDim.x + threadIdx.x;
 
-    for (unsigned int i = 0; i < n_wave; i++) {
-        Scalar3 q = wave_vectors[i];
+    unsigned int i = blockIdx.y;
 
-        Scalar2 mySum = make_scalar2(0.0,0.0);
+    Scalar3 q = make_scalar3(lattice_vectors[i].x, lattice_vectors[i].y, lattice_vectors[i].z);
+    q = Scalar(2.0*M_PI)*make_scalar3(q.x/L.x,q.y/L.y,q.z/L.z);
 
-        if (j < n_particles) {
-            Scalar3 p = make_scalar3(postype[j].x, postype[j].y, postype[j].z);
-            Scalar dotproduct = q.x * p.x + q.y * p.y + q.z * p.z;
-            unsigned int type = __float_as_int(postype[j].w);
-            Scalar mode = d_modes[type];
-            mySum.x = mode*cosf(dotproduct);
-            mySum.y = mode*sinf(dotproduct);
-            }
-        sdata[tidx] = mySum;
+    Scalar2 mySum = make_scalar2(0.0,0.0);
 
-       __syncthreads();
+    if (j < n_particles) {
+        Scalar3 p = make_scalar3(postype[j].x, postype[j].y, postype[j].z);
+        Scalar dotproduct = dot(q,p);
+        unsigned int type = __float_as_int(postype[j].w);
+        Scalar mode = d_modes[type];
+        mySum.x = mode*__cosf(dotproduct);
+        mySum.y = mode*__sinf(dotproduct);
+        }
+    sdata[tidx] = mySum;
 
-        // reduce the sum
-        int offs = blockDim.x >> 1;
-        while (offs > 0)
+   __syncthreads();
+
+    // reduce the sum
+    int offs = blockDim.x >> 1;
+    while (offs > 0)
+        {
+        if (tidx < offs)
             {
-            if (tidx < offs)
-                {
-                sdata[tidx].x += sdata[tidx + offs].x;
-                sdata[tidx].y += sdata[tidx + offs].y;
-                }
-            offs >>= 1;
-            __syncthreads();
+            sdata[tidx].x += sdata[tidx + offs].x;
+            sdata[tidx].y += sdata[tidx + offs].y;
             }
+        offs >>= 1;
+        __syncthreads();
+        }
 
-        // write result to global memeory
-        if (tidx == 0)
-           fourier_mode_partial[blockIdx.x + gridDim.x*i] = sdata[0];
-        } // end loop over wave vectors
+    // write result to global memeory
+    if (tidx == 0)
+       fourier_mode_partial[blockIdx.x + gridDim.x*i] = sdata[0];
     } 
 
 __global__ void kernel_final_reduce_fourier_modes(Scalar2* fourier_mode_partial,
@@ -99,43 +101,38 @@ __global__ void kernel_final_reduce_fourier_modes(Scalar2* fourier_mode_partial,
     }
 
 cudaError_t gpu_calculate_fourier_modes(unsigned int n_wave,
-                                 Scalar3 *d_wave_vectors,
+                                 const int3 *d_lattice_vectors,
                                  unsigned int n_particles,
                                  Scalar4 *d_postype,
                                  Scalar *d_mode,
                                  Scalar2 *d_fourier_modes,
                                  unsigned int block_size,
-                                 Scalar2 *d_fourier_mode_partial
+                                 Scalar2 *d_fourier_mode_partial,
+                                 const BoxDim& global_box
                                  )
     {
-    cudaError_t cudaStatus;
-
     unsigned int n_blocks = n_particles/block_size + 1;
+    dim3 grid_dim(n_blocks, n_wave,1);
+    dim3 block_dim(block_size);
 
     unsigned int shared_size = block_size * sizeof(Scalar2);
-    kernel_calculate_sq_partial<<<n_blocks, block_size, shared_size>>>(
+    kernel_calculate_sq_partial<<<grid_dim, block_dim, shared_size,0>>>(
                n_particles,
                d_fourier_mode_partial,
                d_postype,
                n_wave,
-               d_wave_vectors,
-               d_mode);
-
-    if (cudaStatus = cudaGetLastError()) 
-           return cudaStatus;
+               d_lattice_vectors,
+               d_mode,
+               global_box.getL());
 
     // calculate final S(q) values 
     const unsigned int final_block_size = 512;
     shared_size = final_block_size*sizeof(Scalar2);
-    kernel_final_reduce_fourier_modes<<<n_wave, final_block_size,shared_size>>>(d_fourier_mode_partial,
+    kernel_final_reduce_fourier_modes<<<n_wave, final_block_size,shared_size,0>>>(d_fourier_mode_partial,
                                                                   n_blocks,
                                                                   d_fourier_modes,
                                                                   n_wave);
                                                                   
-
-    if (cudaStatus = cudaGetLastError())
-        return cudaStatus;
-
     return cudaSuccess;
     }
 
@@ -143,12 +140,13 @@ __global__ void kernel_compute_sq_forces(unsigned int N,
                                   Scalar4 *postype,
                                   Scalar4 *force,
                                   unsigned int n_wave,
-                                  Scalar3 *wave_vectors,
+                                  const int3 *lattice_vectors,
                                   Scalar *mode,
                                   unsigned int n_global,
                                   Scalar bias,
                                   Scalar2 *fourier_modes,
-                                  Scalar cv) 
+                                  Scalar cv,
+                                  const Scalar3 L)
     {
     unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= N)
@@ -162,15 +160,16 @@ __global__ void kernel_compute_sq_forces(unsigned int N,
 
     Scalar4 force_energy = make_scalar4(0.0f,0.0f,0.0f,0.0f);
 
-    Scalar denom = cv*cv*cv*(Scalar)n_global*(Scalar)n_global;
+    Scalar denom = cv*cv*cv*(Scalar)n_global*(Scalar)n_global*(Scalar)n_global*(Scalar)n_global;
     for (unsigned int k = 0; k < n_wave; k++)
         {
         Scalar2 fourier_mode = fourier_modes[k];
-        Scalar3 q = wave_vectors[k];
+        Scalar3 q = make_scalar3(lattice_vectors[k].x, lattice_vectors[k].y, lattice_vectors[k].z);
+        q = Scalar(2.0*M_PI)*make_scalar3(q.x/L.x,q.y/L.y,q.z/L.z);
         Scalar dotproduct = dot(pos,q);
 
         Scalar norm_sq = fourier_mode.x*fourier_mode.x+fourier_mode.y*fourier_mode.y;
-        Scalar f = m*(sinf(dotproduct)*fourier_mode.x-cosf(dotproduct)*fourier_mode.y)*norm_sq;
+        Scalar f = m*(__sinf(dotproduct)*fourier_mode.x-__cosf(dotproduct)*fourier_mode.y)*norm_sq;
         
         force_energy.x += q.x*f;
         force_energy.y += q.y*f;
@@ -192,26 +191,28 @@ cudaError_t gpu_compute_sq_forces(unsigned int N,
                                   Scalar4 *d_postype,
                                   Scalar4 *d_force,
                                   unsigned int n_wave,
-                                  Scalar3 *d_wave_vectors,
+                                  const int3 *d_lattice_vectors,
                                   Scalar *d_mode,
                                   unsigned int n_global,
                                   Scalar bias,
                                   Scalar2 *fourier_modes,
-                                  Scalar cv_val)
+                                  Scalar cv_val,
+                                  const BoxDim& global_box)
     {
     cudaError_t cudaStatus;
     const unsigned int block_size = 512;
 
-    kernel_compute_sq_forces<<<N/block_size + 1, block_size>>>(N,
+    kernel_compute_sq_forces<<<N/block_size + 1, block_size,0,0>>>(N,
                                                                d_postype,
                                                                d_force,
                                                                n_wave,
-                                                               d_wave_vectors,
+                                                               d_lattice_vectors,
                                                                d_mode,
                                                                n_global,
                                                                bias,
                                                                fourier_modes,
-                                                               cv_val);
+                                                               cv_val,
+                                                               global_box.getL());
 
     cudaStatus = cudaGetLastError();
     return cudaStatus;
