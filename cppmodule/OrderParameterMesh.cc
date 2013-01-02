@@ -221,16 +221,17 @@ void OrderParameterMesh::computeInfluenceFunction()
         for (int m = -(int)m_mesh_points.y/2 ; m < (int)m_mesh_points.y/2; ++m)
             for (int n = -(int)m_mesh_points.z/2 ; n < (int)m_mesh_points.z/2; ++n)
                 {
-                // no contribution from k = 0
-                if ((l == 0) && (m == 0) && (n==0)) continue;
-
                 Scalar3 k = (Scalar)l*b1+(Scalar)m*b2+(Scalar)n*b3;
+                Scalar ksq = dot(k,k);
+
+                // accumulate self energy
+                m_E_self += exp(-ksq/m_qstarsq*Scalar(1.0/2.0));
 
                 Scalar3 UsqR = make_scalar3(0.0,0.0,0.0);
-
-                for (int nx = -maxnx; nx < maxnx; ++nx)
-                    for (int ny = -maxny; ny < maxny; ++ny)
-                        for (int nz = -maxnz; nz < maxnz; ++nz)
+                Scalar Usq = Scalar(0.0);
+                for (int nx = -maxnx; nx <= maxnx; ++nx)
+                    for (int ny = -maxny; ny <= maxny; ++ny)
+                        for (int nz = -maxnz; nz <= maxnz; ++nz)
                             {
                             Scalar3 kn = k + (Scalar)m_mesh_points.x*(Scalar)nx*b1+
                                            + (Scalar)m_mesh_points.y*(Scalar)ny*b2+
@@ -239,22 +240,14 @@ void OrderParameterMesh::computeInfluenceFunction()
                             Scalar3 knH = Scalar(2.0*M_PI)*(make_scalar3(l,m,n)*dim_inv+make_scalar3(nx,ny,nz));
                             Scalar U = assignTSCFourier(knH.x)*assignTSCFourier(knH.y)*assignTSCFourier(knH.z);
                             Scalar knsq = dot(kn,kn);
-                            UsqR += U*U*kn*exp(-knsq/m_qstarsq*Scalar(1.0/2.0))/(Scalar)N/(Scalar)N;
+                            UsqR += U*U*kn*exp(-knsq/m_qstarsq*Scalar(1.0/2.0))/(Scalar)N/(Scalar)N*V_box;
+                            Usq += U*U;
                             }
 
                 Scalar num = dot(k,UsqR);
                 Scalar3 kH = Scalar(2.0*M_PI)*make_scalar3(l,m,n)*dim_inv;
 
-                Scalar3 sinkH = make_scalar3(sin(kH.x*Scalar(1.0/2.0)),
-                                             sin(kH.y*Scalar(1.0/2.0)),
-                                             sin(kH.z*Scalar(1.0/2.0)));
-                Scalar3 sum = make_scalar3(1.0,1.0,1.0)-sinkH*sinkH+Scalar(2.0/15.0)*sinkH*sinkH*sinkH*sinkH;
-
-                Scalar ksq = dot(k,k);
-                Scalar denom = ksq*sum.x*sum.x*sum.y*sum.y*sum.z*sum.z;
-
-                // accumulate self energy
-                m_E_self += exp(-ksq/m_qstarsq*Scalar(1.0/2.0));
+                Scalar denom = ksq*Usq*Usq;
 
                 // determine cell idx
                 unsigned int ix, iy, iz;
@@ -275,7 +268,12 @@ void OrderParameterMesh::computeInfluenceFunction()
 
                 unsigned int cell_idx = iz + m_mesh_points.z * iy + m_mesh_points.y * m_mesh_points.z * ix;
 
-                h_inf_f.data[cell_idx] = num/denom*V_box;
+                if ((l != 0) || (m != 0) || (n!=0)) 
+                    h_inf_f.data[cell_idx] = num/denom;
+                else
+                    // avoid divide by zero
+                    h_inf_f.data[cell_idx] = Scalar(1.0)/(Scalar)N/(Scalar)N*V_box;
+
                 h_k.data[cell_idx] = k;
                 }
 
@@ -361,7 +359,7 @@ Scalar OrderParameterMesh::assignTSCFourier(Scalar k)
         }
     else
         {
-        fac = Scalar(2.0)*sin(k*Scalar(2.0))/k;
+        fac = Scalar(2.0)*sin(k*Scalar(1.0/2.0))/k;
         }
 
     return fac*fac*fac;
@@ -441,7 +439,6 @@ void OrderParameterMesh::assignParticles()
 
             // compute fraction of particle density assigned to cell
             Scalar density_fraction = assignTSC(dx_frac.x)*assignTSC(dx_frac.y)*assignTSC(dx_frac.z)/V_cell;
-           
             unsigned int cell_idx = cell_coord.z + m_mesh_points.z * cell_coord.y
                                     + m_mesh_points.y * m_mesh_points.z * cell_coord.x;
             h_mesh.data[cell_idx].r += h_mode.data[type]*density_fraction;
