@@ -109,6 +109,13 @@ void OrderParameterMesh::setupMesh()
         throw std::runtime_error("Error setting up mesh.");
         } 
 
+    if ((m_mesh_points.x <8) || (m_mesh_points.y < 8) || (m_mesh_points.z <8))
+        {
+        m_exec_conf->msg->warning() << "Number of mesh points must be greater or equal 8."
+                                    << std::endl << std::endl;
+        throw std::runtime_error("Error setting up mesh.");
+        }
+ 
     m_mesh_index = Index3D(m_mesh_points.x, m_mesh_points.y, m_mesh_points.z);
     m_cell_adj_indexer = Index2D((m_radius*2+1)*(m_radius*2+1)*(m_radius*2+1), m_mesh_index.getNumElements());
 
@@ -545,6 +552,8 @@ void OrderParameterMesh::interpolateForces()
 
         // center of cell (in units of the mesh size)
         unsigned int my_cell = m_mesh_index(ix,iy,iz);
+        
+        Scalar3 force = make_scalar3(0.0,0.0,0.0);
 
         // interpolate mesh forces from cell and next neighbors
         for (unsigned int k = 0; k < m_cell_adj_indexer.getW(); ++k)
@@ -569,17 +578,17 @@ void OrderParameterMesh::interpolateForces()
             unsigned int cell_idx = cell_coord.z + m_mesh_points.z * cell_coord.y
                                     + m_mesh_points.y * m_mesh_points.z * cell_coord.x;
 
-            Scalar3 force = -assignTSC(dx_frac.x)*assignTSC(dx_frac.y)*assignTSC(dx_frac.z)*h_mode.data[type]
+            force += -assignTSC(dx_frac.x)*assignTSC(dx_frac.y)*assignTSC(dx_frac.z)*h_mode.data[type]
                             *make_scalar3(h_force_mesh_x.data[cell_idx].r,
                                           h_force_mesh_y.data[cell_idx].r,
                                           h_force_mesh_z.data[cell_idx].r)/V;
+            }  
 
-            // Multiply with bias potential derivative
-            force *= m_bias;
+        // Multiply with bias potential derivative
+        force *= m_bias;
 
-            h_force.data[idx] = make_scalar4(force.x,force.y,force.z,0.0);
-            }
-             
+        h_force.data[idx] = make_scalar4(force.x,force.y,force.z,0.0);
+         
         }  // end of loop over particles
     }
 
