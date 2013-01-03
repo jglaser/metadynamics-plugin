@@ -15,6 +15,8 @@ __device__ Scalar assignTSC(Scalar x)
         return Scalar(0.0);
     }
 
+texture<unsigned int, 1, cudaReadModeElementType> cadj_tex;
+
 //! Assignment of particles to mesh using three-point scheme (triangular shaped cloud)
 /*! This is a second order accurate scheme with continuous value and continuous derivative
  */
@@ -69,8 +71,7 @@ __global__ void gpu_assign_particles_kernel(const unsigned int N,
     // assign particle to cell and next neighbors
     for (unsigned int k = 0; k < cadji.getW(); ++k)
         {
-        unsigned int neigh_cell = d_cadj[cadji(k, my_cell)];
-
+        unsigned int neigh_cell = tex1Dfetch(cadj_tex,cadji(k, my_cell));
         uint3 cell_coord = mesh_idx.getTriple(neigh_cell); 
 
         Scalar3 neigh_frac = make_scalar3((Scalar) cell_coord.x + Scalar(0.5),
@@ -105,6 +106,10 @@ void gpu_assign_particles(const unsigned int N,
                           const Index2D& cadji,
                           const BoxDim& box)
     {
+
+    cadj_tex.normalized = false;
+    cadj_tex.filterMode = cudaFilterModePoint;
+    cudaBindTexture(0, cadj_tex, d_cadj, sizeof(unsigned int)*cadji.getNumElements());
 
     unsigned int block_size = 512;
 
@@ -175,13 +180,29 @@ void gpu_update_meshes(const unsigned int n_wave_vectors,
                                                                           d_fourier_mesh_z);
     }
 
+//! Texture for reading particle positions
+texture<Scalar4, 1, cudaReadModeElementType> force_mesh_tex;
+
+__global__ void gpu_coalesce_forces_kernel(const unsigned int n_wave_vectors,
+                                       const cufftComplex *d_force_mesh_x,
+                                       const cufftComplex *d_force_mesh_y,
+                                       const cufftComplex *d_force_mesh_z,
+                                       Scalar4 *d_force_mesh)
+    {
+    unsigned int k = blockIdx.x*blockDim.x+threadIdx.x;
+
+    if (k >= n_wave_vectors) return;
+
+    d_force_mesh[k] = make_scalar4(d_force_mesh_x[k].x,
+                                   d_force_mesh_y[k].x,
+                                   d_force_mesh_z[k].x,
+                                   0.0);
+    }
+
 __global__ void gpu_interpolate_forces_kernel(const unsigned int N,
                                        const Scalar4 *d_postype,
                                        Scalar4 *d_force,
                                        const Scalar bias,
-                                       const cufftComplex *d_force_mesh_x,
-                                       const cufftComplex *d_force_mesh_y,
-                                       const cufftComplex *d_force_mesh_z,
                                        const Index3D mesh_idx,
                                        const Scalar *d_mode,
                                        const unsigned int *d_cadj,
@@ -203,6 +224,7 @@ __global__ void gpu_interpolate_forces_kernel(const unsigned int N,
 
     Scalar3 pos = make_scalar3(postype.x, postype.y, postype.z);
     unsigned int type = __float_as_int(postype.w);
+    Scalar mode = d_mode[type];
 
     // compute coordinates in units of the mesh size
     Scalar3 f = box.makeFraction(pos);
@@ -231,9 +253,9 @@ __global__ void gpu_interpolate_forces_kernel(const unsigned int N,
     // assign particle to cell and next neighbors
     for (unsigned int k = 0; k < cadji.getW(); ++k)
         {
-        unsigned int neigh_cell = d_cadj[cadji(k, my_cell)];
-
+        unsigned int neigh_cell = tex1Dfetch(cadj_tex,cadji(k, my_cell));
         uint3 cell_coord = mesh_idx.getTriple(neigh_cell); 
+
 
         Scalar3 neigh_frac = make_scalar3((Scalar) cell_coord.x + Scalar(0.5),
                                          (Scalar) cell_coord.y + Scalar(0.5),
@@ -251,14 +273,14 @@ __global__ void gpu_interpolate_forces_kernel(const unsigned int N,
         unsigned int cell_idx = cell_coord.z + mesh_idx.getD() * cell_coord.y
                                 + mesh_idx.getD() * mesh_idx.getH() * cell_coord.x;
 
-        force += -assignTSC(dx_frac.x)*assignTSC(dx_frac.y)*assignTSC(dx_frac.z)*d_mode[type]
-                            *make_scalar3(d_force_mesh_x[cell_idx].x,
-                                          d_force_mesh_y[cell_idx].x,
-                                          d_force_mesh_z[cell_idx].x)/V;
+        Scalar4 mesh_force = tex1Dfetch(force_mesh_tex,cell_idx);
+
+        force += -assignTSC(dx_frac.x)*assignTSC(dx_frac.y)*assignTSC(dx_frac.z)*mode*
+                 make_scalar3(mesh_force.x,mesh_force.y,mesh_force.z);
         }  
 
     // Multiply with bias potential derivative
-    force *= bias;
+    force *= bias/V;
 
     d_force[idx] = make_scalar4(force.x,force.y,force.z,0.0);
     }
@@ -270,6 +292,7 @@ void gpu_interpolate_forces(const unsigned int N,
                              const cufftComplex *d_force_mesh_x,
                              const cufftComplex *d_force_mesh_y,
                              const cufftComplex *d_force_mesh_z,
+                             Scalar4 *d_force_mesh,
                              const Index3D& mesh_idx,
                              const Scalar *d_mode,
                              const unsigned int *d_cadj,
@@ -278,13 +301,25 @@ void gpu_interpolate_forces(const unsigned int N,
     {
     const unsigned int block_size = 512;
 
+    unsigned int num_cells = mesh_idx.getNumElements();
+
+    gpu_coalesce_forces_kernel<<<num_cells/block_size+1, block_size>>>(num_cells,
+                                                                 d_force_mesh_x,
+                                                                 d_force_mesh_y,
+                                                                 d_force_mesh_z,
+                                                                 d_force_mesh);
+    cadj_tex.normalized = false;
+    cadj_tex.filterMode = cudaFilterModePoint;
+    cudaBindTexture(0, cadj_tex, d_cadj, sizeof(unsigned int)*cadji.getNumElements());
+
+    force_mesh_tex.normalized = false;
+    force_mesh_tex.filterMode = cudaFilterModePoint;
+    cudaBindTexture(0, force_mesh_tex, d_force_mesh, sizeof(Scalar4)*num_cells);
+
     gpu_interpolate_forces_kernel<<<N/block_size+1,block_size>>>(N,
                                                                  d_postype,
                                                                  d_force,
                                                                  bias,
-                                                                 d_force_mesh_x,
-                                                                 d_force_mesh_y,
-                                                                 d_force_mesh_z,
                                                                  mesh_idx,
                                                                  d_mode,
                                                                  d_cadj,

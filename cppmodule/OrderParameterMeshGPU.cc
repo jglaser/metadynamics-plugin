@@ -60,6 +60,9 @@ void OrderParameterMeshGPU::initializeFFT()
 
     GPUArray<cufftComplex> force_mesh_z(num_cells, m_exec_conf);
     m_force_mesh_z.swap(force_mesh_z);
+    
+    GPUArray<Scalar4> force_mesh(num_cells, m_exec_conf);
+    m_force_mesh.swap(force_mesh);
     }
 
 //! Assignment of particles to mesh using three-point scheme (triangular shaped cloud)
@@ -146,6 +149,7 @@ void OrderParameterMeshGPU::interpolateForces()
     ArrayHandle<cufftComplex> d_force_mesh_x(m_force_mesh_x, access_location::device, access_mode::read);
     ArrayHandle<cufftComplex> d_force_mesh_y(m_force_mesh_y, access_location::device, access_mode::read);
     ArrayHandle<cufftComplex> d_force_mesh_z(m_force_mesh_z, access_location::device, access_mode::read);
+    ArrayHandle<Scalar4> d_force_mesh(m_force_mesh, access_location::device, access_mode::overwrite);
     ArrayHandle<Scalar> d_mode(m_mode, access_location::device, access_mode::read);
     ArrayHandle<unsigned int> d_cell_adj(m_cell_adj, access_location::device, access_mode::read);
 
@@ -158,6 +162,7 @@ void OrderParameterMeshGPU::interpolateForces()
                            d_force_mesh_x.data,
                            d_force_mesh_y.data,
                            d_force_mesh_z.data,
+                           d_force_mesh.data,
                            m_mesh_index,
                            d_mode.data,
                            d_cell_adj.data,
