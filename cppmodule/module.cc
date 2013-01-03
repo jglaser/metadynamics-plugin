@@ -7,6 +7,7 @@
 
 #ifdef ENABLE_CUDA
 #include "LamellarOrderParameterGPU.h"
+#include "OrderParameterMeshGPU.h"
 #endif
 
 
@@ -26,5 +27,6 @@ BOOST_PYTHON_MODULE(_metadynamics)
 
 #ifdef ENABLE_CUDA
     export_LamellarOrderParameterGPU();
+    export_OrderParameterMeshGPU();
 #endif
     }

@@ -47,9 +47,6 @@ OrderParameterMesh::OrderParameterMesh(boost::shared_ptr<SystemDefinition> sysde
 
     m_mesh_points = make_uint3(nx, ny, nz);
 
-    // allocate memory and initialize arrays
-    setupMesh();
-
     // reset virial
     ArrayHandle<Scalar> h_virial(m_virial, access_location::host, access_mode::overwrite);
     memset(h_virial.data, 0, m_virial.getNumElements());
@@ -134,7 +131,6 @@ void OrderParameterMesh::setupMesh()
     m_k.swap(k);
 
     initializeFFT();
-
     } 
 
 void OrderParameterMesh::initializeFFT()
@@ -168,9 +164,6 @@ void OrderParameterMesh::initializeFFT()
     GPUArray<kiss_fft_cpx> fourier_mesh_G(num_cells, m_exec_conf);
     m_fourier_mesh_G.swap(fourier_mesh_G);
 
-    GPUArray<kiss_fft_cpx> inv_fourier_mesh(num_cells, m_exec_conf);
-    m_inv_fourier_mesh.swap(inv_fourier_mesh);
-
     GPUArray<kiss_fft_cpx> fourier_mesh_x(num_cells, m_exec_conf);
     m_fourier_mesh_x.swap(fourier_mesh_x);
 
@@ -192,6 +185,8 @@ void OrderParameterMesh::initializeFFT()
 
 void OrderParameterMesh::computeInfluenceFunction()
     {
+    if (m_prof) m_prof->push("influence function");
+
     ArrayHandle<Scalar> h_inf_f(m_inf_f,access_location::host, access_mode::overwrite);
     ArrayHandle<Scalar3> h_k(m_k,access_location::host, access_mode::overwrite);
 
@@ -200,9 +195,9 @@ void OrderParameterMesh::computeInfluenceFunction()
     memset(h_k.data, 0, sizeof(Scalar3)*m_mesh_index.getNumElements());
 
     // maximal integer indices of inner loop
-    const int maxnx = 5;
-    const int maxny = 5;
-    const int maxnz = 5;
+    const int maxnx = 3;
+    const int maxny = 3;
+    const int maxnz = 3;
 
     Scalar3 dim_inv = make_scalar3(Scalar(1.0)/(Scalar)m_mesh_points.x,
                                    Scalar(1.0)/(Scalar)m_mesh_points.y,
@@ -285,6 +280,8 @@ void OrderParameterMesh::computeInfluenceFunction()
                 }
 
     m_E_self *= Scalar(1.0/2.0)/(Scalar)N;
+
+    if (m_prof) m_prof->pop();
     }
                              
 
@@ -377,6 +374,8 @@ Scalar OrderParameterMesh::assignTSCFourier(Scalar k)
  */
 void OrderParameterMesh::assignParticles()
     {
+    if (m_prof) m_prof->push("assign");
+
     ArrayHandle<Scalar4> h_postype(m_pdata->getPositions(), access_location::host, access_mode::read);
     ArrayHandle<kiss_fft_cpx> h_mesh(m_mesh, access_location::host, access_mode::overwrite);
     ArrayHandle<Scalar> h_mode(m_mode, access_location::host, access_mode::read);
@@ -452,14 +451,17 @@ void OrderParameterMesh::assignParticles()
             }
              
         }  // end of loop over particles
+
+    if (m_prof) m_prof->pop();
     }
 
 void OrderParameterMesh::updateMeshes()
     {
+    if (m_prof) m_prof->push("FFT");
+
     ArrayHandle<kiss_fft_cpx> h_mesh(m_mesh, access_location::host, access_mode::read);
     ArrayHandle<kiss_fft_cpx> h_fourier_mesh(m_fourier_mesh, access_location::host, access_mode::overwrite);
     ArrayHandle<kiss_fft_cpx> h_fourier_mesh_G(m_fourier_mesh_G, access_location::host, access_mode::overwrite);
-    ArrayHandle<kiss_fft_cpx> h_inv_fourier_mesh(m_inv_fourier_mesh, access_location::host, access_mode::overwrite);
 
     ArrayHandle<kiss_fft_cpx> h_fourier_mesh_x(m_fourier_mesh_x, access_location::host, access_mode::overwrite);
     ArrayHandle<kiss_fft_cpx> h_fourier_mesh_y(m_fourier_mesh_y, access_location::host, access_mode::overwrite);
@@ -503,10 +505,14 @@ void OrderParameterMesh::updateMeshes()
     kiss_fftnd(m_kiss_ifft_x, h_fourier_mesh_x.data, h_force_mesh_x.data);
     kiss_fftnd(m_kiss_ifft_y, h_fourier_mesh_y.data, h_force_mesh_y.data);
     kiss_fftnd(m_kiss_ifft_z, h_fourier_mesh_z.data, h_force_mesh_z.data);
+
+    if (m_prof) m_prof->pop();
     }
 
 void OrderParameterMesh::interpolateForces()
     {
+    if (m_prof) m_prof->push("interpolate");
+
     ArrayHandle<Scalar4> h_postype(m_pdata->getPositions(), access_location::host, access_mode::read);
     ArrayHandle<kiss_fft_cpx> h_force_mesh_x(m_force_mesh_x, access_location::host, access_mode::read);
     ArrayHandle<kiss_fft_cpx> h_force_mesh_y(m_force_mesh_y, access_location::host, access_mode::read);
@@ -590,10 +596,14 @@ void OrderParameterMesh::interpolateForces()
         h_force.data[idx] = make_scalar4(force.x,force.y,force.z,0.0);
          
         }  // end of loop over particles
+
+    if (m_prof) m_prof->pop();
     }
 
 Scalar OrderParameterMesh::computeCV()
     {
+    if (m_prof) m_prof->push("sum");
+
     ArrayHandle<kiss_fft_cpx> h_fourier_mesh(m_fourier_mesh, access_location::host, access_mode::read);
     ArrayHandle<kiss_fft_cpx> h_fourier_mesh_G(m_fourier_mesh_G, access_location::host, access_mode::read);
 
@@ -606,13 +616,21 @@ Scalar OrderParameterMesh::computeCV()
              + h_fourier_mesh_G.data[k].i * h_fourier_mesh.data[k].i;
 
     sum *= Scalar(1.0/2.0)/V;
+
+    if (m_prof) m_prof->pop();
+
     return sum - m_E_self;
     }
 
 Scalar OrderParameterMesh::getCurrentValue(unsigned int timestep)
     {
+    if (m_prof) m_prof->push("Mesh");
+
     if (m_is_first_step)
         {
+        // allocate memory and initialize arrays
+        setupMesh();
+
         computeInfluenceFunction();
         m_is_first_step = false;
         }
@@ -621,17 +639,26 @@ Scalar OrderParameterMesh::getCurrentValue(unsigned int timestep)
 
     updateMeshes();
 
+    Scalar val = computeCV();
+
     m_cv_last_updated = timestep;
 
-    return computeCV();
+    if (m_prof) m_prof->pop();
+
+    return val;
     }
    
 void OrderParameterMesh::computeForces(unsigned int timestep)
     {
+
     if (m_is_first_step || m_cv_last_updated != timestep)
         getCurrentValue(timestep);
 
+    if (m_prof) m_prof->push("Mesh");
+
     interpolateForces();
+
+    if (m_prof) m_prof->pop();
     }
 
 Scalar OrderParameterMesh::getLogValue(const std::string& quantity, unsigned int timestep)
@@ -642,7 +669,7 @@ Scalar OrderParameterMesh::getLogValue(const std::string& quantity, unsigned int
         }
     else
         {
-        this->m_exec_conf->msg->error() << "cv.mesh: " << quantity << " is not a valid log quantity"
+        m_exec_conf->msg->error() << "cv.mesh: " << quantity << " is not a valid log quantity"
                   << std::endl;
         throw std::runtime_error("Error getting log value");
         }

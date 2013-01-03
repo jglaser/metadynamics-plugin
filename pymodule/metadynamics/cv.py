@@ -249,9 +249,10 @@ class mesh(_collective_variable):
                 raise RuntimeEror('Error creating collective variable.')
             cpp_mode.append(mode[t])
 
-#        if not globals.exec_conf.isCUDAEnabled():
-        self.cpp_force = _metadynamics.OrderParameterMesh(globals.system_definition, nx,ny,nz,qstar, cpp_mode)
-#        else:
+        if not globals.exec_conf.isCUDAEnabled():
+            self.cpp_force = _metadynamics.OrderParameterMesh(globals.system_definition, nx,ny,nz,qstar, cpp_mode)
+        else:
+            self.cpp_force = _metadynamics.OrderParameterMeshGPU(globals.system_definition, nx,ny,nz,qstar, cpp_mode)
 
         globals.system.addCompute(self.cpp_force, self.force_name)
 

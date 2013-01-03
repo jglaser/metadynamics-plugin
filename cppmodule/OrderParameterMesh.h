@@ -1,5 +1,8 @@
 #include <hoomd/hoomd.h>
 
+#ifndef __ORDER_PARAMETER_MESH_H__
+#define __ORDER_PARAMETER_MESH_H__
+
 #include "CollectiveVariable.h"
 /*! Order parameter evaluated using the particle mesh method
  */
@@ -91,7 +94,6 @@ class OrderParameterMesh : public CollectiveVariable
         GPUArray<kiss_fft_cpx> m_fourier_mesh_x;   //!< The fourier transformed force mesh, x component
         GPUArray<kiss_fft_cpx> m_fourier_mesh_y;   //!< The fourier transformed force mesh, y component
         GPUArray<kiss_fft_cpx> m_fourier_mesh_z;   //!< The fourier transformed force mesh, z component
-        GPUArray<kiss_fft_cpx> m_inv_fourier_mesh; //!< The fourier back transformed mesh
         GPUArray<kiss_fft_cpx> m_force_mesh_x;     //!< The force mesh, x component
         GPUArray<kiss_fft_cpx> m_force_mesh_y;     //!< The force mesh, y component
         GPUArray<kiss_fft_cpx> m_force_mesh_z;     //!< The force mesh, z component
@@ -103,3 +105,4 @@ class OrderParameterMesh : public CollectiveVariable
 
 void export_OrderParameterMesh();
 
+#endif
