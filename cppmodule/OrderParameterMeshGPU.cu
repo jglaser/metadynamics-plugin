@@ -33,12 +33,14 @@ __global__ void gpu_assign_particles_kernel(const unsigned int N,
 
     if (idx >= N) return;
 
+    uint3 dim = make_uint3(mesh_idx.getW(), mesh_idx.getH(), mesh_idx.getD());
+
     Scalar V_cell = box.getVolume()/(Scalar)mesh_idx.getNumElements();
  
     // inverse dimensions
-    Scalar3 dim_inv = make_scalar3(Scalar(1.0)/(Scalar)mesh_idx.getW(),
-                                   Scalar(1.0)/(Scalar)mesh_idx.getH(),
-                                   Scalar(1.0)/(Scalar)mesh_idx.getD());
+    Scalar3 dim_inv = make_scalar3(Scalar(1.0)/(Scalar)dim.x,
+                                   Scalar(1.0)/(Scalar)dim.y,
+                                   Scalar(1.0)/(Scalar)dim.z);
 
     Scalar4 postype = d_postype[idx];
 
@@ -48,9 +50,9 @@ __global__ void gpu_assign_particles_kernel(const unsigned int N,
 
     // compute coordinates in units of the mesh size
     Scalar3 f = box.makeFraction(pos);
-    Scalar3 reduced_pos = make_scalar3(f.x * (Scalar) mesh_idx.getW(),
-                                       f.y * (Scalar) mesh_idx.getH(),
-                                       f.z * (Scalar) mesh_idx.getD());
+    Scalar3 reduced_pos = make_scalar3(f.x * (Scalar) dim.x,
+                                       f.y * (Scalar) dim.y,
+                                       f.z * (Scalar) dim.z);
 
     // find cell the particle is in
     unsigned int ix = reduced_pos.x;
@@ -85,12 +87,11 @@ __global__ void gpu_assign_particles_kernel(const unsigned int N,
         // compute distance between particle and cell center in fractional coordinates using minimum image
         Scalar3 dx = box.minImage(neigh_pos - pos);
         Scalar3 dx_frac_box = box.makeFraction(dx) - make_scalar3(0.5,0.5,0.5);
-        Scalar3 dx_frac = dx_frac_box*make_scalar3(mesh_idx.getW(), mesh_idx.getH(), mesh_idx.getD());
+        Scalar3 dx_frac = dx_frac_box*make_scalar3(dim.x,dim.y,dim.z);
 
         // compute fraction of particle density assigned to cell
         Scalar density_fraction = assignTSC(dx_frac.x)*assignTSC(dx_frac.y)*assignTSC(dx_frac.z)/V_cell;
-        unsigned int cell_idx = cell_coord.z + mesh_idx.getD() * cell_coord.y
-                                + mesh_idx.getD() * mesh_idx.getH() * cell_coord.x;
+        unsigned int cell_idx = cell_coord.z + dim.z * (cell_coord.y + dim.y * cell_coord.x);
 
         d_mesh[cell_idx].x += mode*density_fraction;
         }
@@ -215,6 +216,8 @@ __global__ void gpu_interpolate_forces_kernel(const unsigned int N,
 
     Scalar V = box.getVolume();
  
+    uint3 dim = make_uint3(mesh_idx.getW(), mesh_idx.getH(), mesh_idx.getD());
+
     // inverse dimensions
     Scalar3 dim_inv = make_scalar3(Scalar(1.0)/(Scalar)mesh_idx.getW(),
                                    Scalar(1.0)/(Scalar)mesh_idx.getH(),
@@ -228,9 +231,9 @@ __global__ void gpu_interpolate_forces_kernel(const unsigned int N,
 
     // compute coordinates in units of the mesh size
     Scalar3 f = box.makeFraction(pos);
-    Scalar3 reduced_pos = make_scalar3(f.x * (Scalar) mesh_idx.getW(),
-                                       f.y * (Scalar) mesh_idx.getH(),
-                                       f.z * (Scalar) mesh_idx.getD());
+    Scalar3 reduced_pos = make_scalar3(f.x * (Scalar) dim.x,
+                                       f.y * (Scalar) dim.y,
+                                       f.z * (Scalar) dim.z);
 
     // find cell the particle is in
     unsigned int ix = reduced_pos.x;
@@ -268,10 +271,9 @@ __global__ void gpu_interpolate_forces_kernel(const unsigned int N,
         // compute distance between particle and cell center in fractional coordinates using minimum image
         Scalar3 dx = box.minImage(neigh_pos - pos);
         Scalar3 dx_frac_box = box.makeFraction(dx) - make_scalar3(0.5,0.5,0.5);
-        Scalar3 dx_frac = dx_frac_box*make_scalar3(mesh_idx.getW(), mesh_idx.getH(), mesh_idx.getD());
+        Scalar3 dx_frac = dx_frac_box*make_scalar3(dim.x,dim.y,dim.z);
 
-        unsigned int cell_idx = cell_coord.z + mesh_idx.getD() * cell_coord.y
-                                + mesh_idx.getD() * mesh_idx.getH() * cell_coord.x;
+        unsigned int cell_idx = cell_coord.z + dim.z * (cell_coord.y + dim.y * cell_coord.x);
 
         Scalar4 mesh_force = tex1Dfetch(force_mesh_tex,cell_idx);
 
