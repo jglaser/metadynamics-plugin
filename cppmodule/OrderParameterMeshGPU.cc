@@ -75,6 +75,7 @@ void OrderParameterMeshGPU::assignParticles()
     ArrayHandle<Scalar4> d_postype(m_pdata->getPositions(), access_location::device, access_mode::read);
     ArrayHandle<cufftComplex> d_mesh(m_mesh, access_location::device, access_mode::overwrite);
     ArrayHandle<Scalar> d_mode(m_mode, access_location::device, access_mode::read);
+    ArrayHandle<unsigned int> d_cell_adj(m_cell_adj, access_location::device, access_mode::read);
 
     cudaMemset(d_mesh.data, 0, sizeof(cufftComplex)*m_mesh.getNumElements());
 
@@ -83,6 +84,8 @@ void OrderParameterMeshGPU::assignParticles()
                          d_mesh.data,
                          m_mesh_index,
                          d_mode.data,
+                         d_cell_adj.data,
+                         m_cell_adj_indexer,
                          m_pdata->getGlobalBox());
 
     if (m_exec_conf->isCUDAErrorCheckingEnabled())
@@ -148,6 +151,7 @@ void OrderParameterMeshGPU::interpolateForces()
     ArrayHandle<cufftComplex> d_force_mesh_z(m_force_mesh_z, access_location::device, access_mode::read);
     ArrayHandle<Scalar4> d_force_mesh(m_force_mesh, access_location::device, access_mode::overwrite);
     ArrayHandle<Scalar> d_mode(m_mode, access_location::device, access_mode::read);
+    ArrayHandle<unsigned int> d_cell_adj(m_cell_adj, access_location::device, access_mode::read);
 
     ArrayHandle<Scalar4> d_force(m_force, access_location::device, access_mode::overwrite);
 
@@ -161,6 +165,8 @@ void OrderParameterMeshGPU::interpolateForces()
                            d_force_mesh.data,
                            m_mesh_index,
                            d_mode.data,
+                           d_cell_adj.data,
+                           m_cell_adj_indexer,
                            m_pdata->getGlobalBox());
 
     if (m_exec_conf->isCUDAErrorCheckingEnabled())
