@@ -114,14 +114,6 @@ void OrderParameterMesh::setupMesh()
         }
  
     m_mesh_index = Index3D(m_mesh_points.x, m_mesh_points.y, m_mesh_points.z);
-    m_cell_adj_indexer = Index2D((m_radius*2+1)*(m_radius*2+1)*(m_radius*2+1), m_mesh_index.getNumElements());
-
-    // allocate adjacency matrix
-    GPUArray<unsigned int> cell_adj(m_cell_adj_indexer.getNumElements(), m_exec_conf);
-    m_cell_adj.swap(cell_adj);
-
-    // setup adjacency matrix
-    initializeCellAdj();
 
     // allocate memory for influence function and k values
     GPUArray<Scalar> inf_f(m_mesh_index.getNumElements(), m_exec_conf);
@@ -240,7 +232,7 @@ void OrderParameterMesh::computeInfluenceFunction()
                                            + (Scalar)m_mesh_points.z*(Scalar)nz*b3;
 
                             Scalar3 knH = Scalar(2.0*M_PI)*(make_scalar3(l,m,n)*dim_inv+make_scalar3(nx,ny,nz));
-                            Scalar U = assignTSCFourier(knH.x)*assignTSCFourier(knH.y)*assignTSCFourier(knH.z);
+                            Scalar U = assignCICFourier(knH.x)*assignCICFourier(knH.y)*assignCICFourier(knH.z);
                             Scalar knsq = dot(kn,kn);
                             UsqR += U*U*kn*exp(-knsq/m_qstarsq*Scalar(1.0/2.0))/(Scalar)N/(Scalar)N*V_box;
                             Usq += U*U;
@@ -285,70 +277,10 @@ void OrderParameterMesh::computeInfluenceFunction()
     }
                              
 
-void OrderParameterMesh::initializeCellAdj()
-    {
-    ArrayHandle<unsigned int> h_cell_adj(m_cell_adj, access_location::host, access_mode::overwrite);
-
-    // loop over all cells
-    for (int k = 0; k < int(m_mesh_points.z); k++)
-        for (int j = 0; j < int(m_mesh_points.y); j++)
-            for (int i = 0; i < int(m_mesh_points.x); i++)
-                {
-                unsigned int cur_cell = m_mesh_index(i,j,k);
-                unsigned int offset = 0;
-
-                // loop over neighboring cells
-                // need signed integer values for performing index calculations with negative values
-                int r = m_radius;
-                int mx = int(m_mesh_points.x);
-                int my = int(m_mesh_points.y);
-                int mz = int(m_mesh_points.z);
-                for (int nk = k-r; nk <= k+r; nk++)
-                    for (int nj = j-r; nj <= j+r; nj++)
-                        for (int ni = i-r; ni <= i+r; ni++)
-                            {
-                            int wrapi = ni % mx;
-                            if (wrapi < 0)
-                                wrapi += mx;
-
-                            int wrapj = nj % my;
-                            if (wrapj < 0)
-                                wrapj += my;
-
-                            int wrapk = nk % mz;
-                            if (wrapk < 0)
-                                wrapk += mz;
-
-                            unsigned int neigh_cell = m_mesh_index(wrapi, wrapj, wrapk);
-                            h_cell_adj.data[m_cell_adj_indexer(offset, cur_cell)] = neigh_cell;
-                            offset++;
-                            }
-
-                // sort the adj list for each cell
-                sort(&h_cell_adj.data[m_cell_adj_indexer(0, cur_cell)],
-                     &h_cell_adj.data[m_cell_adj_indexer(offset, cur_cell)]);
-                }
-    }
- 
-/*! \param x Distance on mesh in units of the mesh size
- */
-Scalar OrderParameterMesh::assignTSC(Scalar x)
-    {
-    Scalar xsq = x*x;
-    Scalar xabs = sqrt(xsq);
-
-    if (xsq <= Scalar(1.0/4.0))
-        return Scalar(3.0/4.0) - xsq;
-    else if (xsq <= Scalar(9.0/4.0))
-        return Scalar(1.0/2.0)*(Scalar(3.0/2.0)-xabs)*(Scalar(3.0/2.0)-xabs);
-    else
-        return Scalar(0.0);
-    }
-
 /*! \param k Wave vector times mesh size
- * \returns the Fourier transformed TSC assignment function
+ * \returns the Fourier transformed CIC assignment function
  */
-Scalar OrderParameterMesh::assignTSCFourier(Scalar k)
+Scalar OrderParameterMesh::assignCICFourier(Scalar k)
     {
     Scalar fac = 0;
 
@@ -366,10 +298,10 @@ Scalar OrderParameterMesh::assignTSCFourier(Scalar k)
         fac = Scalar(2.0)*sin(k*Scalar(1.0/2.0))/k;
         }
 
-    return fac*fac*fac;
+    return fac*fac;
     }
 
-//! Assignment of particles to mesh using three-point scheme (triangular shaped cloud)
+//! Assignment of particles to mesh using eight-point scheme (cloud in cell)
 /*! This is a second order accurate scheme with continuous value and continuous derivative
  */
 void OrderParameterMesh::assignParticles()
@@ -379,8 +311,6 @@ void OrderParameterMesh::assignParticles()
     ArrayHandle<Scalar4> h_postype(m_pdata->getPositions(), access_location::host, access_mode::read);
     ArrayHandle<kiss_fft_cpx> h_mesh(m_mesh, access_location::host, access_mode::overwrite);
     ArrayHandle<Scalar> h_mode(m_mode, access_location::host, access_mode::read);
-
-    ArrayHandle<unsigned int> h_cell_adj(m_cell_adj, access_location::host, access_mode::read);
 
     const BoxDim& global_box = m_pdata->getGlobalBox();
  
@@ -414,42 +344,75 @@ void OrderParameterMesh::assignParticles()
 
         // handle particles on the boundary
         if (ix == m_mesh_points.x)
-            ix = 0;
+            ix--;
         if (iy == m_mesh_points.y)
-            iy = 0;
+            iy--;
         if (iz == m_mesh_points.z)
-            iz = 0;
+            iz--;
 
-        // center of cell (in units of the mesh size)
-        unsigned int my_cell = m_mesh_index(ix,iy,iz);
+        Scalar3 mycell_frac = make_scalar3((Scalar) ix + Scalar(0.5),
+                                         (Scalar) iy + Scalar(0.5),
+                                         (Scalar) iz + Scalar(0.5));
 
-        // assign particle to cell and next neighbors
-        for (unsigned int k = 0; k < m_cell_adj_indexer.getW(); ++k)
-            {
-            unsigned int neigh_cell = h_cell_adj.data[m_cell_adj_indexer(k, my_cell)];
+        int3 dir = make_int3(reduced_pos.x > mycell_frac.x ? 1 : -1,
+                             reduced_pos.y > mycell_frac.y ? 1 : -1,
+                             reduced_pos.z > mycell_frac.z ? 1 : -1);
 
-            uint3 cell_coord = m_mesh_index.getTriple(neigh_cell); 
+        uchar3 periodic = global_box.getPeriodic();
 
-            Scalar3 neigh_frac = make_scalar3((Scalar) cell_coord.x + Scalar(0.5),
-                                             (Scalar) cell_coord.y + Scalar(0.5),
-                                             (Scalar) cell_coord.z + Scalar(0.5));
-           
-            // coordinates of the neighboring cell between 0..1 
-            Scalar3 neigh_frac_box = neigh_frac * dim_inv;
-            Scalar3 neigh_pos = global_box.makeCoordinates(neigh_frac_box);
+        for (int i = 0; i < 2; ++i)
+            for (int j = 0; j < 2; ++j)
+                for (int k = 0; k < 2; ++k)
+                    {
+                    int3 cell_coord = make_int3((int)ix + i*dir.x,
+                                                (int)iy + j*dir.y,
+                                                (int)iz + k*dir.z);
 
-            // compute distance between particle and cell center in fractional coordinates using minimum image
-            Scalar3 dx = global_box.minImage(neigh_pos - pos);
-            Scalar3 dx_frac_box = global_box.makeFraction(dx) - make_scalar3(0.5,0.5,0.5);
-            Scalar3 dx_frac = dx_frac_box*make_scalar3(m_mesh_points.x, m_mesh_points.y, m_mesh_points.z);
+                    if (periodic.x)
+                        {
+                        if (cell_coord.x < 0)
+                            cell_coord.x += m_mesh_points.x;
+                        else if (cell_coord.x >= (int) m_mesh_points.x)
+                            cell_coord.x -= m_mesh_points.x;
+                        }
+                    if (periodic.y)
+                        {
+                        if (cell_coord.y < 0)
+                            cell_coord.y += m_mesh_points.y;
+                        else if (cell_coord.y >= (int) m_mesh_points.y)
+                            cell_coord.y -= m_mesh_points.y;
+                        }
+                    if (periodic.z)
+                        {
+                        if (cell_coord.z < 0)
+                            cell_coord.z += m_mesh_points.z;
+                        else if (cell_coord.z >= (int) m_mesh_points.z)
+                            cell_coord.z -= m_mesh_points.z;
+                        }
 
-            // compute fraction of particle density assigned to cell
-            Scalar density_fraction = assignTSC(dx_frac.x)*assignTSC(dx_frac.y)*assignTSC(dx_frac.z)/V_cell;
-            unsigned int cell_idx = cell_coord.z + m_mesh_points.z * cell_coord.y
-                                    + m_mesh_points.y * m_mesh_points.z * cell_coord.x;
-            h_mesh.data[cell_idx].r += h_mode.data[type]*density_fraction;
-            }
-             
+                    Scalar3 cell_frac = make_scalar3((Scalar) cell_coord.x + Scalar(0.5),
+                                                     (Scalar) cell_coord.y + Scalar(0.5),
+                                                     (Scalar) cell_coord.z + Scalar(0.5));
+
+                    // coordinates of the neighboring cell between 0..1 
+                    Scalar3 neigh_frac_box = make_scalar3(cell_frac.x,cell_frac.y,cell_frac.z) * dim_inv;
+                    Scalar3 neigh_pos = global_box.makeCoordinates(neigh_frac_box);
+
+                    // compute distance between particle and cell center using minimum image
+                    Scalar3 dx = global_box.minImage(neigh_pos - pos);
+                    Scalar3 dx_frac_box = global_box.makeFraction(dx) - make_scalar3(0.5,0.5,0.5);
+                    Scalar3 dx_frac = dx_frac_box*make_scalar3(m_mesh_points.x,m_mesh_points.y,m_mesh_points.z);
+
+                    // compute fraction of particle density assigned to cell
+                    Scalar3 d = dx_frac*dx_frac;
+                    d.x = sqrt(d.x);
+                    d.y = sqrt(d.y);
+                    d.z = sqrt(d.z);
+                    Scalar density_fraction = (Scalar(1.0)-d.x)*(Scalar(1.0)-d.y)*(Scalar(1.0)-d.z)/V_cell;
+                    unsigned int cell_idx = cell_coord.z + m_mesh_points.z * (cell_coord.y + m_mesh_points.y * cell_coord.x);
+
+                    h_mesh.data[cell_idx].r += h_mode.data[type]*density_fraction;
+                    }
         }  // end of loop over particles
 
     if (m_prof) m_prof->pop();
@@ -518,7 +481,6 @@ void OrderParameterMesh::interpolateForces()
     ArrayHandle<kiss_fft_cpx> h_force_mesh_y(m_force_mesh_y, access_location::host, access_mode::read);
     ArrayHandle<kiss_fft_cpx> h_force_mesh_z(m_force_mesh_z, access_location::host, access_mode::read);
     ArrayHandle<Scalar> h_mode(m_mode, access_location::host, access_mode::read);
-    ArrayHandle<unsigned int> h_cell_adj(m_cell_adj, access_location::host, access_mode::read);
 
     ArrayHandle<Scalar4> h_force(m_force, access_location::host, access_mode::overwrite);
 
@@ -530,7 +492,7 @@ void OrderParameterMesh::interpolateForces()
                                    Scalar(1.0)/(Scalar)m_mesh_points.y,
                                    Scalar(1.0)/(Scalar)m_mesh_points.z); 
 
-    for (unsigned int idx = 0; idx < m_pdata->getN(); ++idx)
+   for (unsigned int idx = 0; idx < m_pdata->getN(); ++idx)
         {
         Scalar4 postype = h_postype.data[idx];
 
@@ -550,45 +512,80 @@ void OrderParameterMesh::interpolateForces()
 
         // handle particles on the boundary
         if (ix == m_mesh_points.x)
-            ix = 0;
+            ix--;
         if (iy == m_mesh_points.y)
-            iy = 0;
+            iy--;
         if (iz == m_mesh_points.z)
-            iz = 0;
+            iz--;
 
-        // center of cell (in units of the mesh size)
-        unsigned int my_cell = m_mesh_index(ix,iy,iz);
-        
+        Scalar3 mycell_frac = make_scalar3((Scalar) ix + Scalar(0.5),
+                                         (Scalar) iy + Scalar(0.5),
+                                         (Scalar) iz + Scalar(0.5));
+
+        int3 dir = make_int3(reduced_pos.x > mycell_frac.x ? 1 : -1,
+                             reduced_pos.y > mycell_frac.y ? 1 : -1,
+                             reduced_pos.z > mycell_frac.z ? 1 : -1);
+
+        uchar3 periodic = global_box.getPeriodic();
+
         Scalar3 force = make_scalar3(0.0,0.0,0.0);
 
-        // interpolate mesh forces from cell and next neighbors
-        for (unsigned int k = 0; k < m_cell_adj_indexer.getW(); ++k)
-            {
-            unsigned int neigh_cell = h_cell_adj.data[m_cell_adj_indexer(k, my_cell)];
+        for (int i = 0; i < 2; ++i)
+            for (int j = 0; j < 2; ++j)
+                for (int k = 0; k < 2; ++k)
+                    {
+                    int3 cell_coord = make_int3((int)ix + i*dir.x,
+                                                (int)iy + j*dir.y,
+                                                (int)iz + k*dir.z);
 
-            uint3 cell_coord = m_mesh_index.getTriple(neigh_cell); 
+                    if (periodic.x)
+                        {
+                        if (cell_coord.x < 0)
+                            cell_coord.x += m_mesh_points.x;
+                        else if (cell_coord.x >= (int) m_mesh_points.x)
+                            cell_coord.x -= m_mesh_points.x;
+                        }
+                    if (periodic.y)
+                        {
+                        if (cell_coord.y < 0)
+                            cell_coord.y += m_mesh_points.y;
+                        else if (cell_coord.y >= (int) m_mesh_points.y)
+                            cell_coord.y -= m_mesh_points.y;
+                        }
+                    if (periodic.z)
+                        {
+                        if (cell_coord.z < 0)
+                            cell_coord.z += m_mesh_points.z;
+                        else if (cell_coord.z >= (int) m_mesh_points.z)
+                            cell_coord.z -= m_mesh_points.z;
+                        }
 
-            Scalar3 neigh_frac = make_scalar3((Scalar) cell_coord.x + Scalar(0.5),
-                                             (Scalar) cell_coord.y + Scalar(0.5),
-                                             (Scalar) cell_coord.z + Scalar(0.5));
-           
-            // coordinates of the neighboring cell between 0..1 
-            Scalar3 neigh_frac_box = neigh_frac * dim_inv;
-            Scalar3 neigh_pos = global_box.makeCoordinates(neigh_frac_box);
+                    Scalar3 cell_frac = make_scalar3((Scalar) cell_coord.x + Scalar(0.5),
+                                                     (Scalar) cell_coord.y + Scalar(0.5),
+                                                     (Scalar) cell_coord.z + Scalar(0.5));
 
-            // compute distance between particle and cell center in fractional coordinates using minimum image
-            Scalar3 dx = global_box.minImage(neigh_pos - pos);
-            Scalar3 dx_frac_box = global_box.makeFraction(dx) - make_scalar3(0.5,0.5,0.5);
-            Scalar3 dx_frac = dx_frac_box*make_scalar3(m_mesh_points.x, m_mesh_points.y, m_mesh_points.z);
+                    // coordinates of the neighboring cell between 0..1 
+                    Scalar3 neigh_frac_box = make_scalar3(cell_frac.x,cell_frac.y,cell_frac.z) * dim_inv;
+                    Scalar3 neigh_pos = global_box.makeCoordinates(neigh_frac_box);
 
-            unsigned int cell_idx = cell_coord.z + m_mesh_points.z * cell_coord.y
-                                    + m_mesh_points.y * m_mesh_points.z * cell_coord.x;
+                    // compute distance between particle and cell center using minimum image
+                    Scalar3 dx = global_box.minImage(neigh_pos - pos);
+                    Scalar3 dx_frac_box = global_box.makeFraction(dx) - make_scalar3(0.5,0.5,0.5);
+                    Scalar3 dx_frac = dx_frac_box*make_scalar3(m_mesh_points.x,m_mesh_points.y,m_mesh_points.z);
 
-            force += -assignTSC(dx_frac.x)*assignTSC(dx_frac.y)*assignTSC(dx_frac.z)*h_mode.data[type]
-                            *make_scalar3(h_force_mesh_x.data[cell_idx].r,
-                                          h_force_mesh_y.data[cell_idx].r,
-                                          h_force_mesh_z.data[cell_idx].r)/V;
-            }  
+                    // compute fraction of particle density assigned to cell
+                    Scalar3 d = dx_frac*dx_frac;
+                    d.x = sqrt(d.x);
+                    d.y = sqrt(d.y);
+                    d.z = sqrt(d.z);
+
+                    unsigned int cell_idx = cell_coord.z + m_mesh_points.z * (cell_coord.y + m_mesh_points.y * cell_coord.x); 
+
+                    force += -(Scalar(1.0)-d.x)*(Scalar(1.0)-d.y)*(Scalar(1.0)-d.z)*h_mode.data[type]
+                                    *make_scalar3(h_force_mesh_x.data[cell_idx].r,
+                                                  h_force_mesh_y.data[cell_idx].r,
+                                                  h_force_mesh_z.data[cell_idx].r)/V;
+                    }  
 
         // Multiply with bias potential derivative
         force *= m_bias;

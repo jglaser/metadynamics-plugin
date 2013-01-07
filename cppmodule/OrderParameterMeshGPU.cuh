@@ -10,8 +10,6 @@ void gpu_assign_particles(const unsigned int N,
                           cufftComplex *d_mesh,
                           const Index3D& mesh_idx,
                           const Scalar *d_mode,
-                          const unsigned int *d_cadj,
-                          const Index2D& cadji,
                           const BoxDim& box);
 
 void gpu_update_meshes(const unsigned int n_wave_vectors,
@@ -34,8 +32,6 @@ void gpu_interpolate_forces(const unsigned int N,
                              Scalar4 *d_force_mesh,
                              const Index3D& mesh_idx,
                              const Scalar *d_mode,
-                             const unsigned int *d_cadj,
-                             const Index2D& cadji,
                              const BoxDim& box);
 
 void gpu_compute_cv(unsigned int n_wave_vectors,

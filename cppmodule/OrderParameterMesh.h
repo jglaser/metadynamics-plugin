@@ -41,8 +41,6 @@ class OrderParameterMesh : public CollectiveVariable
         Scalar3 m_mesh_size;                //!< The dimensions of a single cell along every coordinate
         uint3 m_mesh_points;                //!< Number of sub-divisions along one coordinate
         Index3D m_mesh_index;               //!< Indexer for the particle mesh 
-        GPUArray<unsigned int> m_cell_adj;  //!< Cell adjacency list
-        Index2D m_cell_adj_indexer;         //!< Indexes elements in the cell adjacency list
         unsigned int m_radius;              //!< Radius of particle smearing (in units of mesh size)
         GPUArray<Scalar> m_mode;            //!< Per-type scalar multiplying density ("charges")
         GPUArray<Scalar> m_inf_f;           //!< Fourier representation of the influence function (real part)
@@ -61,14 +59,8 @@ class OrderParameterMesh : public CollectiveVariable
         //! Compute the optimal influence function
         void computeInfluenceFunction();
 
-        //! Initializes values in the cell_adj array
-        void initializeCellAdj();
- 
-        //! The TSC (triangular-shaped cloud) charge assignment function
-        Scalar assignTSC(Scalar x);
-
-        //! The TSC (triangular-shaped cloud) charge assignment function (Fourier transform, real part)
-        Scalar assignTSCFourier(Scalar k);
+        //! The CIC (cloud in cell) charge assignment function (Fourier transform, real part)
+        Scalar assignCICFourier(Scalar k);
 
         //! Helper function to assign particle coordinates to mesh
         virtual void assignParticles();

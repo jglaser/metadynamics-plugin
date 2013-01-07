@@ -1,22 +1,5 @@
 #include "OrderParameterMeshGPU.cuh"
 
-/*! \param x Distance on mesh in units of the mesh size
- */
-__device__ Scalar assignTSC(Scalar x)
-    {
-    Scalar xsq = x*x;
-    Scalar xabs = sqrtf(xsq);
-
-    if (xsq <= Scalar(1.0/4.0))
-        return Scalar(3.0/4.0) - xsq;
-    else if (xsq <= Scalar(9.0/4.0))
-        return Scalar(1.0/2.0)*(Scalar(3.0/2.0)-xabs)*(Scalar(3.0/2.0)-xabs);
-    else
-        return Scalar(0.0);
-    }
-
-texture<unsigned int, 1, cudaReadModeElementType> cadj_tex;
-
 //! Assignment of particles to mesh using three-point scheme (triangular shaped cloud)
 /*! This is a second order accurate scheme with continuous value and continuous derivative
  */
@@ -25,8 +8,6 @@ __global__ void gpu_assign_particles_kernel(const unsigned int N,
                                        cufftComplex *d_mesh,
                                        const Index3D mesh_idx,
                                        const Scalar *d_mode,
-                                       const unsigned int *d_cadj,
-                                       const Index2D cadji,
                                        const BoxDim box)
     {
     unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -60,42 +41,79 @@ __global__ void gpu_assign_particles_kernel(const unsigned int N,
     unsigned int iz = reduced_pos.z;
 
     // handle particles on the boundary
-    if (ix == mesh_idx.getW())
-        ix = 0;
-    if (iy == mesh_idx.getH())
-        iy = 0;
-    if (iz == mesh_idx.getD()) 
-        iz = 0;
+    if (ix == dim.x)
+        ix--;
 
-    // center of cell (in units of the mesh size)
-    unsigned int my_cell = mesh_idx(ix,iy,iz);
+    if (iy == dim.y)
+        iy--;
 
-    // assign particle to cell and next neighbors
-    for (unsigned int k = 0; k < cadji.getW(); ++k)
-        {
-        unsigned int neigh_cell = tex1Dfetch(cadj_tex,cadji(k, my_cell));
-        uint3 cell_coord = mesh_idx.getTriple(neigh_cell); 
+    if (iz == dim.z)
+        iz--;
 
-        Scalar3 neigh_frac = make_scalar3((Scalar) cell_coord.x + Scalar(0.5),
-                                         (Scalar) cell_coord.y + Scalar(0.5),
-                                         (Scalar) cell_coord.z + Scalar(0.5));
-       
-        // coordinates of the neighboring cell between 0..1 
-        Scalar3 neigh_frac_box = neigh_frac * dim_inv;
-        Scalar3 neigh_pos = box.makeCoordinates(neigh_frac_box);
+    Scalar3 mycell_frac = make_scalar3((Scalar) ix + Scalar(0.5),
+                                     (Scalar) iy + Scalar(0.5),
+                                     (Scalar) iz + Scalar(0.5));
 
-        // compute distance between particle and cell center in fractional coordinates using minimum image
-        Scalar3 dx = box.minImage(neigh_pos - pos);
-        Scalar3 dx_frac_box = box.makeFraction(dx) - make_scalar3(0.5,0.5,0.5);
-        Scalar3 dx_frac = dx_frac_box*make_scalar3(dim.x,dim.y,dim.z);
+    int3 dir = make_int3(reduced_pos.x > mycell_frac.x ? 1 : -1,
+                         reduced_pos.y > mycell_frac.y ? 1 : -1,
+                         reduced_pos.z > mycell_frac.z ? 1 : -1);
 
-        // compute fraction of particle density assigned to cell
-        Scalar density_fraction = assignTSC(dx_frac.x)*assignTSC(dx_frac.y)*assignTSC(dx_frac.z)/V_cell;
-        unsigned int cell_idx = cell_coord.z + dim.z * (cell_coord.y + dim.y * cell_coord.x);
+    uchar3 periodic = box.getPeriodic();
 
-        d_mesh[cell_idx].x += mode*density_fraction;
-        }
-         
+    for (int i = 0; i < 2; ++i)
+        for (int j = 0; j < 2; ++j)
+            for (int k = 0; k < 2; ++k)
+                {
+                int3 cell_coord = make_int3((int)ix + i*dir.x,
+                                            (int)iy + j*dir.y,
+                                            (int)iz + k*dir.z);
+
+                if (periodic.x)
+                    {
+                    if (cell_coord.x < 0)
+                        cell_coord.x += dim.x;
+                    else if (cell_coord.x >= (int) dim.x)
+                        cell_coord.x -= dim.x;
+                    }
+                if (periodic.y)
+                    {
+                    if (cell_coord.y < 0)
+                        cell_coord.y += dim.y;
+                    else if (cell_coord.y >= (int) dim.y)
+                        cell_coord.y -= dim.y;
+                    }
+                if (periodic.z)
+                    {
+                    if (cell_coord.z < 0)
+                        cell_coord.z += dim.z;
+                    else if (cell_coord.z >= (int) dim.z)
+                        cell_coord.z -= dim.z;
+                    }
+            
+                Scalar3 cell_frac = make_scalar3((Scalar) cell_coord.x + Scalar(0.5),
+                                                 (Scalar) cell_coord.y + Scalar(0.5),
+                                                 (Scalar) cell_coord.z + Scalar(0.5));
+
+
+                // coordinates of the neighboring cell between 0..1 
+                Scalar3 neigh_frac_box = make_scalar3(cell_frac.x,cell_frac.y,cell_frac.z) * dim_inv;
+                Scalar3 neigh_pos = box.makeCoordinates(neigh_frac_box);
+
+                // compute distance between particle and cell center using minimum image
+                Scalar3 dx = box.minImage(neigh_pos - pos);
+                Scalar3 dx_frac_box = box.makeFraction(dx) - make_scalar3(0.5,0.5,0.5);
+                Scalar3 dx_frac = dx_frac_box*make_scalar3(dim.x,dim.y,dim.z);
+
+                // compute fraction of particle density assigned to cell
+                Scalar3 d = dx_frac*dx_frac;
+                d.x = sqrtf(d.x);
+                d.y = sqrtf(d.y);
+                d.z = sqrtf(d.z);
+                Scalar density_fraction = (Scalar(1.0)-d.x)*(Scalar(1.0)-d.y)*(Scalar(1.0)-d.z)/V_cell;
+                unsigned int cell_idx = cell_coord.z + dim.z * (cell_coord.y + dim.y * cell_coord.x);
+
+                d_mesh[cell_idx].x += mode*density_fraction;
+                }
     }
 
 void gpu_assign_particles(const unsigned int N,
@@ -103,14 +121,8 @@ void gpu_assign_particles(const unsigned int N,
                           cufftComplex *d_mesh,
                           const Index3D& mesh_idx,
                           const Scalar *d_mode,
-                          const unsigned int *d_cadj,
-                          const Index2D& cadji,
                           const BoxDim& box)
     {
-
-    cadj_tex.normalized = false;
-    cadj_tex.filterMode = cudaFilterModePoint;
-    cudaBindTexture(0, cadj_tex, d_cadj, sizeof(unsigned int)*cadji.getNumElements());
 
     unsigned int block_size = 512;
 
@@ -119,8 +131,6 @@ void gpu_assign_particles(const unsigned int N,
                                                                 d_mesh,
                                                                 mesh_idx,
                                                                 d_mode,
-                                                                d_cadj,
-                                                                cadji,
                                                                 box);
     }
 
@@ -206,22 +216,20 @@ __global__ void gpu_interpolate_forces_kernel(const unsigned int N,
                                        const Scalar bias,
                                        const Index3D mesh_idx,
                                        const Scalar *d_mode,
-                                       const unsigned int *d_cadj,
-                                       const Index2D cadji,
                                        const BoxDim box)
     {
     unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (idx >= N) return;
 
-    Scalar V = box.getVolume();
- 
     uint3 dim = make_uint3(mesh_idx.getW(), mesh_idx.getH(), mesh_idx.getD());
 
+    Scalar V = box.getVolume();
+ 
     // inverse dimensions
-    Scalar3 dim_inv = make_scalar3(Scalar(1.0)/(Scalar)mesh_idx.getW(),
-                                   Scalar(1.0)/(Scalar)mesh_idx.getH(),
-                                   Scalar(1.0)/(Scalar)mesh_idx.getD());
+    Scalar3 dim_inv = make_scalar3(Scalar(1.0)/(Scalar)dim.x,
+                                   Scalar(1.0)/(Scalar)dim.y,
+                                   Scalar(1.0)/(Scalar)dim.z);
 
     Scalar4 postype = d_postype[idx];
 
@@ -241,45 +249,84 @@ __global__ void gpu_interpolate_forces_kernel(const unsigned int N,
     unsigned int iz = reduced_pos.z;
 
     // handle particles on the boundary
-    if (ix == mesh_idx.getW())
-        ix = 0;
-    if (iy == mesh_idx.getH())
-        iy = 0;
-    if (iz == mesh_idx.getD()) 
-        iz = 0;
+    if (ix == dim.x)
+        ix--;
 
-    // center of cell (in units of the mesh size)
-    unsigned int my_cell = mesh_idx(ix,iy,iz);
+    if (iy == dim.y)
+        iy--;
+
+    if (iz == dim.z)
+        iz--;
+
+    Scalar3 mycell_frac = make_scalar3((Scalar) ix + Scalar(0.5),
+                                     (Scalar) iy + Scalar(0.5),
+                                     (Scalar) iz + Scalar(0.5));
+
+    int3 dir = make_int3(reduced_pos.x > mycell_frac.x ? 1 : -1,
+                         reduced_pos.y > mycell_frac.y ? 1 : -1,
+                         reduced_pos.z > mycell_frac.z ? 1 : -1);
+
+    uchar3 periodic = box.getPeriodic();
 
     Scalar3 force = make_scalar3(0.0,0.0,0.0);
 
-    // assign particle to cell and next neighbors
-    for (unsigned int k = 0; k < cadji.getW(); ++k)
-        {
-        unsigned int neigh_cell = tex1Dfetch(cadj_tex,cadji(k, my_cell));
-        uint3 cell_coord = mesh_idx.getTriple(neigh_cell); 
+    for (int i = 0; i < 2; ++i)
+        for (int j = 0; j < 2; ++j)
+            for (int k = 0; k < 2; ++k)
+                {
+                int3 cell_coord = make_int3((int)ix + i*dir.x,
+                                            (int)iy + j*dir.y,
+                                            (int)iz + k*dir.z);
+
+                if (periodic.x)
+                    {
+                    if (cell_coord.x < 0)
+                        cell_coord.x += dim.x;
+                    else if (cell_coord.x >= dim.x)
+                        cell_coord.x -= dim.x;
+                    }
+                if (periodic.y)
+                    {
+                    if (cell_coord.y < 0)
+                        cell_coord.y += dim.y;
+                    else if (cell_coord.y >= dim.y)
+                        cell_coord.y -= dim.y;
+                    }
+                if (periodic.z)
+                    {
+                    if (cell_coord.z < 0)
+                        cell_coord.z += dim.z;
+                    else if (cell_coord.z >= dim.z)
+                        cell_coord.z -= dim.z;
+                    }
+            
+                Scalar3 cell_frac = make_scalar3((Scalar) cell_coord.x + Scalar(0.5),
+                                                 (Scalar) cell_coord.y + Scalar(0.5),
+                                                 (Scalar) cell_coord.z + Scalar(0.5));
 
 
-        Scalar3 neigh_frac = make_scalar3((Scalar) cell_coord.x + Scalar(0.5),
-                                         (Scalar) cell_coord.y + Scalar(0.5),
-                                         (Scalar) cell_coord.z + Scalar(0.5));
-       
-        // coordinates of the neighboring cell between 0..1 
-        Scalar3 neigh_frac_box = neigh_frac * dim_inv;
-        Scalar3 neigh_pos = box.makeCoordinates(neigh_frac_box);
+                // coordinates of the neighboring cell between 0..1 
+                Scalar3 neigh_frac_box = make_scalar3(cell_frac.x,cell_frac.y,cell_frac.z) * dim_inv;
+                Scalar3 neigh_pos = box.makeCoordinates(neigh_frac_box);
 
-        // compute distance between particle and cell center in fractional coordinates using minimum image
-        Scalar3 dx = box.minImage(neigh_pos - pos);
-        Scalar3 dx_frac_box = box.makeFraction(dx) - make_scalar3(0.5,0.5,0.5);
-        Scalar3 dx_frac = dx_frac_box*make_scalar3(dim.x,dim.y,dim.z);
+                // compute distance between particle and cell center using minimum image
+                Scalar3 dx = box.minImage(neigh_pos - pos);
+                Scalar3 dx_frac_box = box.makeFraction(dx) - make_scalar3(0.5,0.5,0.5);
+                Scalar3 dx_frac = dx_frac_box*make_scalar3(dim.x,dim.y,dim.z);
 
-        unsigned int cell_idx = cell_coord.z + dim.z * (cell_coord.y + dim.y * cell_coord.x);
+                // compute fraction of particle density assigned to cell
+                Scalar3 d = dx_frac*dx_frac;
+                d.x = sqrtf(d.x);
+                d.y = sqrtf(d.y);
+                d.z = sqrtf(d.z);
 
-        Scalar4 mesh_force = tex1Dfetch(force_mesh_tex,cell_idx);
+                unsigned int cell_idx = cell_coord.z + dim.z * (cell_coord.y + dim.y * cell_coord.x);
 
-        force += -assignTSC(dx_frac.x)*assignTSC(dx_frac.y)*assignTSC(dx_frac.z)*mode*
-                 make_scalar3(mesh_force.x,mesh_force.y,mesh_force.z);
-        }  
+                Scalar4 mesh_force = tex1Dfetch(force_mesh_tex,cell_idx);
+
+                force += -(Scalar(1.0)-d.x)*(Scalar(1.0)-d.y)*(Scalar(1.0)-d.z)*mode*
+                         make_scalar3(mesh_force.x,mesh_force.y,mesh_force.z);
+                }  
 
     // Multiply with bias potential derivative
     force *= bias/V;
@@ -297,8 +344,6 @@ void gpu_interpolate_forces(const unsigned int N,
                              Scalar4 *d_force_mesh,
                              const Index3D& mesh_idx,
                              const Scalar *d_mode,
-                             const unsigned int *d_cadj,
-                             const Index2D& cadji,
                              const BoxDim& box)
     {
     const unsigned int block_size = 512;
@@ -310,10 +355,6 @@ void gpu_interpolate_forces(const unsigned int N,
                                                                  d_force_mesh_y,
                                                                  d_force_mesh_z,
                                                                  d_force_mesh);
-    cadj_tex.normalized = false;
-    cadj_tex.filterMode = cudaFilterModePoint;
-    cudaBindTexture(0, cadj_tex, d_cadj, sizeof(unsigned int)*cadji.getNumElements());
-
     force_mesh_tex.normalized = false;
     force_mesh_tex.filterMode = cudaFilterModePoint;
     cudaBindTexture(0, force_mesh_tex, d_force_mesh, sizeof(Scalar4)*num_cells);
@@ -324,8 +365,6 @@ void gpu_interpolate_forces(const unsigned int N,
                                                                  bias,
                                                                  mesh_idx,
                                                                  d_mode,
-                                                                 d_cadj,
-                                                                 cadji,
                                                                  box);
     }
 
