@@ -41,6 +41,16 @@ void gpu_interpolate_forces(const unsigned int N,
 void gpu_compute_cv(unsigned int n_wave_vectors,
                            Scalar *d_sum_partial,
                            Scalar *d_sum,
-                           cufftComplex *d_fourier_mesh,
-                           cufftComplex *d_fourier_mesh_G,
+                           const cufftComplex *d_fourier_mesh,
+                           const cufftComplex *d_fourier_mesh_G,
+                           const Scalar *d_E_self,
                            const unsigned int block_size);
+
+void gpu_compute_influence_function(const Index3D& mesh_idx,
+                                    const unsigned int N,
+                                    Scalar *d_inf_f,
+                                    Scalar3 *d_k,
+                                    Scalar *d_E_self,
+                                    const BoxDim& box,
+                                    const Scalar qstarsq);
+ 

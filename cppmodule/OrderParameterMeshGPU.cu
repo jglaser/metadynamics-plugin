@@ -1,5 +1,10 @@
 #include "OrderParameterMeshGPU.cuh"
 
+__constant__ Scalar sinc_coeff[6];
+
+const Scalar coeff[] = {Scalar(1.0), Scalar(-1.0/6.0), Scalar(1.0/120.0), Scalar(-1.0/5040.0),
+                        Scalar(1.0/362880.0), Scalar(-1.0/39916800.0)};
+
 /*! \param x Distance on mesh in units of the mesh size
  */
 __device__ Scalar assignTSC(Scalar x)
@@ -14,6 +19,31 @@ __device__ Scalar assignTSC(Scalar x)
     else
         return Scalar(0.0);
     }
+
+/*! \param k Wave vector times mesh size
+ * \returns the Fourier transformed TSC assignment function
+ */
+__device__ Scalar assignTSCFourier(Scalar k)
+    {
+    Scalar fac = 0;
+
+    if (k*k <= Scalar(1.0))
+        {
+        Scalar term = Scalar(1.0);
+        for (unsigned int i = 0; i < 6; ++i)
+            {
+            fac += sinc_coeff[i] * term;
+            term *= k*k/Scalar(4.0);
+            }
+        }
+    else
+        {
+        fac = Scalar(2.0)*sinf(k*Scalar(1.0/2.0))/k;
+        }
+
+    return fac*fac*fac;
+    }
+
 
 texture<unsigned int, 1, cudaReadModeElementType> cadj_tex;
 
@@ -332,8 +362,9 @@ void gpu_interpolate_forces(const unsigned int N,
 __global__ void kernel_calculate_cv_partial(
             int n_wave_vectors,
             Scalar *sum_partial,
-            cufftComplex *d_fourier_mesh,
-            cufftComplex *d_fourier_mesh_G)
+            const cufftComplex *d_fourier_mesh,
+            const cufftComplex *d_fourier_mesh_G,
+            const Scalar *d_E_self)
     {
     extern __shared__ Scalar sdata[];
 
@@ -344,7 +375,7 @@ __global__ void kernel_calculate_cv_partial(
     Scalar mySum = Scalar(0.0);
 
     if (j < n_wave_vectors) {
-        mySum = d_fourier_mesh[j].x * d_fourier_mesh_G[j].x + d_fourier_mesh[j].y * d_fourier_mesh_G[j].y;
+        mySum = d_fourier_mesh[j].x * d_fourier_mesh_G[j].x + d_fourier_mesh[j].y * d_fourier_mesh_G[j].y - d_E_self[j];
         }
     sdata[tidx] = mySum;
 
@@ -406,8 +437,9 @@ __global__ void kernel_final_reduce_cv(Scalar* sum_partial,
 void gpu_compute_cv(unsigned int n_wave_vectors,
                            Scalar *d_sum_partial,
                            Scalar *d_sum,
-                           cufftComplex *d_fourier_mesh,
-                           cufftComplex *d_fourier_mesh_G,
+                           const cufftComplex *d_fourier_mesh,
+                           const cufftComplex *d_fourier_mesh_G,
+                           const Scalar *d_E_self,
                            const unsigned int block_size)
     {
     unsigned int n_blocks = n_wave_vectors/block_size + 1;
@@ -417,7 +449,8 @@ void gpu_compute_cv(unsigned int n_wave_vectors,
                n_wave_vectors,
                d_sum_partial,
                d_fourier_mesh,
-               d_fourier_mesh_G);
+               d_fourier_mesh_G,
+               d_E_self);
 
     // calculate final S(q) values 
     const unsigned int final_block_size = 512;
@@ -426,4 +459,130 @@ void gpu_compute_cv(unsigned int n_wave_vectors,
                                                                   n_blocks,
                                                                   d_sum);
     }
- 
+
+__global__ void gpu_compute_influence_function_kernel(const Index3D mesh_idx,
+                                          const unsigned int N,
+                                          Scalar *d_inf_f,
+                                          Scalar3 *d_k,
+                                          Scalar *d_E_self,
+                                          const Scalar3 b1,
+                                          const Scalar3 b2,
+                                          const Scalar3 b3,
+                                          const BoxDim box,
+                                          const Scalar qstarsq)
+    {
+    int l = blockIdx.x * blockDim.x + threadIdx.x;
+    int m = blockIdx.y * blockDim.y + threadIdx.y;
+    int n = blockIdx.z * blockDim.z + threadIdx.z;
+
+    l -= mesh_idx.getW()/2;
+    m -= mesh_idx.getH()/2;
+    n -= mesh_idx.getD()/2;
+
+    // maximal integer indices of inner loop
+    const int maxnx = 3;
+    const int maxny = 3;
+    const int maxnz = 3;
+
+    uint3 dim = make_uint3(mesh_idx.getW(), mesh_idx.getH(), mesh_idx.getD());
+
+    Scalar3 dim_inv = make_scalar3(Scalar(1.0)/(Scalar)dim.x,
+                                   Scalar(1.0)/(Scalar)dim.y,
+                                   Scalar(1.0)/(Scalar)dim.z);
+
+    Scalar V_box = box.getVolume();
+
+
+    Scalar3 k = (Scalar)l*b1+(Scalar)m*b2+(Scalar)n*b3;
+    Scalar ksq = dot(k,k);
+
+    // accumulate self energy
+    Scalar E_self = V_box*exp(-ksq/qstarsq*Scalar(1.0/2.0))/(Scalar) N;
+
+    Scalar3 UsqR = make_scalar3(0.0,0.0,0.0);
+    Scalar Usq = Scalar(0.0);
+
+    for (int nx = -maxnx; nx <= maxnx; ++nx)
+        for (int ny = -maxny; ny <= maxny; ++ny)
+            for (int nz = -maxnz; nz <= maxnz; ++nz)
+                {
+                Scalar3 kn = k + (Scalar)dim.x*(Scalar)nx*b1+
+                               + (Scalar)dim.y*(Scalar)ny*b2+
+                               + (Scalar)dim.z*(Scalar)nz*b3;
+                Scalar3 knH = Scalar(2.0*M_PI)*(make_scalar3(l,m,n)*dim_inv+make_scalar3(nx,ny,nz));
+                Scalar U = assignTSCFourier(knH.x)*assignTSCFourier(knH.y)*assignTSCFourier(knH.z);
+                Scalar knsq = dot(kn,kn);
+                UsqR += U*U*kn*exp(-knsq/qstarsq*Scalar(1.0/2.0))/(Scalar)N/(Scalar)N*V_box;
+                Usq += U*U;
+                }
+
+    Scalar num = dot(k,UsqR);
+    Scalar3 kH = Scalar(2.0*M_PI)*make_scalar3(l,m,n)*dim_inv;
+
+    Scalar denom = ksq*Usq*Usq;
+
+    // determine cell idx
+    unsigned int ix, iy, iz;
+    if (l < 0)
+        ix = l + (int) dim.x;
+    else
+        ix = l;
+
+    if (m < 0)
+        iy = m + (int) dim.y;
+    else
+        iy = m;
+
+    if (n < 0)
+        iz = n + (int) dim.z;
+    else
+        iz = n;
+
+    unsigned int cell_idx = iz + dim.z * iy + dim.y * dim.z * ix;
+
+    if ((l != 0) || (m != 0) || (n!=0))
+        d_inf_f[cell_idx] = num/denom;
+    else
+        // avoid divide by zero
+        d_inf_f[cell_idx] = Scalar(1.0)/(Scalar)N/(Scalar)N*V_box;
+
+    d_k[cell_idx] = k;
+
+    d_E_self[cell_idx] = E_self;
+    }
+
+void gpu_compute_influence_function(const Index3D& mesh_idx,
+                                    const unsigned int N,
+                                    Scalar *d_inf_f,
+                                    Scalar3 *d_k,
+                                    Scalar *d_E_self,
+                                    const BoxDim& box,
+                                    const Scalar qstarsq)
+    { 
+    cudaMemcpyToSymbol(sinc_coeff,coeff,6*sizeof(Scalar));
+
+    // compute reciprocal lattice vectors
+    Scalar3 a1 = box.getLatticeVector(0);
+    Scalar3 a2 = box.getLatticeVector(1);
+    Scalar3 a3 = box.getLatticeVector(2);
+
+    Scalar V_box = box.getVolume();
+    Scalar3 b1 = Scalar(2.0*M_PI)*make_scalar3(a2.y*a3.z-a2.z*a3.y, a2.z*a3.x-a2.x*a3.z, a2.x*a3.y-a2.y*a3.x)/V_box;
+    Scalar3 b2 = Scalar(2.0*M_PI)*make_scalar3(a3.y*a1.z-a3.z*a1.y, a3.z*a1.x-a3.x*a1.z, a3.x*a1.y-a3.y*a1.x)/V_box;
+    Scalar3 b3 = Scalar(2.0*M_PI)*make_scalar3(a1.y*a2.z-a1.z*a2.y, a1.z*a2.x-a1.x*a2.z, a1.x*a2.y-a1.y*a2.x)/V_box;
+
+    unsigned int block_size = 8;
+    
+    dim3 blockDim(block_size,block_size,block_size);
+    dim3 gridDim(mesh_idx.getW()/block_size+1,mesh_idx.getH()/block_size+1,mesh_idx.getD()/block_size+1);
+    gpu_compute_influence_function_kernel<<<gridDim,blockDim>>>(mesh_idx,
+                                                                N,
+                                                                d_inf_f,
+                                                                d_k,
+                                                                d_E_self,
+                                                                b1,
+                                                                b2,
+                                                                b3,
+                                                                box,
+                                                                qstarsq);
+    } 

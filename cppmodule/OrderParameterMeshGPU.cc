@@ -63,6 +63,9 @@ void OrderParameterMeshGPU::initializeFFT()
     
     GPUArray<Scalar4> force_mesh(num_cells, m_exec_conf);
     m_force_mesh.swap(force_mesh);
+
+    GPUArray<Scalar> self_terms(num_cells, m_exec_conf);
+    m_self_terms.swap(self_terms);
     }
 
 //! Assignment of particles to mesh using three-point scheme (triangular shaped cloud)
@@ -183,12 +186,14 @@ Scalar OrderParameterMeshGPU::computeCV()
     ArrayHandle<cufftComplex> d_fourier_mesh_G(m_fourier_mesh_G, access_location::device, access_mode::read);
 
     ArrayHandle<Scalar> d_sum_partial(m_sum_partial, access_location::device, access_mode::overwrite);
+    ArrayHandle<Scalar> d_self_terms(m_self_terms, access_location::device, access_mode::read);
 
     gpu_compute_cv(m_mesh_index.getNumElements(),
                    d_sum_partial.data,
                    m_sum.getDeviceFlags(),
                    d_fourier_mesh.data,
                    d_fourier_mesh_G.data,
+                   d_self_terms.data,
                    m_block_size);
  
     if (m_exec_conf->isCUDAErrorCheckingEnabled())
@@ -200,6 +205,27 @@ Scalar OrderParameterMeshGPU::computeCV()
 
     return sum - m_E_self;
     }
+
+//! Compute the optimal influence function
+void OrderParameterMeshGPU::computeInfluenceFunction()
+    {
+    ArrayHandle<Scalar> d_inf_f(m_inf_f, access_location::device, access_mode::overwrite);
+    ArrayHandle<Scalar3> d_k(m_k, access_location::device, access_mode::overwrite);
+    ArrayHandle<Scalar> d_self_terms(m_self_terms, access_location::device, access_mode::overwrite);
+
+    gpu_compute_influence_function(m_mesh_index,
+                                   m_pdata->getN(),
+                                   d_inf_f.data,
+                                   d_k.data,
+                                   d_self_terms.data,
+                                   m_pdata->getGlobalBox(),
+                                   m_qstarsq);
+  
+    if (m_exec_conf->isCUDAErrorCheckingEnabled())
+        CHECK_CUDA_ERROR();
+
+    }
+
 
 void export_OrderParameterMeshGPU()
     {

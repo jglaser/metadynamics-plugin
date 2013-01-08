@@ -59,7 +59,7 @@ class OrderParameterMesh : public CollectiveVariable
         virtual void initializeFFT();
 
         //! Compute the optimal influence function
-        void computeInfluenceFunction();
+        virtual void computeInfluenceFunction();
 
         //! Initializes values in the cell_adj array
         void initializeCellAdj();
