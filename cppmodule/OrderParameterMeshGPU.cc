@@ -209,6 +209,8 @@ Scalar OrderParameterMeshGPU::computeCV()
 //! Compute the optimal influence function
 void OrderParameterMeshGPU::computeInfluenceFunction()
     {
+    if (m_prof) m_prof->push(m_exec_conf, "influence function");
+
     ArrayHandle<Scalar> d_inf_f(m_inf_f, access_location::device, access_mode::overwrite);
     ArrayHandle<Scalar3> d_k(m_k, access_location::device, access_mode::overwrite);
     ArrayHandle<Scalar> d_self_terms(m_self_terms, access_location::device, access_mode::overwrite);
@@ -224,6 +226,7 @@ void OrderParameterMeshGPU::computeInfluenceFunction()
     if (m_exec_conf->isCUDAErrorCheckingEnabled())
         CHECK_CUDA_ERROR();
 
+    if (m_prof) m_prof->pop(m_exec_conf);
     }
 
 
