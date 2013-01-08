@@ -51,6 +51,13 @@ class OrderParameterMesh : public CollectiveVariable
         bool m_is_first_step;               //!< True if we have not yet computed the influence function
         unsigned int m_cv_last_updated;     //!< Timestep of last update of collective variable
         Scalar m_E_self;                    //!< The self energy
+        bool m_box_changed;                 //!< True if box has changed since last compute
+
+        //! Helper function to be called when box changes
+        void setBoxChange()
+            {
+            m_box_changed = true;
+            }
 
         //! Helper function to setup the mesh indices
         void setupMesh();

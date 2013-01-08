@@ -22,6 +22,8 @@ OrderParameterMesh::OrderParameterMesh(boost::shared_ptr<SystemDefinition> sysde
       m_radius(1),
       m_is_first_step(true),
       m_cv_last_updated(0),
+      m_E_self(0.0),
+      m_box_changed(false),
       m_kiss_fft(NULL),
       m_kiss_ifft_x(NULL),
       m_kiss_ifft_y(NULL),
@@ -43,7 +45,7 @@ OrderParameterMesh::OrderParameterMesh(boost::shared_ptr<SystemDefinition> sysde
     std::copy(mode.begin(), mode.end(), h_mode.data);
 
     m_qstarsq = qstar*qstar;
-    m_boxchange_connection = m_pdata->connectBoxChange(boost::bind(&OrderParameterMesh::computeInfluenceFunction, this));
+    m_boxchange_connection = m_pdata->connectBoxChange(boost::bind(&OrderParameterMesh::setBoxChange, this));
 
     m_mesh_points = make_uint3(nx, ny, nz);
 
@@ -633,6 +635,12 @@ Scalar OrderParameterMesh::getCurrentValue(unsigned int timestep)
 
         computeInfluenceFunction();
         m_is_first_step = false;
+        }
+
+    if (m_box_changed)
+        {
+        computeInfluenceFunction();
+        m_box_changed = false;
         }
 
     assignParticles();

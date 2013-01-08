@@ -475,16 +475,13 @@ __global__ void gpu_compute_influence_function_kernel(const Index3D mesh_idx,
     int m = blockIdx.y * blockDim.y + threadIdx.y;
     int n = blockIdx.z * blockDim.z + threadIdx.z;
 
-    l -= mesh_idx.getW()/2;
-    m -= mesh_idx.getH()/2;
-    n -= mesh_idx.getD()/2;
+    uint3 dim = make_uint3(mesh_idx.getW(), mesh_idx.getH(), mesh_idx.getD());
+    if (l >= dim.x/2+1 || m >= dim.y/2+1 || m >= dim.z/2+1) return;
 
     // maximal integer indices of inner loop
-    const int maxnx = 3;
-    const int maxny = 3;
-    const int maxnz = 3;
-
-    uint3 dim = make_uint3(mesh_idx.getW(), mesh_idx.getH(), mesh_idx.getD());
+    const int maxnx = 2;
+    const int maxny = 2;
+    const int maxnz = 2;
 
     Scalar3 dim_inv = make_scalar3(Scalar(1.0)/(Scalar)dim.x,
                                    Scalar(1.0)/(Scalar)dim.y,
@@ -493,8 +490,8 @@ __global__ void gpu_compute_influence_function_kernel(const Index3D mesh_idx,
     Scalar V_box = box.getVolume();
 
 
-    Scalar3 k = (Scalar)l*b1+(Scalar)m*b2+(Scalar)n*b3;
-    Scalar ksq = dot(k,k);
+    Scalar3 kval = (Scalar)l*b1+(Scalar)m*b2+(Scalar)n*b3;
+    Scalar ksq = dot(kval,kval);
 
     // accumulate self energy
     Scalar E_self = V_box*exp(-ksq/qstarsq*Scalar(1.0/2.0))/(Scalar) N;
@@ -506,7 +503,7 @@ __global__ void gpu_compute_influence_function_kernel(const Index3D mesh_idx,
         for (int ny = -maxny; ny <= maxny; ++ny)
             for (int nz = -maxnz; nz <= maxnz; ++nz)
                 {
-                Scalar3 kn = k + (Scalar)dim.x*(Scalar)nx*b1+
+                Scalar3 kn = kval + (Scalar)dim.x*(Scalar)nx*b1+
                                + (Scalar)dim.y*(Scalar)ny*b2+
                                + (Scalar)dim.z*(Scalar)nz*b3;
                 Scalar3 knH = Scalar(2.0*M_PI)*(make_scalar3(l,m,n)*dim_inv+make_scalar3(nx,ny,nz));
@@ -516,39 +513,53 @@ __global__ void gpu_compute_influence_function_kernel(const Index3D mesh_idx,
                 Usq += U*U;
                 }
 
-    Scalar num = dot(k,UsqR);
+    Scalar num = dot(kval,UsqR);
     Scalar3 kH = Scalar(2.0*M_PI)*make_scalar3(l,m,n)*dim_inv;
 
     Scalar denom = ksq*Usq*Usq;
 
-    // determine cell idx
-    unsigned int ix, iy, iz;
-    if (l < 0)
-        ix = l + (int) dim.x;
-    else
-        ix = l;
+    for (int i = 0; i < 2; ++i)
+        {
+        l *= -1;
+        for (int j = 0; j < 2; ++j)
+            {
+            m *= -1;
+            for (int k = 0; k < 2; ++k)
+                {
+                n *= -1;
 
-    if (m < 0)
-        iy = m + (int) dim.y;
-    else
-        iy = m;
+                // determine cell idx
+                unsigned int ix, iy, iz;
+                if (l < 0)
+                    ix = l + dim.x;
+                else
+                    ix = l;
 
-    if (n < 0)
-        iz = n + (int) dim.z;
-    else
-        iz = n;
+                if (m < 0)
+                    iy = m + dim.y;
+                else
+                    iy = m;
 
-    unsigned int cell_idx = iz + dim.z * iy + dim.y * dim.z * ix;
+                if (n < 0)
+                    iz = n + dim.z;
+                else
+                    iz = n;
+                
+                unsigned int cell_idx = iz + dim.z * (iy + dim.y * ix);
 
-    if ((l != 0) || (m != 0) || (n!=0))
-        d_inf_f[cell_idx] = num/denom;
-    else
-        // avoid divide by zero
-        d_inf_f[cell_idx] = Scalar(1.0)/(Scalar)N/(Scalar)N*V_box;
+                if ((l != 0) || (m != 0) || (n!=0))
+                    d_inf_f[cell_idx] = num/denom;
+                else
+                    // avoid divide by zero
+                    d_inf_f[cell_idx] = Scalar(1.0)/(Scalar)N/(Scalar)N*V_box;
 
-    d_k[cell_idx] = k;
+                kval = (Scalar)l*b1+(Scalar)m*b2+(Scalar)n*b3;
+                d_k[cell_idx] = kval;
 
-    d_E_self[cell_idx] = E_self;
+                d_E_self[cell_idx] = E_self;
+                }
+            }
+        }
     }
 
 void gpu_compute_influence_function(const Index3D& mesh_idx,
@@ -574,7 +585,9 @@ void gpu_compute_influence_function(const Index3D& mesh_idx,
     unsigned int block_size = 8;
     
     dim3 blockDim(block_size,block_size,block_size);
-    dim3 gridDim(mesh_idx.getW()/block_size+1,mesh_idx.getH()/block_size+1,mesh_idx.getD()/block_size+1);
+    dim3 gridDim((mesh_idx.getW()/2+1)/block_size+1,
+                 (mesh_idx.getH()/2+1)/block_size+1,
+                 (mesh_idx.getD()/2+1)/block_size+1);
     gpu_compute_influence_function_kernel<<<gridDim,blockDim>>>(mesh_idx,
                                                                 N,
                                                                 d_inf_f,
