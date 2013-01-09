@@ -196,11 +196,6 @@ void OrderParameterMesh::computeInfluenceFunction()
     memset(h_inf_f.data, 0, sizeof(Scalar)*m_mesh_index.getNumElements());
     memset(h_k.data, 0, sizeof(Scalar3)*m_mesh_index.getNumElements());
 
-    // maximal integer indices of inner loop
-    const int maxnx = 3;
-    const int maxny = 3;
-    const int maxnz = 3;
-
     Scalar3 dim_inv = make_scalar3(Scalar(1.0)/(Scalar)m_mesh_points.x,
                                    Scalar(1.0)/(Scalar)m_mesh_points.y,
                                    Scalar(1.0)/(Scalar)m_mesh_points.z);
@@ -221,6 +216,8 @@ void OrderParameterMesh::computeInfluenceFunction()
 
     m_E_self = Scalar(0.0);
 
+    Scalar Nsq = (Scalar)N*(Scalar)N;
+
     for (int l = -(int)m_mesh_points.x/2 ; l < (int)m_mesh_points.x/2; ++l)
         for (int m = -(int)m_mesh_points.y/2 ; m < (int)m_mesh_points.y/2; ++m)
             for (int n = -(int)m_mesh_points.z/2 ; n < (int)m_mesh_points.z/2; ++n)
@@ -229,29 +226,8 @@ void OrderParameterMesh::computeInfluenceFunction()
                 Scalar ksq = dot(k,k);
 
                 // accumulate self energy
-                m_E_self += exp(-ksq/m_qstarsq*Scalar(1.0/2.0));
-
-                Scalar3 UsqR = make_scalar3(0.0,0.0,0.0);
-                Scalar Usq = Scalar(0.0);
-                for (int nx = -maxnx; nx <= maxnx; ++nx)
-                    for (int ny = -maxny; ny <= maxny; ++ny)
-                        for (int nz = -maxnz; nz <= maxnz; ++nz)
-                            {
-                            Scalar3 kn = k + (Scalar)m_mesh_points.x*(Scalar)nx*b1+
-                                           + (Scalar)m_mesh_points.y*(Scalar)ny*b2+
-                                           + (Scalar)m_mesh_points.z*(Scalar)nz*b3;
-
-                            Scalar3 knH = Scalar(2.0*M_PI)*(make_scalar3(l,m,n)*dim_inv+make_scalar3(nx,ny,nz));
-                            Scalar U = assignTSCFourier(knH.x)*assignTSCFourier(knH.y)*assignTSCFourier(knH.z);
-                            Scalar knsq = dot(kn,kn);
-                            UsqR += U*U*kn*exp(-knsq/m_qstarsq*Scalar(1.0/2.0))/(Scalar)N/(Scalar)N*V_box;
-                            Usq += U*U;
-                            }
-
-                Scalar num = dot(k,UsqR);
-                Scalar3 kH = Scalar(2.0*M_PI)*make_scalar3(l,m,n)*dim_inv;
-
-                Scalar denom = ksq*Usq*Usq;
+                m_E_self += exp(-ksq/m_qstarsq*Scalar(1.0/2.0))*(Scalar(2.0)*Nsq-(Scalar)N);
+                Scalar val = exp(-ksq/m_qstarsq*Scalar(1.0/2.0))/Nsq/Nsq*V_box;
 
                 // determine cell idx
                 unsigned int ix, iy, iz;
@@ -272,16 +248,12 @@ void OrderParameterMesh::computeInfluenceFunction()
 
                 unsigned int cell_idx = iz + m_mesh_points.z * iy + m_mesh_points.y * m_mesh_points.z * ix;
 
-                if ((l != 0) || (m != 0) || (n!=0)) 
-                    h_inf_f.data[cell_idx] = num/denom;
-                else
-                    // avoid divide by zero
-                    h_inf_f.data[cell_idx] = Scalar(1.0)/(Scalar)N/(Scalar)N*V_box;
+                h_inf_f.data[cell_idx] = val;
 
                 h_k.data[cell_idx] = k;
                 }
 
-    m_E_self *= Scalar(1.0/2.0)/(Scalar)N;
+    m_E_self *= Scalar(1.0/2.0)/Nsq/Nsq;
 
     if (m_prof) m_prof->pop();
     }
@@ -489,10 +461,14 @@ void OrderParameterMesh::updateMeshes()
         h_fourier_mesh.data[k].r *= V_cell;
         h_fourier_mesh.data[k].i *= V_cell;
 
-        h_fourier_mesh_G.data[k].r =h_fourier_mesh.data[k].r * h_inf_f.data[k];
-        h_fourier_mesh_G.data[k].i =h_fourier_mesh.data[k].i * h_inf_f.data[k];
+        kiss_fft_cpx f = h_fourier_mesh.data[k];
 
-        Scalar3 kval = h_k.data[k];
+        Scalar val = f.r*f.r+f.i*f.i;
+
+        h_fourier_mesh_G.data[k].r = f.r * val * h_inf_f.data[k];
+        h_fourier_mesh_G.data[k].i = f.i * val * h_inf_f.data[k];
+
+        Scalar3 kval = Scalar(2.0)*h_k.data[k];
         h_fourier_mesh_x.data[k].r = -h_fourier_mesh_G.data[k].i*kval.x;
         h_fourier_mesh_x.data[k].i = h_fourier_mesh_G.data[k].r*kval.x;
 
@@ -656,7 +632,7 @@ Scalar OrderParameterMesh::getCurrentValue(unsigned int timestep)
     return val;
     }
    
-void OrderParameterMesh::computeForces(unsigned int timestep)
+void OrderParameterMesh::computeBiasForces(unsigned int timestep)
     {
 
     if (m_is_first_step || m_cv_last_updated != timestep)

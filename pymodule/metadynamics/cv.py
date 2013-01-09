@@ -91,11 +91,21 @@ class _collective_variable(_force):
 
     ## Set parameters for this collective variable
     # \param sigma The standard deviation
-    def set_params(self, sigma=None):
+    def set_params(self, sigma=None, harmonic=None, kappa=None, cv0=None):
         util.print_status_line()
 
         if sigma is not None:
             self.sigma = sigma
+
+        if harmonic is not None:
+            self.cpp_force.setHarmonic(harmonic)
+
+        if kappa is not None:
+            self.cpp_force.setKappa(kappa)
+
+        if cv0 is not None:
+            self.cpp_force.setMinimum(cv0)
+
 
 ## \brief Lamellar order parameter as a collective variable to study phase transitions in block copolymer systems
 #

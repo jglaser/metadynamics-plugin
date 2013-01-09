@@ -54,7 +54,7 @@ Scalar AspectRatio::getCurrentValue(unsigned int timestep)
     return length1/length2;
     }
 
-void AspectRatio::computeForces(unsigned int timestep)
+void AspectRatio::computeBiasForces(unsigned int timestep)
     {
     Scalar3 L = m_pdata->getGlobalBox().getL();
 

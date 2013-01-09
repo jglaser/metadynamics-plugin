@@ -20,7 +20,7 @@ class LamellarOrderParameterGPU : public LamellarOrderParameter
 
         virtual ~LamellarOrderParameterGPU() {}
 
-        virtual void computeForces(unsigned int timestep);
+        virtual void computeBiasForces(unsigned int timestep);
 
     protected:
         // calculates current CV value

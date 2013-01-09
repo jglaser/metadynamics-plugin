@@ -168,14 +168,18 @@ __global__ void gpu_update_meshes_kernel(const unsigned int n_wave_vectors,
 
     if (k >= n_wave_vectors) return;
 
-    d_fourier_mesh[k].x *= V_cell;
-    d_fourier_mesh[k].y *= V_cell;
+    cufftComplex f = d_fourier_mesh[k];
+
+    f.x *= V_cell;
+    f.y *= V_cell;
+
+    Scalar val = f.x*f.x+f.y*f.y;
 
     cufftComplex fourier_G;
-    fourier_G.x =d_fourier_mesh[k].x * d_inf_f[k];
-    fourier_G.y =d_fourier_mesh[k].y * d_inf_f[k];
+    fourier_G.x =f.x * val * d_inf_f[k];
+    fourier_G.y =f.y * val * d_inf_f[k];
 
-    Scalar3 kval = d_k[k];
+    Scalar3 kval = Scalar(2.0)*d_k[k];
     d_fourier_mesh_x[k].x = -fourier_G.y*kval.x;
     d_fourier_mesh_x[k].y = fourier_G.x*kval.x;
 
@@ -185,6 +189,7 @@ __global__ void gpu_update_meshes_kernel(const unsigned int n_wave_vectors,
     d_fourier_mesh_z[k].x = -fourier_G.y*kval.z;
     d_fourier_mesh_z[k].y = fourier_G.x*kval.z;
 
+    d_fourier_mesh[k] = f;
     d_fourier_mesh_G[k] = fourier_G;
     }
 
@@ -460,6 +465,11 @@ void gpu_compute_cv(unsigned int n_wave_vectors,
                                                                   d_sum);
     }
 
+__device__ Scalar convolution_kernel(Scalar ksq, Scalar qstarsq)
+    {
+    return expf(-ksq/qstarsq*Scalar(1.0/2.0));
+    }
+
 __global__ void gpu_compute_influence_function_kernel(const Index3D mesh_idx,
                                           const unsigned int N,
                                           Scalar *d_inf_f,
@@ -478,11 +488,6 @@ __global__ void gpu_compute_influence_function_kernel(const Index3D mesh_idx,
     uint3 dim = make_uint3(mesh_idx.getW(), mesh_idx.getH(), mesh_idx.getD());
     if (l >= dim.x/2+1 || m >= dim.y/2+1 || m >= dim.z/2+1) return;
 
-    // maximal integer indices of inner loop
-    const int maxnx = 2;
-    const int maxny = 2;
-    const int maxnz = 2;
-
     Scalar3 dim_inv = make_scalar3(Scalar(1.0)/(Scalar)dim.x,
                                    Scalar(1.0)/(Scalar)dim.y,
                                    Scalar(1.0)/(Scalar)dim.z);
@@ -494,29 +499,10 @@ __global__ void gpu_compute_influence_function_kernel(const Index3D mesh_idx,
     Scalar ksq = dot(kval,kval);
 
     // accumulate self energy
-    Scalar E_self = V_box*exp(-ksq/qstarsq*Scalar(1.0/2.0))/(Scalar) N;
+    Scalar Nsq = (Scalar)N*(Scalar)N;
 
-    Scalar3 UsqR = make_scalar3(0.0,0.0,0.0);
-    Scalar Usq = Scalar(0.0);
-
-    for (int nx = -maxnx; nx <= maxnx; ++nx)
-        for (int ny = -maxny; ny <= maxny; ++ny)
-            for (int nz = -maxnz; nz <= maxnz; ++nz)
-                {
-                Scalar3 kn = kval + (Scalar)dim.x*(Scalar)nx*b1+
-                               + (Scalar)dim.y*(Scalar)ny*b2+
-                               + (Scalar)dim.z*(Scalar)nz*b3;
-                Scalar3 knH = Scalar(2.0*M_PI)*(make_scalar3(l,m,n)*dim_inv+make_scalar3(nx,ny,nz));
-                Scalar U = assignTSCFourier(knH.x)*assignTSCFourier(knH.y)*assignTSCFourier(knH.z);
-                Scalar knsq = dot(kn,kn);
-                UsqR += U*U*kn*exp(-knsq/qstarsq*Scalar(1.0/2.0))/(Scalar)N/(Scalar)N*V_box;
-                Usq += U*U;
-                }
-
-    Scalar num = dot(kval,UsqR);
-    Scalar3 kH = Scalar(2.0*M_PI)*make_scalar3(l,m,n)*dim_inv;
-
-    Scalar denom = ksq*Usq*Usq;
+    Scalar E_self = V_box*convolution_kernel(ksq, qstarsq)*(Scalar(2.0)*Nsq-(Scalar)N)/Nsq/Nsq;
+    Scalar val = convolution_kernel(ksq,qstarsq)/Nsq/Nsq*V_box;
 
     for (int i = 0; i < 2; ++i)
         {
@@ -547,11 +533,7 @@ __global__ void gpu_compute_influence_function_kernel(const Index3D mesh_idx,
                 
                 unsigned int cell_idx = iz + dim.z * (iy + dim.y * ix);
 
-                if ((l != 0) || (m != 0) || (n!=0))
-                    d_inf_f[cell_idx] = num/denom;
-                else
-                    // avoid divide by zero
-                    d_inf_f[cell_idx] = Scalar(1.0)/(Scalar)N/(Scalar)N*V_box;
+                d_inf_f[cell_idx] = val;
 
                 kval = (Scalar)l*b1+(Scalar)m*b2+(Scalar)n*b3;
                 d_k[cell_idx] = kval;

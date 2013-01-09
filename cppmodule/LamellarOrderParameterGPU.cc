@@ -95,7 +95,7 @@ void LamellarOrderParameterGPU::computeCV(unsigned int timestep)
     }
 
 
-void LamellarOrderParameterGPU::computeForces(unsigned int timestep)
+void LamellarOrderParameterGPU::computeBiasForces(unsigned int timestep)
     {
     if (m_prof)
         m_prof->push(m_exec_conf, "Lamellar");

@@ -37,13 +37,18 @@ class CollectiveVariable : public ForceCompute
         CollectiveVariable(boost::shared_ptr<SystemDefinition> sysdef, const std::string& name);
         virtual ~CollectiveVariable() {}
 
-        /*! Compute the forces for this collective variable.
+        /*! \param timestep The current value of the time step
+         */
+        void computeForces(unsigned int timestep);
+
+        /*! Compute the biased forces for this collective variable.
             The force that is written to the force arrays must be
             multiplied by the bias factor.
 
             \param timestep The current value of the time step
          */
-        virtual void computeForces(unsigned int timestep) = 0;
+        virtual void computeBiasForces(unsigned int timestep) = 0;
+
 
         /*! Returns the current value of the collective variable
          *  \param timestep The currnt value of the timestep
@@ -61,6 +66,30 @@ class CollectiveVariable : public ForceCompute
             m_bias = bias;
             }
 
+        /*! Evaluate a harmonic potential function of the collective variable
+         * \param harmonic True if harmonic potential should be active
+         */
+        void setHarmonic(bool harmonic)
+            {
+            m_harmonic = harmonic;
+            }
+
+        /*! Set spring constant for harmonic potential
+         * \param kappa Spring constant (in units energy/c.v.^2)
+         */
+        void setKappa(Scalar kappa)
+            {
+            m_kappa = kappa;
+            }
+
+        /*! Set minimum position of harmonic potential
+         * \param cv0 Minimum position (units of c.v.)
+         */ 
+        void setMinimum(Scalar cv0)
+            {
+            m_cv0 = cv0;
+            } 
+
         /*! Returns the name of the collective variable
          */
         std::string getName()
@@ -69,9 +98,14 @@ class CollectiveVariable : public ForceCompute
             }
 
     protected:
-        Scalar m_bias;
+        Scalar m_bias;         //!< The bias factor multiplying the force
 
-        std::string m_cv_name;
+        std::string m_cv_name; //!< Name of the collective variable
+
+    private:
+        bool m_harmonic;       //!< True if a harmonic potential of the collective variable is evaluated
+        Scalar m_cv0;          //!< Minimum position of harmonic potential
+        Scalar m_kappa;        //!< Stiffness of harmonic potential
     };
 
 //! Export the CollectiveVariable class to python

@@ -79,7 +79,7 @@ void LamellarOrderParameter::computeCV(unsigned int timestep)
     }
 
 
-void LamellarOrderParameter::computeForces(unsigned int timestep)
+void LamellarOrderParameter::computeBiasForces(unsigned int timestep)
     {
     if (m_prof)
         m_prof->push("Lamellar");

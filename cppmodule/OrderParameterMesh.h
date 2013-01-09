@@ -18,7 +18,7 @@ class OrderParameterMesh : public CollectiveVariable
                            const std::vector<Scalar> mode);
         virtual ~OrderParameterMesh();
 
-        void computeForces(unsigned int timestep);
+        void computeBiasForces(unsigned int timestep);
 
         Scalar getCurrentValue(unsigned int timestep);
 

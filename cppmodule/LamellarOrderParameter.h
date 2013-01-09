@@ -54,7 +54,7 @@ class LamellarOrderParameter : public CollectiveVariable
 
             \param timestep The current value of the time step
          */
-        virtual void computeForces(unsigned int timestep);
+        virtual void computeBiasForces(unsigned int timestep);
 
         /*! Returns the names of provided log quantities.
          */

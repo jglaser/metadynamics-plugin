@@ -8,7 +8,7 @@ class AspectRatio :  public CollectiveVariable
         AspectRatio(boost::shared_ptr<SystemDefinition> sysdef, const unsigned int dir1, unsigned int dir2);
         virtual ~AspectRatio() {}
 
-        virtual void computeForces(unsigned int timestep);
+        virtual void computeBiasForces(unsigned int timestep);
 
         virtual Scalar getCurrentValue(unsigned int timestep);
 
