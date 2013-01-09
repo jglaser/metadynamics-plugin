@@ -239,6 +239,7 @@ __global__ void gpu_interpolate_forces_kernel(const unsigned int N,
                                        const Scalar4 *d_postype,
                                        Scalar4 *d_force,
                                        const Scalar bias,
+				       const Scalar norm,
                                        const Index3D mesh_idx,
                                        const Scalar *d_mode,
                                        const unsigned int *d_cadj,
@@ -317,7 +318,7 @@ __global__ void gpu_interpolate_forces_kernel(const unsigned int N,
         }  
 
     // Multiply with bias potential derivative
-    force *= bias/V;
+    force *= norm*bias/V;
 
     d_force[idx] = make_scalar4(force.x,force.y,force.z,0.0);
     }
@@ -326,6 +327,7 @@ void gpu_interpolate_forces(const unsigned int N,
                              const Scalar4 *d_postype,
                              Scalar4 *d_force,
                              const Scalar bias,
+			     const Scalar cv,
                              const cufftComplex *d_force_mesh_x,
                              const cufftComplex *d_force_mesh_y,
                              const cufftComplex *d_force_mesh_z,
@@ -353,10 +355,12 @@ void gpu_interpolate_forces(const unsigned int N,
     force_mesh_tex.filterMode = cudaFilterModePoint;
     cudaBindTexture(0, force_mesh_tex, d_force_mesh, sizeof(Scalar4)*num_cells);
 
+    Scalar norm = Scalar(1.0/4.0)/cv/cv/cv;
     gpu_interpolate_forces_kernel<<<N/block_size+1,block_size>>>(N,
                                                                  d_postype,
                                                                  d_force,
                                                                  bias,
+								 norm,
                                                                  mesh_idx,
                                                                  d_mode,
                                                                  d_cadj,

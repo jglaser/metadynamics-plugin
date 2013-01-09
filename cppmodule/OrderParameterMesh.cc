@@ -24,6 +24,7 @@ OrderParameterMesh::OrderParameterMesh(boost::shared_ptr<SystemDefinition> sysde
       m_cv_last_updated(0),
       m_E_self(0.0),
       m_box_changed(false),
+      m_cv(0.0),
       m_kiss_fft(NULL),
       m_kiss_ifft_x(NULL),
       m_kiss_ifft_y(NULL),
@@ -196,9 +197,6 @@ void OrderParameterMesh::computeInfluenceFunction()
     memset(h_inf_f.data, 0, sizeof(Scalar)*m_mesh_index.getNumElements());
     memset(h_k.data, 0, sizeof(Scalar3)*m_mesh_index.getNumElements());
 
-    Scalar3 dim_inv = make_scalar3(Scalar(1.0)/(Scalar)m_mesh_points.x,
-                                   Scalar(1.0)/(Scalar)m_mesh_points.y,
-                                   Scalar(1.0)/(Scalar)m_mesh_points.z);
     const BoxDim& global_box = m_pdata->getGlobalBox();
 
     // compute reciprocal lattice vectors
@@ -502,7 +500,8 @@ void OrderParameterMesh::interpolateForces()
 
     const BoxDim& global_box = m_pdata->getGlobalBox();
     const Scalar V = global_box.getVolume();
- 
+
+    Scalar norm = Scalar(1.0/4.0)/m_cv/m_cv/m_cv;
     // inverse dimensions
     Scalar3 dim_inv = make_scalar3(Scalar(1.0)/(Scalar)m_mesh_points.x,
                                    Scalar(1.0)/(Scalar)m_mesh_points.y,
@@ -569,7 +568,7 @@ void OrderParameterMesh::interpolateForces()
             }  
 
         // Multiply with bias potential derivative
-        force *= m_bias;
+        force *= m_bias*norm;
 
         h_force.data[idx] = make_scalar4(force.x,force.y,force.z,0.0);
          
@@ -597,7 +596,8 @@ Scalar OrderParameterMesh::computeCV()
 
     if (m_prof) m_prof->pop();
 
-    return sum - m_E_self;
+    m_cv = powf(sum - m_E_self,Scalar(1.0/4.0));
+    return m_cv;
     }
 
 Scalar OrderParameterMesh::getCurrentValue(unsigned int timestep)

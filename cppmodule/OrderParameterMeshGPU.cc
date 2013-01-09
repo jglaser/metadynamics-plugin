@@ -162,6 +162,7 @@ void OrderParameterMeshGPU::interpolateForces()
                            d_postype.data,
                            d_force.data,
                            m_bias,
+			   m_cv,
                            d_force_mesh_x.data,
                            d_force_mesh_y.data,
                            d_force_mesh_z.data,
@@ -203,7 +204,8 @@ Scalar OrderParameterMeshGPU::computeCV()
 
     if (m_prof) m_prof->pop(m_exec_conf);
 
-    return sum - m_E_self;
+    m_cv = pow(sum,Scalar(1.0/4.0));
+    return m_cv;
     }
 
 //! Compute the optimal influence function

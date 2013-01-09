@@ -52,6 +52,7 @@ class OrderParameterMesh : public CollectiveVariable
         unsigned int m_cv_last_updated;     //!< Timestep of last update of collective variable
         Scalar m_E_self;                    //!< The self energy
         bool m_box_changed;                 //!< True if box has changed since last compute
+	Scalar m_cv;			    //!< Current value of collective variable
 
         //! Helper function to be called when box changes
         void setBoxChange()
