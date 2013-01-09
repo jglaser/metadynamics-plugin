@@ -22,9 +22,7 @@ OrderParameterMesh::OrderParameterMesh(boost::shared_ptr<SystemDefinition> sysde
       m_radius(1),
       m_is_first_step(true),
       m_cv_last_updated(0),
-      m_E_self(0.0),
       m_box_changed(false),
-      m_cv(0.0),
       m_kiss_fft(NULL),
       m_kiss_ifft_x(NULL),
       m_kiss_ifft_y(NULL),
@@ -212,8 +210,6 @@ void OrderParameterMesh::computeInfluenceFunction()
     // particle number
     unsigned int N = m_pdata->getNGlobal();
 
-    m_E_self = Scalar(0.0);
-
     Scalar Nsq = (Scalar)N*(Scalar)N;
 
     for (int l = -(int)m_mesh_points.x/2 ; l < (int)m_mesh_points.x/2; ++l)
@@ -223,8 +219,6 @@ void OrderParameterMesh::computeInfluenceFunction()
                 Scalar3 k = (Scalar)l*b1+(Scalar)m*b2+(Scalar)n*b3;
                 Scalar ksq = dot(k,k);
 
-                // accumulate self energy
-                m_E_self += exp(-ksq/m_qstarsq*Scalar(1.0/2.0))*(Scalar(2.0)*Nsq-(Scalar)N);
                 Scalar val = exp(-ksq/m_qstarsq*Scalar(1.0/2.0))/Nsq/Nsq*V_box;
 
                 // determine cell idx
@@ -250,8 +244,6 @@ void OrderParameterMesh::computeInfluenceFunction()
 
                 h_k.data[cell_idx] = k;
                 }
-
-    m_E_self *= Scalar(1.0/2.0)/Nsq/Nsq;
 
     if (m_prof) m_prof->pop();
     }
@@ -315,30 +307,6 @@ Scalar OrderParameterMesh::assignTSC(Scalar x)
         return Scalar(1.0/2.0)*(Scalar(3.0/2.0)-xabs)*(Scalar(3.0/2.0)-xabs);
     else
         return Scalar(0.0);
-    }
-
-/*! \param k Wave vector times mesh size
- * \returns the Fourier transformed TSC assignment function
- */
-Scalar OrderParameterMesh::assignTSCFourier(Scalar k)
-    {
-    Scalar fac = 0;
-
-    if (k*k <= Scalar(1.0))
-        {
-        Scalar term = Scalar(1.0);
-        for (unsigned int i = 0; i < 6; ++i)
-            {
-            fac += coeff[i] * term;
-            term *= k*k/Scalar(4.0);
-            }
-        }
-    else
-        {
-        fac = Scalar(2.0)*sin(k*Scalar(1.0/2.0))/k;
-        }
-
-    return fac*fac*fac;
     }
 
 //! Assignment of particles to mesh using three-point scheme (triangular shaped cloud)
@@ -501,7 +469,6 @@ void OrderParameterMesh::interpolateForces()
     const BoxDim& global_box = m_pdata->getGlobalBox();
     const Scalar V = global_box.getVolume();
 
-    Scalar norm = Scalar(1.0/4.0)/m_cv/m_cv/m_cv;
     // inverse dimensions
     Scalar3 dim_inv = make_scalar3(Scalar(1.0)/(Scalar)m_mesh_points.x,
                                    Scalar(1.0)/(Scalar)m_mesh_points.y,
@@ -568,7 +535,7 @@ void OrderParameterMesh::interpolateForces()
             }  
 
         // Multiply with bias potential derivative
-        force *= m_bias*norm;
+        force *= m_bias;
 
         h_force.data[idx] = make_scalar4(force.x,force.y,force.z,0.0);
          
@@ -596,8 +563,7 @@ Scalar OrderParameterMesh::computeCV()
 
     if (m_prof) m_prof->pop();
 
-    m_cv = powf(sum - m_E_self,Scalar(1.0/4.0));
-    return m_cv;
+    return sum;
     }
 
 Scalar OrderParameterMesh::getCurrentValue(unsigned int timestep)

@@ -63,9 +63,6 @@ void OrderParameterMeshGPU::initializeFFT()
     
     GPUArray<Scalar4> force_mesh(num_cells, m_exec_conf);
     m_force_mesh.swap(force_mesh);
-
-    GPUArray<Scalar> self_terms(num_cells, m_exec_conf);
-    m_self_terms.swap(self_terms);
     }
 
 //! Assignment of particles to mesh using three-point scheme (triangular shaped cloud)
@@ -78,7 +75,6 @@ void OrderParameterMeshGPU::assignParticles()
     ArrayHandle<Scalar4> d_postype(m_pdata->getPositions(), access_location::device, access_mode::read);
     ArrayHandle<cufftComplex> d_mesh(m_mesh, access_location::device, access_mode::overwrite);
     ArrayHandle<Scalar> d_mode(m_mode, access_location::device, access_mode::read);
-    ArrayHandle<unsigned int> d_cell_adj(m_cell_adj, access_location::device, access_mode::read);
 
     cudaMemset(d_mesh.data, 0, sizeof(cufftComplex)*m_mesh.getNumElements());
 
@@ -87,8 +83,6 @@ void OrderParameterMeshGPU::assignParticles()
                          d_mesh.data,
                          m_mesh_index,
                          d_mode.data,
-                         d_cell_adj.data,
-                         m_cell_adj_indexer,
                          m_pdata->getGlobalBox());
 
     if (m_exec_conf->isCUDAErrorCheckingEnabled())
@@ -154,7 +148,6 @@ void OrderParameterMeshGPU::interpolateForces()
     ArrayHandle<cufftComplex> d_force_mesh_z(m_force_mesh_z, access_location::device, access_mode::read);
     ArrayHandle<Scalar4> d_force_mesh(m_force_mesh, access_location::device, access_mode::overwrite);
     ArrayHandle<Scalar> d_mode(m_mode, access_location::device, access_mode::read);
-    ArrayHandle<unsigned int> d_cell_adj(m_cell_adj, access_location::device, access_mode::read);
 
     ArrayHandle<Scalar4> d_force(m_force, access_location::device, access_mode::overwrite);
 
@@ -162,15 +155,12 @@ void OrderParameterMeshGPU::interpolateForces()
                            d_postype.data,
                            d_force.data,
                            m_bias,
-			   m_cv,
                            d_force_mesh_x.data,
                            d_force_mesh_y.data,
                            d_force_mesh_z.data,
                            d_force_mesh.data,
                            m_mesh_index,
                            d_mode.data,
-                           d_cell_adj.data,
-                           m_cell_adj_indexer,
                            m_pdata->getGlobalBox());
 
     if (m_exec_conf->isCUDAErrorCheckingEnabled())
@@ -187,14 +177,12 @@ Scalar OrderParameterMeshGPU::computeCV()
     ArrayHandle<cufftComplex> d_fourier_mesh_G(m_fourier_mesh_G, access_location::device, access_mode::read);
 
     ArrayHandle<Scalar> d_sum_partial(m_sum_partial, access_location::device, access_mode::overwrite);
-    ArrayHandle<Scalar> d_self_terms(m_self_terms, access_location::device, access_mode::read);
 
     gpu_compute_cv(m_mesh_index.getNumElements(),
                    d_sum_partial.data,
                    m_sum.getDeviceFlags(),
                    d_fourier_mesh.data,
                    d_fourier_mesh_G.data,
-                   d_self_terms.data,
                    m_block_size);
  
     if (m_exec_conf->isCUDAErrorCheckingEnabled())
@@ -204,8 +192,7 @@ Scalar OrderParameterMeshGPU::computeCV()
 
     if (m_prof) m_prof->pop(m_exec_conf);
 
-    m_cv = pow(sum,Scalar(1.0/4.0));
-    return m_cv;
+    return sum;
     }
 
 //! Compute the optimal influence function
@@ -215,13 +202,11 @@ void OrderParameterMeshGPU::computeInfluenceFunction()
 
     ArrayHandle<Scalar> d_inf_f(m_inf_f, access_location::device, access_mode::overwrite);
     ArrayHandle<Scalar3> d_k(m_k, access_location::device, access_mode::overwrite);
-    ArrayHandle<Scalar> d_self_terms(m_self_terms, access_location::device, access_mode::overwrite);
 
     gpu_compute_influence_function(m_mesh_index,
                                    m_pdata->getN(),
                                    d_inf_f.data,
                                    d_k.data,
-                                   d_self_terms.data,
                                    m_pdata->getGlobalBox(),
                                    m_qstarsq);
   

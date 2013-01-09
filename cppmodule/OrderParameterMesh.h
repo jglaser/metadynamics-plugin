@@ -50,9 +50,8 @@ class OrderParameterMesh : public CollectiveVariable
         Scalar m_qstarsq;                   //!< Short wave length cut-off squared for density harmonics
         bool m_is_first_step;               //!< True if we have not yet computed the influence function
         unsigned int m_cv_last_updated;     //!< Timestep of last update of collective variable
-        Scalar m_E_self;                    //!< The self energy
         bool m_box_changed;                 //!< True if box has changed since last compute
-	Scalar m_cv;			    //!< Current value of collective variable
+	    Scalar m_cv;			    //!< Current value of collective variable
 
         //! Helper function to be called when box changes
         void setBoxChange()
@@ -74,9 +73,6 @@ class OrderParameterMesh : public CollectiveVariable
  
         //! The TSC (triangular-shaped cloud) charge assignment function
         Scalar assignTSC(Scalar x);
-
-        //! The TSC (triangular-shaped cloud) charge assignment function (Fourier transform, real part)
-        Scalar assignTSCFourier(Scalar k);
 
         //! Helper function to assign particle coordinates to mesh
         virtual void assignParticles();

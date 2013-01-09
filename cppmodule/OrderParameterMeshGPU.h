@@ -52,10 +52,6 @@ class OrderParameterMeshGPU : public OrderParameterMesh
         GPUArray<cufftComplex> m_force_mesh_z;        //!< The force mesh, z component
         GPUArray<Scalar4> m_force_mesh;             //!< The force mesh
 
-        GPUFlags<Scalar> m_self_sum;               //!< Sum over self energy values
-        GPUArray<Scalar> m_self_sum_partial;       //!< Partial sums over self energy values
-        GPUArray<Scalar> m_self_terms;             //!< Self energy terms
- 
         GPUFlags<Scalar> m_sum;                    //!< Sum over fourier mesh values
         GPUArray<Scalar> m_sum_partial;            //!< Partial sums over fourier mesh values
         unsigned int m_block_size;                 //!< Block size for fourier mesh reduction
