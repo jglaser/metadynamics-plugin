@@ -5,7 +5,7 @@
 
 #include <cufft.h>
 
-void gpu_assign_particles(const unsigned int N,
+void gpu_assign_particles_30(const unsigned int N,
                           const Scalar4 *d_postype,
                           cufftReal *d_mesh,
                           const Index3D& mesh_idx,
@@ -44,4 +44,20 @@ void gpu_compute_influence_function(const Index3D& mesh_idx,
                                     Scalar3 *d_k,
                                     const BoxDim& box,
                                     const Scalar qstarsq);
- 
+
+void gpu_assign_binned_particles_to_mesh(const Index3D& mesh_idx,
+                                         const Scalar4 *d_particle_bins,
+                                         const unsigned int *d_n_cell,
+                                         const unsigned int maxn,
+                                         cufftReal *d_mesh,
+                                         const BoxDim& box);
+
+void gpu_bin_particles(const unsigned int N,
+                       const Scalar4 *d_postype,
+                       Scalar4 *d_particle_bins,
+                       unsigned int *d_n_cell,
+                       unsigned int *d_overflow,
+                       const unsigned int maxn,
+                       const Index3D& mesh_idx,
+                       const Scalar *d_mode,
+                       const BoxDim& box);

@@ -1,10 +1,5 @@
 #include "OrderParameterMeshGPU.cuh"
 
-__constant__ Scalar sinc_coeff[6];
-
-const Scalar coeff[] = {Scalar(1.0), Scalar(-1.0/6.0), Scalar(1.0/120.0), Scalar(-1.0/5040.0),
-                        Scalar(1.0/362880.0), Scalar(-1.0/39916800.0)};
-
 //! Implements workaround atomic float addition on sm_1x hardware
 __device__ inline void atomicFloatAdd(float* address, float value)
     {
@@ -38,6 +33,35 @@ __device__ Scalar assignTSC(Scalar x)
         return Scalar(0.0);
     }
 
+__device__ uint3 find_cell(Scalar3 pos,
+                           unsigned int nx,
+                           unsigned int ny,
+                           unsigned int nz,
+                           const BoxDim box
+                           )
+    {
+    // compute coordinates in units of the mesh size
+    Scalar3 f = box.makeFraction(pos);
+    Scalar3 reduced_pos = make_scalar3(f.x * (Scalar)nx,
+                                       f.y * (Scalar)ny,
+                                       f.z * (Scalar)nz);
+
+    // find cell the particle is in
+    unsigned int ix = reduced_pos.x;
+    unsigned int iy = reduced_pos.y;
+    unsigned int iz = reduced_pos.z;
+
+    // handle particles on the boundary
+    if (ix == nx)
+        ix = 0;
+    if (iy == ny)
+        iy = 0;
+    if (iz == nz) 
+        iz = 0;
+
+    return make_uint3(ix, iy, iz);
+    }
+
 //! Assignment of particles to mesh using three-point scheme (triangular shaped cloud)
 /*! This is a second order accurate scheme with continuous value and continuous derivative
  */
@@ -68,28 +92,12 @@ __global__ void gpu_assign_particles_kernel(const unsigned int N,
     Scalar mode = d_mode[type];
 
     // compute coordinates in units of the mesh size
-    Scalar3 f = box.makeFraction(pos);
-    Scalar3 reduced_pos = make_scalar3(f.x * (Scalar) dim.x,
-                                       f.y * (Scalar) dim.y,
-                                       f.z * (Scalar) dim.z);
+    uint3 cell_coord = find_cell(pos, dim.x, dim.y, dim.z, box);
 
-    // find cell the particle is in
-    unsigned int ix = reduced_pos.x;
-    unsigned int iy = reduced_pos.y;
-    unsigned int iz = reduced_pos.z;
-
-    // handle particles on the boundary
-    if (ix == mesh_idx.getW())
-        ix = 0;
-    if (iy == mesh_idx.getH())
-        iy = 0;
-    if (iz == mesh_idx.getD()) 
-        iz = 0;
-
-    // center of cell (in units of the mesh size)
-    Scalar3 c = box.makeCoordinates(make_scalar3((Scalar)ix+Scalar(0.5),
-                                                 (Scalar)iy+Scalar(0.5),
-                                                 (Scalar)iz+Scalar(0.5))*dim_inv);
+    // center of cell
+    Scalar3 c = box.makeCoordinates(make_scalar3((Scalar)cell_coord.x+Scalar(0.5),
+                                                 (Scalar)cell_coord.y+Scalar(0.5),
+                                                 (Scalar)cell_coord.z+Scalar(0.5))*dim_inv);
     Scalar3 shift = box.minImage(pos - c);
     Scalar3 shift_frac = box.makeFraction(shift) - make_scalar3(0.5,0.5,0.5);
     shift_frac *= make_scalar3(dim.x,dim.y,dim.z);
@@ -99,9 +107,9 @@ __global__ void gpu_assign_particles_kernel(const unsigned int N,
     	for (int j = -1; j <= 1; ++j)
             for (int k = -1; k <= 1; ++k)
                 {
-                int neighi = ix + i;
-                int neighj = iy + j;
-                int neighk = iz + k;
+                int neighi = cell_coord.x + i;
+                int neighj = cell_coord.y + j;
+                int neighk = cell_coord.z + k;
 
                 if (neighi == dim.x)
                     neighi = 0;
@@ -129,7 +137,178 @@ __global__ void gpu_assign_particles_kernel(const unsigned int N,
                  
     }
 
-void gpu_assign_particles(const unsigned int N,
+__global__ void gpu_bin_particles_kernel(const unsigned int N,
+                                         const Scalar4 *d_postype,
+                                         Scalar4 *d_particle_bins,
+                                         unsigned int *d_n_cell,
+                                         unsigned int *d_overflow,
+                                         const unsigned int maxn,
+                                         const Index3D mesh_idx,
+                                         const Scalar *d_mode,
+                                         const BoxDim box)
+    {
+    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (idx >= N) return;
+
+    int3 dim = make_int3(mesh_idx.getW(), mesh_idx.getH(), mesh_idx.getD());
+ 
+    Scalar4 postype = d_postype[idx];
+
+    Scalar3 pos = make_scalar3(postype.x, postype.y, postype.z);
+    unsigned int type = __float_as_int(postype.w);
+    Scalar mode = d_mode[type];
+
+    // compute coordinates in units of the mesh size
+    uint3 cell_coord = find_cell(pos, dim.x, dim.y, dim.z, box);
+
+    unsigned int cell_idx = cell_coord.z + dim.z * (cell_coord.y + dim.y * cell_coord.x);
+
+    unsigned int n = atomicInc(&d_n_cell[cell_idx], 0xffffffff);
+
+    if (n >= maxn)
+        {
+        // overflow
+        atomicMax(d_overflow, n+1);
+        }
+    else
+        {
+        // store distance to cell center in bin
+        Scalar3 dim_inv = make_scalar3(Scalar(1.0)/(Scalar)dim.x,
+                                       Scalar(1.0)/(Scalar)dim.y,
+                                       Scalar(1.0)/(Scalar)dim.z);
+
+        Scalar3 c = box.makeCoordinates(make_scalar3((Scalar)cell_coord.x+Scalar(0.5),
+                                                 (Scalar)cell_coord.y+Scalar(0.5),
+                                                 (Scalar)cell_coord.z+Scalar(0.5))*dim_inv);
+        Scalar3 shift = box.minImage(pos-c);
+        Scalar3 shift_frac = box.makeFraction(shift) - make_scalar3(0.5,0.5,0.5);
+        shift_frac *= make_scalar3(dim.x,dim.y,dim.z);
+
+        d_particle_bins[cell_idx*maxn+n] = make_scalar4(shift_frac.x,shift_frac.y,shift_frac.z, mode);
+        }
+    }
+
+void gpu_bin_particles(const unsigned int N,
+                       const Scalar4 *d_postype,
+                       Scalar4 *d_particle_bins,
+                       unsigned int *d_n_cell,
+                       unsigned int *d_overflow,
+                       const unsigned int maxn,
+                       const Index3D& mesh_idx,
+                       const Scalar *d_mode,
+                       const BoxDim& box)
+    {
+    unsigned int block_size = 512;
+
+    gpu_bin_particles_kernel<<<N/block_size+1, block_size>>>(N,
+                                                             d_postype,
+                                                             d_particle_bins,
+                                                             d_n_cell,
+                                                             d_overflow,
+                                                             maxn,
+                                                             mesh_idx,
+                                                             d_mode,
+                                                             box);
+    }
+
+
+texture<Scalar4, 1, cudaReadModeElementType> particle_bins_tex;
+
+__global__ void gpu_assign_binned_particles_to_mesh_kernel(unsigned int nx,
+                                                           unsigned int ny,
+                                                           unsigned int nz,
+                                                           const unsigned int *d_n_cell,
+                                                           const unsigned int maxn,
+                                                           cufftReal *d_mesh,
+                                                           const BoxDim box)
+    {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    int k = blockIdx.z * blockDim.z + threadIdx.z;
+
+    if (i>= (int)nx || j >= (int)ny || k >= (int)nz) return;
+
+    unsigned int cell_idx = k + nz * (j + ny * i);
+
+    Scalar V_cell = box.getVolume()/(Scalar)(nx*ny*nz);
+    Scalar grid_val(0.0);
+
+    // loop over particles in neighboring bins
+    for (int l = -1; l <= 1 ; ++l)
+    	for (int m = -1; m <= 1; ++m)
+            for (int n = -1; n <= 1; ++n)
+                {
+                int neighi = i + l;
+                int neighj = j + m;
+                int neighk = k + n;
+
+                if (neighi == nx)
+                    neighi = 0;
+                else if (neighi < 0)
+                    neighi += nx; 
+
+                if (neighj == ny)
+                    neighj = 0;
+                else if (neighj < 0)
+                    neighj += ny;
+
+                if (neighk == nz)
+                    neighk = 0;
+                else if (neighk < 0)
+                    neighk += nz;
+
+                    
+                unsigned int neigh_cell_idx = neighk + nz * (neighj + ny * neighi);
+                unsigned int n_cell = d_n_cell[neigh_cell_idx];
+
+                for (unsigned int neigh_idx = 0; neigh_idx < n_cell; neigh_idx++)
+                    {
+                    Scalar4 xyzm = tex1Dfetch(particle_bins_tex, maxn*neigh_cell_idx+neigh_idx);
+                    Scalar3 shift_frac = make_scalar3(xyzm.x, xyzm.y, xyzm.z);
+
+                    Scalar3 dx_frac = shift_frac + make_scalar3(l,m,n);
+
+                    // compute fraction of particle density assigned to cell
+                    Scalar mode = xyzm.w;
+                    grid_val += mode*assignTSC(dx_frac.x)*assignTSC(dx_frac.y)*assignTSC(dx_frac.z)/V_cell;
+                    }
+                } // end of loop over neighboring bins
+  
+    // write out mesh value
+    d_mesh[cell_idx] = grid_val;
+    }
+
+void gpu_assign_binned_particles_to_mesh(const Index3D& mesh_idx,
+                                         const Scalar4 *d_particle_bins,
+                                         const unsigned int *d_n_cell,
+                                         const unsigned int maxn,
+                                         cufftReal *d_mesh,
+                                         const BoxDim& box)
+    {
+    unsigned int num_cells = mesh_idx.getNumElements();
+
+    particle_bins_tex.normalized = false;
+    particle_bins_tex.filterMode = cudaFilterModePoint;
+    cudaBindTexture(0, particle_bins_tex, d_particle_bins, sizeof(Scalar4)*num_cells*maxn);
+
+    unsigned int block_size = 8;
+    
+    dim3 blockDim(block_size,block_size,block_size);
+    dim3 gridDim((mesh_idx.getW() % block_size == 0) ? mesh_idx.getW()/block_size : mesh_idx.getW()/block_size+1,
+                 (mesh_idx.getH() % block_size == 0) ? mesh_idx.getH()/block_size : mesh_idx.getH()/block_size+1,
+                 (mesh_idx.getD() % block_size == 0) ? mesh_idx.getD()/block_size : mesh_idx.getW()/block_size+1);
+
+    gpu_assign_binned_particles_to_mesh_kernel<<<gridDim,blockDim>>>(mesh_idx.getW(),
+                                                                     mesh_idx.getH(),
+                                                                     mesh_idx.getD(),
+                                                                     d_n_cell,
+                                                                     maxn,
+                                                                     d_mesh,
+                                                                     box);
+    }
+
+void gpu_assign_particles_30(const unsigned int N,
                           const Scalar4 *d_postype,
                           cufftReal *d_mesh,
                           const Index3D& mesh_idx,
@@ -528,8 +707,6 @@ void gpu_compute_influence_function(const Index3D& mesh_idx,
                                     const BoxDim& box,
                                     const Scalar qstarsq)
     { 
-    cudaMemcpyToSymbol(sinc_coeff,coeff,6*sizeof(Scalar));
-
     // compute reciprocal lattice vectors
     Scalar3 a1 = box.getLatticeVector(0);
     Scalar3 a2 = box.getLatticeVector(1);
@@ -540,7 +717,7 @@ void gpu_compute_influence_function(const Index3D& mesh_idx,
     Scalar3 b2 = Scalar(2.0*M_PI)*make_scalar3(a3.y*a1.z-a3.z*a1.y, a3.z*a1.x-a3.x*a1.z, a3.x*a1.y-a3.y*a1.x)/V_box;
     Scalar3 b3 = Scalar(2.0*M_PI)*make_scalar3(a1.y*a2.z-a1.z*a2.y, a1.z*a2.x-a1.x*a2.z, a1.x*a2.y-a1.y*a2.x)/V_box;
 
-    unsigned int block_size = 8;
+    unsigned int block_size = 4;
     
     dim3 blockDim(block_size,block_size,block_size);
     dim3 gridDim((mesh_idx.getW()/2+1)/block_size+1,

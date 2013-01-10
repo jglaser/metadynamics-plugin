@@ -49,6 +49,11 @@ class OrderParameterMeshGPU : public OrderParameterMesh
         GPUArray<cufftReal> m_ifourier_mesh_force;//!< The inverse-fourier transformed force mesh
         GPUArray<Scalar4> m_force_mesh;             //!< The force mesh
 
+        GPUArray<Scalar4> m_particle_bins;         //!< Cell list for particle positions and modes
+        GPUArray<unsigned int> m_n_cell;           //!< Number of particles per cell
+        unsigned int m_cell_size;                  //!< Current max. number of particles per cell
+        GPUFlags<unsigned int> m_cell_overflowed;  //!< Flag set to 1 if a cell overflows
+
         GPUFlags<Scalar> m_sum;                    //!< Sum over fourier mesh values
         GPUArray<Scalar> m_sum_partial;            //!< Partial sums over fourier mesh values
         unsigned int m_block_size;                 //!< Block size for fourier mesh reduction

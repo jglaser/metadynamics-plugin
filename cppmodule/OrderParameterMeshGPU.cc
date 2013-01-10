@@ -20,6 +20,8 @@ OrderParameterMeshGPU::OrderParameterMeshGPU(boost::shared_ptr<SystemDefinition>
     {
     GPUArray<Scalar> sum_partial(m_mesh_points.x*m_mesh_points.y*(m_mesh_points.z/2+1)/m_block_size+1,m_exec_conf);
     m_sum_partial.swap(sum_partial);
+
+    m_cell_size = 2;
     }
 
 OrderParameterMeshGPU::~OrderParameterMeshGPU()
@@ -59,6 +61,18 @@ void OrderParameterMeshGPU::initializeFFT()
 
     GPUArray<Scalar4> force_mesh(num_cells, m_exec_conf);
     m_force_mesh.swap(force_mesh);
+
+    if (exec_conf->getComputeCapability() < 300)
+        {
+        GPUArray<Scalar4> particle_bins(num_cells*m_cell_size, m_exec_conf);
+        m_particle_bins.swap(particle_bins);
+
+        GPUArray<unsigned int> n_cell(num_cells, m_exec_conf);
+        m_n_cell.swap(n_cell);
+
+        GPUFlags<unsigned int> cell_overflowed(m_exec_conf);
+        m_cell_overflowed.swap(cell_overflowed);
+        }
     }
 
 //! Assignment of particles to mesh using three-point scheme (triangular shaped cloud)
@@ -72,17 +86,76 @@ void OrderParameterMeshGPU::assignParticles()
     ArrayHandle<cufftReal> d_mesh(m_mesh, access_location::device, access_mode::overwrite);
     ArrayHandle<Scalar> d_mode(m_mode, access_location::device, access_mode::read);
 
-    cudaMemset(d_mesh.data, 0, sizeof(cufftReal)*m_mesh.getNumElements());
+    if (exec_conf->getComputeCapability() >= 300)
+        {
+        // optimized for Kepler
+        cudaMemset(d_mesh.data, 0, sizeof(cufftReal)*m_mesh.getNumElements());
+        gpu_assign_particles_30(m_pdata->getN(),
+                             d_postype.data,
+                             d_mesh.data,
+                             m_mesh_index,
+                             d_mode.data,
+                             m_pdata->getGlobalBox());
 
-    gpu_assign_particles(m_pdata->getN(),
-                         d_postype.data,
-                         d_mesh.data,
-                         m_mesh_index,
-                         d_mode.data,
-                         m_pdata->getGlobalBox());
+        if (m_exec_conf->isCUDAErrorCheckingEnabled())
+            CHECK_CUDA_ERROR();
+        }
+    else
+        {
+        // optimized for Fermi
+        ArrayHandle<unsigned int> d_n_cell(m_n_cell, access_location::device, access_mode::overwrite);
+      
+        bool cont = true;
+        while (cont)
+            {
+            m_cell_overflowed.resetFlags(0);
+            cudaMemset(d_n_cell.data,0,sizeof(unsigned int)*m_mesh_index.getNumElements());
 
-    if (m_exec_conf->isCUDAErrorCheckingEnabled())
-        CHECK_CUDA_ERROR();
+                {
+                ArrayHandle<Scalar4> d_particle_bins(m_particle_bins, access_location::device, access_mode::overwrite);
+                gpu_bin_particles(m_pdata->getN(),
+                                  d_postype.data,
+                                  d_particle_bins.data,
+                                  d_n_cell.data,
+                                  m_cell_overflowed.getDeviceFlags(),
+                                  m_cell_size,
+                                  m_mesh_index,
+                                  d_mode.data,
+                                  m_pdata->getGlobalBox());
+
+                if (m_exec_conf->isCUDAErrorCheckingEnabled())
+                    CHECK_CUDA_ERROR();
+                }
+
+            unsigned int flags = m_cell_overflowed.readFlags();
+            
+            if (flags)
+                {
+                // reallocate particle bins array
+                m_cell_size = flags;
+
+                GPUArray<Scalar4> particle_bins(m_mesh_index.getNumElements()*m_cell_size,m_exec_conf);
+                m_particle_bins.swap(particle_bins);
+                }
+            else
+                {
+                cont = false;
+                }
+            }
+
+        // assign particles to mesh
+        ArrayHandle<Scalar4> d_particle_bins(m_particle_bins, access_location::device, access_mode::read);
+        
+        gpu_assign_binned_particles_to_mesh(m_mesh_index,
+                                            d_particle_bins.data,     
+                                            d_n_cell.data,
+                                            m_cell_size,
+                                            d_mesh.data,
+                                            m_pdata->getGlobalBox());
+
+        if (m_exec_conf->isCUDAErrorCheckingEnabled())
+            CHECK_CUDA_ERROR();
+        }
 
     if (m_prof) m_prof->pop(m_exec_conf);
     }
