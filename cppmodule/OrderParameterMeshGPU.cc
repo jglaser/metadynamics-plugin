@@ -35,8 +35,9 @@ void OrderParameterMeshGPU::initializeFFT()
     m_num_fourier_cells = m_mesh_points.x * m_mesh_points.y * (m_mesh_points.z/2+1);
 
     int dims[3] = {m_mesh_points.x, m_mesh_points.y, m_mesh_points.z};
-    cufftPlanMany(&m_cufft_plan_force, 3, dims, NULL, 1, m_num_fourier_cells,
-                  NULL, 1, num_cells, CUFFT_C2R, 3);
+    int fourier_dims[3] = {m_mesh_points.x, m_mesh_points.y, m_mesh_points.z/2+1};
+    cufftPlanMany(&m_cufft_plan_force, 3, dims, fourier_dims, 1, m_num_fourier_cells,
+                  dims, 1, num_cells, CUFFT_C2R, 3);
 
     // allocate mesh and transformed mesh
 
