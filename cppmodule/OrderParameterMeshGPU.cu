@@ -135,9 +135,7 @@ __global__ void gpu_update_meshes_kernel(const unsigned int n_wave_vectors,
                                          const Scalar *d_inf_f,
                                          const Scalar3 *d_k,
                                          const Scalar V_cell,
-                                         cufftComplex *d_fourier_mesh_x,
-                                         cufftComplex *d_fourier_mesh_y,
-                                         cufftComplex *d_fourier_mesh_z)
+                                         cufftComplex *d_ifourier_mesh_force)
     {
     unsigned int k = blockDim.x * blockIdx.x + threadIdx.x;
 
@@ -155,14 +153,14 @@ __global__ void gpu_update_meshes_kernel(const unsigned int n_wave_vectors,
     fourier_G.y =f.y * val * d_inf_f[k];
 
     Scalar3 kval = Scalar(2.0)*d_k[k];
-    d_fourier_mesh_x[k].x = -fourier_G.y*kval.x;
-    d_fourier_mesh_x[k].y = fourier_G.x*kval.x;
+    d_ifourier_mesh_force[k].x = -fourier_G.y*kval.x;
+    d_ifourier_mesh_force[k].y = fourier_G.x*kval.x;
 
-    d_fourier_mesh_y[k].x = -fourier_G.y*kval.y;
-    d_fourier_mesh_y[k].y = fourier_G.x*kval.y;
+    d_ifourier_mesh_force[k+n_wave_vectors].x = -fourier_G.y*kval.y;
+    d_ifourier_mesh_force[k+n_wave_vectors].y = fourier_G.x*kval.y;
 
-    d_fourier_mesh_z[k].x = -fourier_G.y*kval.z;
-    d_fourier_mesh_z[k].y = fourier_G.x*kval.z;
+    d_ifourier_mesh_force[k+2*n_wave_vectors].x = -fourier_G.y*kval.z;
+    d_ifourier_mesh_force[k+2*n_wave_vectors].y = fourier_G.x*kval.z;
 
     d_fourier_mesh[k] = f;
     d_fourier_mesh_G[k] = fourier_G;
@@ -174,9 +172,7 @@ void gpu_update_meshes(const unsigned int n_wave_vectors,
                          const Scalar *d_inf_f,
                          const Scalar3 *d_k,
                          const Scalar V_cell,
-                         cufftComplex *d_fourier_mesh_x,
-                         cufftComplex *d_fourier_mesh_y,
-                         cufftComplex *d_fourier_mesh_z)
+                         cufftComplex *d_ifourier_mesh_force)
     {
     const unsigned int block_size = 512;
 
@@ -186,27 +182,23 @@ void gpu_update_meshes(const unsigned int n_wave_vectors,
                                                                           d_inf_f,
                                                                           d_k,
                                                                           V_cell,
-                                                                          d_fourier_mesh_x,
-                                                                          d_fourier_mesh_y,
-                                                                          d_fourier_mesh_z);
+                                                                          d_ifourier_mesh_force);
     }
 
 //! Texture for reading particle positions
 texture<Scalar4, 1, cudaReadModeElementType> force_mesh_tex;
 
 __global__ void gpu_coalesce_forces_kernel(const unsigned int n_wave_vectors,
-                                       const cufftComplex *d_force_mesh_x,
-                                       const cufftComplex *d_force_mesh_y,
-                                       const cufftComplex *d_force_mesh_z,
+                                       const cufftComplex *d_ifourier_mesh_force,
                                        Scalar4 *d_force_mesh)
     {
     unsigned int k = blockIdx.x*blockDim.x+threadIdx.x;
 
     if (k >= n_wave_vectors) return;
 
-    d_force_mesh[k] = make_scalar4(d_force_mesh_x[k].x,
-                                   d_force_mesh_y[k].x,
-                                   d_force_mesh_z[k].x,
+    d_force_mesh[k] = make_scalar4(d_ifourier_mesh_force[k].x,
+                                   d_ifourier_mesh_force[k+n_wave_vectors].x,
+                                   d_ifourier_mesh_force[k+2*n_wave_vectors].x,
                                    0.0);
     }
 
@@ -311,9 +303,7 @@ void gpu_interpolate_forces(const unsigned int N,
                              const Scalar4 *d_postype,
                              Scalar4 *d_force,
                              const Scalar bias,
-                             const cufftComplex *d_force_mesh_x,
-                             const cufftComplex *d_force_mesh_y,
-                             const cufftComplex *d_force_mesh_z,
+                             const cufftComplex *d_ifourier_mesh_force,
                              Scalar4 *d_force_mesh,
                              const Index3D& mesh_idx,
                              const Scalar *d_mode,
@@ -324,9 +314,7 @@ void gpu_interpolate_forces(const unsigned int N,
     unsigned int num_cells = mesh_idx.getNumElements();
 
     gpu_coalesce_forces_kernel<<<num_cells/block_size+1, block_size>>>(num_cells,
-                                                                 d_force_mesh_x,
-                                                                 d_force_mesh_y,
-                                                                 d_force_mesh_z,
+                                                                 d_ifourier_mesh_force,
                                                                  d_force_mesh);
     force_mesh_tex.normalized = false;
     force_mesh_tex.filterMode = cudaFilterModePoint;

@@ -31,6 +31,10 @@ void OrderParameterMeshGPU::initializeFFT()
     {
     cufftPlan3d(&m_cufft_plan, m_mesh_points.x, m_mesh_points.y, m_mesh_points.z, CUFFT_C2C);
 
+    int dims[3] = {m_mesh_points.x, m_mesh_points.y, m_mesh_points.z};
+    cufftPlanMany(&m_cufft_plan_force, 3, dims, NULL, 1, m_mesh_index.getNumElements(),
+                  NULL, 1, m_mesh_index.getNumElements(), CUFFT_C2C, 3);
+
     // allocate mesh and transformed mesh
     unsigned int num_cells = m_mesh_index.getNumElements();
 
@@ -43,24 +47,12 @@ void OrderParameterMeshGPU::initializeFFT()
     GPUArray<cufftComplex> fourier_mesh_G(num_cells, m_exec_conf);
     m_fourier_mesh_G.swap(fourier_mesh_G);
 
-    GPUArray<cufftComplex> fourier_mesh_x(num_cells, m_exec_conf);
-    m_fourier_mesh_x.swap(fourier_mesh_x);
+    GPUArray<cufftComplex> fourier_mesh_force(3*num_cells, m_exec_conf);
+    m_fourier_mesh_force.swap(fourier_mesh_force);
 
-    GPUArray<cufftComplex> fourier_mesh_y(num_cells, m_exec_conf);
-    m_fourier_mesh_y.swap(fourier_mesh_y);
+    GPUArray<cufftComplex> ifourier_mesh_force(3*num_cells, m_exec_conf);
+    m_ifourier_mesh_force.swap(ifourier_mesh_force);
 
-    GPUArray<cufftComplex> fourier_mesh_z(num_cells, m_exec_conf);
-    m_fourier_mesh_z.swap(fourier_mesh_z);
- 
-    GPUArray<cufftComplex> force_mesh_x(num_cells, m_exec_conf);
-    m_force_mesh_x.swap(force_mesh_x);
-
-    GPUArray<cufftComplex> force_mesh_y(num_cells, m_exec_conf);
-    m_force_mesh_y.swap(force_mesh_y);
-
-    GPUArray<cufftComplex> force_mesh_z(num_cells, m_exec_conf);
-    m_force_mesh_z.swap(force_mesh_z);
-    
     GPUArray<Scalar4> force_mesh(num_cells, m_exec_conf);
     m_force_mesh.swap(force_mesh);
     }
@@ -99,13 +91,8 @@ void OrderParameterMeshGPU::updateMeshes()
     ArrayHandle<cufftComplex> d_fourier_mesh(m_fourier_mesh, access_location::device, access_mode::overwrite);
     ArrayHandle<cufftComplex> d_fourier_mesh_G(m_fourier_mesh_G, access_location::device, access_mode::overwrite);
 
-    ArrayHandle<cufftComplex> d_fourier_mesh_x(m_fourier_mesh_x, access_location::device, access_mode::overwrite);
-    ArrayHandle<cufftComplex> d_fourier_mesh_y(m_fourier_mesh_y, access_location::device, access_mode::overwrite);
-    ArrayHandle<cufftComplex> d_fourier_mesh_z(m_fourier_mesh_z, access_location::device, access_mode::overwrite);
-
-    ArrayHandle<cufftComplex> d_force_mesh_x(m_force_mesh_x, access_location::device, access_mode::overwrite);
-    ArrayHandle<cufftComplex> d_force_mesh_y(m_force_mesh_y, access_location::device, access_mode::overwrite);
-    ArrayHandle<cufftComplex> d_force_mesh_z(m_force_mesh_z, access_location::device, access_mode::overwrite);
+    ArrayHandle<cufftComplex> d_fourier_mesh_force(m_fourier_mesh_force, access_location::device, access_mode::overwrite);
+    ArrayHandle<cufftComplex> d_ifourier_mesh_force(m_ifourier_mesh_force, access_location::device, access_mode::overwrite);
 
     ArrayHandle<Scalar> d_inf_f(m_inf_f, access_location::device, access_mode::read);
     ArrayHandle<Scalar3> d_k(m_k, access_location::device, access_mode::read);
@@ -121,16 +108,12 @@ void OrderParameterMeshGPU::updateMeshes()
                       d_inf_f.data,
                       d_k.data,
                       V_cell,
-                      d_fourier_mesh_x.data,
-                      d_fourier_mesh_y.data,
-                      d_fourier_mesh_z.data);
+                      d_fourier_mesh_force.data);
 
     if (m_exec_conf->isCUDAErrorCheckingEnabled())
         CHECK_CUDA_ERROR();
 
-    cufftExecC2C(m_cufft_plan, d_fourier_mesh_x.data, d_force_mesh_x.data, CUFFT_INVERSE);
-    cufftExecC2C(m_cufft_plan, d_fourier_mesh_y.data, d_force_mesh_y.data, CUFFT_INVERSE);
-    cufftExecC2C(m_cufft_plan, d_fourier_mesh_z.data, d_force_mesh_z.data, CUFFT_INVERSE);
+    cufftExecC2C(m_cufft_plan, d_fourier_mesh_force.data, d_ifourier_mesh_force.data, CUFFT_INVERSE);
  
     if (m_exec_conf->isCUDAErrorCheckingEnabled())
         CHECK_CUDA_ERROR();
@@ -143,9 +126,7 @@ void OrderParameterMeshGPU::interpolateForces()
     if (m_prof) m_prof->push(m_exec_conf,"interpolate");
 
     ArrayHandle<Scalar4> d_postype(m_pdata->getPositions(), access_location::device, access_mode::read);
-    ArrayHandle<cufftComplex> d_force_mesh_x(m_force_mesh_x, access_location::device, access_mode::read);
-    ArrayHandle<cufftComplex> d_force_mesh_y(m_force_mesh_y, access_location::device, access_mode::read);
-    ArrayHandle<cufftComplex> d_force_mesh_z(m_force_mesh_z, access_location::device, access_mode::read);
+    ArrayHandle<cufftComplex> d_ifourier_mesh_force(m_ifourier_mesh_force, access_location::device, access_mode::read);
     ArrayHandle<Scalar4> d_force_mesh(m_force_mesh, access_location::device, access_mode::overwrite);
     ArrayHandle<Scalar> d_mode(m_mode, access_location::device, access_mode::read);
 
@@ -155,9 +136,7 @@ void OrderParameterMeshGPU::interpolateForces()
                            d_postype.data,
                            d_force.data,
                            m_bias,
-                           d_force_mesh_x.data,
-                           d_force_mesh_y.data,
-                           d_force_mesh_z.data,
+                           d_ifourier_mesh_force.data,
                            d_force_mesh.data,
                            m_mesh_index,
                            d_mode.data,
