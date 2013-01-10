@@ -35,8 +35,9 @@ void OrderParameterMeshGPU::initializeFFT()
     m_num_fourier_cells = m_mesh_points.x * m_mesh_points.y * (m_mesh_points.z/2+1);
 
     int dims[3] = {m_mesh_points.x, m_mesh_points.y, m_mesh_points.z};
-    cufftPlanMany(&m_cufft_plan_force, 3, dims, NULL, 1, m_num_fourier_cells,
-                  NULL, 1, num_cells, CUFFT_C2R, 3);
+    int fourier_dims[3] = {m_mesh_points.x, m_mesh_points.y, m_mesh_points.z/2+1};
+    cufftPlanMany(&m_cufft_plan_force, 3, dims, fourier_dims, 1, m_num_fourier_cells,
+                  dims, 3, 1, CUFFT_C2R, 3);
 
     // allocate mesh and transformed mesh
 
@@ -55,9 +56,6 @@ void OrderParameterMeshGPU::initializeFFT()
 
     GPUArray<cufftReal> ifourier_mesh_force(3*num_cells, m_exec_conf);
     m_ifourier_mesh_force.swap(ifourier_mesh_force);
-
-    GPUArray<Scalar4> force_mesh(num_cells, m_exec_conf);
-    m_force_mesh.swap(force_mesh);
     }
 
 //! Assignment of particles to mesh using three-point scheme (triangular shaped cloud)
@@ -130,7 +128,6 @@ void OrderParameterMeshGPU::interpolateForces()
 
     ArrayHandle<Scalar4> d_postype(m_pdata->getPositions(), access_location::device, access_mode::read);
     ArrayHandle<cufftReal> d_ifourier_mesh_force(m_ifourier_mesh_force, access_location::device, access_mode::read);
-    ArrayHandle<Scalar4> d_force_mesh(m_force_mesh, access_location::device, access_mode::overwrite);
     ArrayHandle<Scalar> d_mode(m_mode, access_location::device, access_mode::read);
 
     ArrayHandle<Scalar4> d_force(m_force, access_location::device, access_mode::overwrite);
@@ -140,7 +137,6 @@ void OrderParameterMeshGPU::interpolateForces()
                            d_force.data,
                            m_bias,
                            d_ifourier_mesh_force.data,
-                           d_force_mesh.data,
                            m_mesh_index,
                            d_mode.data,
                            m_pdata->getGlobalBox());

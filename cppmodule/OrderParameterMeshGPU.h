@@ -47,7 +47,6 @@ class OrderParameterMeshGPU : public OrderParameterMesh
         GPUArray<cufftComplex> m_fourier_mesh_G;   //!< Fourier transformed mesh times the influence function
         GPUArray<cufftComplex> m_fourier_mesh_force; //!< The fourier transformed force mesh
         GPUArray<cufftReal> m_ifourier_mesh_force;//!< The inverse-fourier transformed force mesh
-        GPUArray<Scalar4> m_force_mesh;             //!< The force mesh
 
         GPUFlags<Scalar> m_sum;                    //!< Sum over fourier mesh values
         GPUArray<Scalar> m_sum_partial;            //!< Partial sums over fourier mesh values

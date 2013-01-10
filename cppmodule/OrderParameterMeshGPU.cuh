@@ -25,7 +25,6 @@ void gpu_interpolate_forces(const unsigned int N,
                              Scalar4 *d_force,
                              const Scalar bias,
                              const cufftReal *d_ifourier_mesh_force,
-                             Scalar4 *d_force_mesh,
                              const Index3D& mesh_idx,
                              const Scalar *d_mode,
                              const BoxDim& box);
