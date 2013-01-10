@@ -186,7 +186,21 @@ void gpu_update_meshes(const unsigned int n_wave_vectors,
     }
 
 //! Texture for reading particle positions
-texture<cufftReal, 1, cudaReadModeElementType> force_mesh_tex;
+texture<Scalar4, 1, cudaReadModeElementType> force_mesh_tex;
+
+__global__ void gpu_coalesce_forces_kernel(const unsigned int n_wave_vectors,
+                                       const cufftReal *d_ifourier_mesh_force,
+                                       Scalar4 *d_force_mesh)
+    {
+    unsigned int k = blockIdx.x*blockDim.x+threadIdx.x;
+
+    if (k >= n_wave_vectors) return;
+
+    d_force_mesh[k] = make_scalar4(d_ifourier_mesh_force[k],
+                                   d_ifourier_mesh_force[k+n_wave_vectors],
+                                   d_ifourier_mesh_force[k+2*n_wave_vectors],
+                                   0.0);
+    }
 
 __global__ void gpu_interpolate_forces_kernel(const unsigned int N,
                                        const Scalar4 *d_postype,
@@ -273,11 +287,10 @@ __global__ void gpu_interpolate_forces_kernel(const unsigned int N,
                 // compute fraction of particle density assigned to cell
                 unsigned int cell_idx = neighk + dim.z * (neighj + dim.y * neighi);
 
-                Scalar3 mesh_force = make_scalar3(tex1Dfetch(force_mesh_tex,3*cell_idx),
-                                      tex1Dfetch(force_mesh_tex,3*cell_idx+1),
-                                      tex1Dfetch(force_mesh_tex,3*cell_idx+2));
+                Scalar4 mesh_force = tex1Dfetch(force_mesh_tex,cell_idx);
 
-                force += -assignTSC(dx_frac.x)*assignTSC(dx_frac.y)*assignTSC(dx_frac.z)*mode*mesh_force;
+                force += -assignTSC(dx_frac.x)*assignTSC(dx_frac.y)*assignTSC(dx_frac.z)*mode*
+                        make_scalar3(mesh_force.x,mesh_force.y,mesh_force.z);
                 }  
 
     // Multiply with bias potential derivative
@@ -291,6 +304,7 @@ void gpu_interpolate_forces(const unsigned int N,
                              Scalar4 *d_force,
                              const Scalar bias,
                              const cufftReal *d_ifourier_mesh_force,
+                             Scalar4 *d_force_mesh,
                              const Index3D& mesh_idx,
                              const Scalar *d_mode,
                              const BoxDim& box)
@@ -299,9 +313,12 @@ void gpu_interpolate_forces(const unsigned int N,
 
     unsigned int num_cells = mesh_idx.getNumElements();
 
+    gpu_coalesce_forces_kernel<<<num_cells/block_size+1, block_size>>>(num_cells,
+                                                                 d_ifourier_mesh_force,
+                                                                 d_force_mesh);
     force_mesh_tex.normalized = false;
     force_mesh_tex.filterMode = cudaFilterModePoint;
-    cudaBindTexture(0, force_mesh_tex, d_ifourier_mesh_force, sizeof(cufftReal)*3*num_cells);
+    cudaBindTexture(0, force_mesh_tex, d_force_mesh, sizeof(Scalar4)*num_cells);
 
     gpu_interpolate_forces_kernel<<<N/block_size+1,block_size>>>(N,
                                                                  d_postype,
