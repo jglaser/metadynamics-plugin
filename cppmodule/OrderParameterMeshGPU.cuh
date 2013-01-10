@@ -7,7 +7,7 @@
 
 void gpu_assign_particles(const unsigned int N,
                           const Scalar4 *d_postype,
-                          cufftComplex *d_mesh,
+                          cufftReal *d_mesh,
                           const Index3D& mesh_idx,
                           const Scalar *d_mode,
                           const BoxDim& box);
@@ -24,7 +24,7 @@ void gpu_interpolate_forces(const unsigned int N,
                              const Scalar4 *d_postype,
                              Scalar4 *d_force,
                              const Scalar bias,
-                             const cufftComplex *d_ifourier_mesh_force,
+                             const cufftReal *d_ifourier_mesh_force,
                              Scalar4 *d_force_mesh,
                              const Index3D& mesh_idx,
                              const Scalar *d_mode,
@@ -35,7 +35,8 @@ void gpu_compute_cv(unsigned int n_wave_vectors,
                            Scalar *d_sum,
                            const cufftComplex *d_fourier_mesh,
                            const cufftComplex *d_fourier_mesh_G,
-                           const unsigned int block_size);
+                           const unsigned int block_size,
+                           const Index3D& mesh_idx);
 
 void gpu_compute_influence_function(const Index3D& mesh_idx,
                                     const unsigned int N,

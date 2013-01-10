@@ -42,16 +42,17 @@ class OrderParameterMeshGPU : public OrderParameterMesh
         cufftHandle m_cufft_plan;          //!< The FFT plan
         cufftHandle m_cufft_plan_force;    //!< The FFT plan for the force mesh
 
-        GPUArray<cufftComplex> m_mesh;             //!< The particle density mesh
+        GPUArray<cufftReal> m_mesh;                //!< The particle density mesh
         GPUArray<cufftComplex> m_fourier_mesh;     //!< The fourier transformed mesh
         GPUArray<cufftComplex> m_fourier_mesh_G;   //!< Fourier transformed mesh times the influence function
         GPUArray<cufftComplex> m_fourier_mesh_force; //!< The fourier transformed force mesh
-        GPUArray<cufftComplex> m_ifourier_mesh_force;//!< The inverse-fourier transformed force mesh
+        GPUArray<cufftReal> m_ifourier_mesh_force;//!< The inverse-fourier transformed force mesh
         GPUArray<Scalar4> m_force_mesh;             //!< The force mesh
 
         GPUFlags<Scalar> m_sum;                    //!< Sum over fourier mesh values
         GPUArray<Scalar> m_sum_partial;            //!< Partial sums over fourier mesh values
         unsigned int m_block_size;                 //!< Block size for fourier mesh reduction
+        unsigned m_num_fourier_cells;              //!< Number of complex values in fourier mesh
     };
 
 void export_OrderParameterMeshGPU();

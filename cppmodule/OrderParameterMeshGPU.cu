@@ -25,7 +25,7 @@ __device__ Scalar assignTSC(Scalar x)
  */
 __global__ void gpu_assign_particles_kernel(const unsigned int N,
                                        const Scalar4 *d_postype,
-                                       cufftComplex *d_mesh,
+                                       cufftReal *d_mesh,
                                        const Index3D mesh_idx,
                                        const Scalar *d_mode,
                                        const BoxDim box)
@@ -106,14 +106,14 @@ __global__ void gpu_assign_particles_kernel(const unsigned int N,
                 Scalar density_fraction = assignTSC(dx_frac.x)*assignTSC(dx_frac.y)*assignTSC(dx_frac.z)/V_cell;
                 unsigned int cell_idx = neighk + dim.z * (neighj + dim.y * neighi);
 
-                d_mesh[cell_idx].x += mode*density_fraction;
+                d_mesh[cell_idx] += mode*density_fraction;
                 }
                  
     }
 
 void gpu_assign_particles(const unsigned int N,
                           const Scalar4 *d_postype,
-                          cufftComplex *d_mesh,
+                          cufftReal *d_mesh,
                           const Index3D& mesh_idx,
                           const Scalar *d_mode,
                           const BoxDim& box)
@@ -189,16 +189,16 @@ void gpu_update_meshes(const unsigned int n_wave_vectors,
 texture<Scalar4, 1, cudaReadModeElementType> force_mesh_tex;
 
 __global__ void gpu_coalesce_forces_kernel(const unsigned int n_wave_vectors,
-                                       const cufftComplex *d_ifourier_mesh_force,
+                                       const cufftReal *d_ifourier_mesh_force,
                                        Scalar4 *d_force_mesh)
     {
     unsigned int k = blockIdx.x*blockDim.x+threadIdx.x;
 
     if (k >= n_wave_vectors) return;
 
-    d_force_mesh[k] = make_scalar4(d_ifourier_mesh_force[k].x,
-                                   d_ifourier_mesh_force[k+n_wave_vectors].x,
-                                   d_ifourier_mesh_force[k+2*n_wave_vectors].x,
+    d_force_mesh[k] = make_scalar4(d_ifourier_mesh_force[k],
+                                   d_ifourier_mesh_force[k+n_wave_vectors],
+                                   d_ifourier_mesh_force[k+2*n_wave_vectors],
                                    0.0);
     }
 
@@ -303,7 +303,7 @@ void gpu_interpolate_forces(const unsigned int N,
                              const Scalar4 *d_postype,
                              Scalar4 *d_force,
                              const Scalar bias,
-                             const cufftComplex *d_ifourier_mesh_force,
+                             const cufftReal *d_ifourier_mesh_force,
                              Scalar4 *d_force_mesh,
                              const Index3D& mesh_idx,
                              const Scalar *d_mode,
@@ -333,7 +333,8 @@ __global__ void kernel_calculate_cv_partial(
             int n_wave_vectors,
             Scalar *sum_partial,
             const cufftComplex *d_fourier_mesh,
-            const cufftComplex *d_fourier_mesh_G)
+            const cufftComplex *d_fourier_mesh_G,
+            const unsigned int dimz)
     {
     extern __shared__ Scalar sdata[];
 
@@ -345,7 +346,9 @@ __global__ void kernel_calculate_cv_partial(
 
     if (j < n_wave_vectors) {
         mySum = d_fourier_mesh[j].x * d_fourier_mesh_G[j].x + d_fourier_mesh[j].y * d_fourier_mesh_G[j].y;
+        if (j % dimz) mySum *= Scalar(2.0);
         }
+
     sdata[tidx] = mySum;
 
    __syncthreads();
@@ -404,11 +407,12 @@ __global__ void kernel_final_reduce_cv(Scalar* sum_partial,
     }
 
 void gpu_compute_cv(unsigned int n_wave_vectors,
-                           Scalar *d_sum_partial,
-                           Scalar *d_sum,
-                           const cufftComplex *d_fourier_mesh,
-                           const cufftComplex *d_fourier_mesh_G,
-                           const unsigned int block_size)
+                   Scalar *d_sum_partial,
+                   Scalar *d_sum,
+                   const cufftComplex *d_fourier_mesh,
+                   const cufftComplex *d_fourier_mesh_G,
+                   const unsigned int block_size,
+                   const Index3D& mesh_idx)
     {
     unsigned int n_blocks = n_wave_vectors/block_size + 1;
 
@@ -417,7 +421,9 @@ void gpu_compute_cv(unsigned int n_wave_vectors,
                n_wave_vectors,
                d_sum_partial,
                d_fourier_mesh,
-               d_fourier_mesh_G);
+               d_fourier_mesh_G,
+               mesh_idx.getD()/2+1
+               );
 
     // calculate final S(q) values 
     const unsigned int final_block_size = 512;
@@ -447,7 +453,7 @@ __global__ void gpu_compute_influence_function_kernel(const Index3D mesh_idx,
     int n = blockIdx.z * blockDim.z + threadIdx.z;
 
     int3 dim = make_int3(mesh_idx.getW(), mesh_idx.getH(), mesh_idx.getD());
-    if (l >= dim.x/2+1 || m >= dim.y/2+1 || m >= dim.z/2+1) return;
+    if (l >= dim.x/2+1 || m >= dim.y/2+1 || n >= dim.z/2+1) return;
 
     Scalar3 dim_inv = make_scalar3(Scalar(1.0)/(Scalar)dim.x,
                                    Scalar(1.0)/(Scalar)dim.y,
@@ -465,40 +471,32 @@ __global__ void gpu_compute_influence_function_kernel(const Index3D mesh_idx,
 
     int numi = (l > 0) ? 2 : 1;
     int numj = (m > 0) ? 2 : 1;
-    int numk = (n > 0) ? 2 : 1;
 
     for (int i = 0; i < numi; ++i)
         {
         for (int j = 0; j < numj; ++j)
             {
-            for (int k = 0; k < numk; ++k)
-                {
-                // determine cell idx
-                unsigned int ix, iy, iz;
-                if (l < 0)
-                    ix = l + dim.x;
-                else
-                    ix = l;
+            // determine cell idx
+            unsigned int ix, iy, iz;
+            if (l < 0)
+                ix = l + dim.x;
+            else
+                ix = l;
 
-                if (m < 0)
-                    iy = m + dim.y;
-                else
-                    iy = m;
+            if (m < 0)
+                iy = m + dim.y;
+            else
+                iy = m;
 
-                if (n < 0)
-                    iz = n + dim.z;
-                else
-                    iz = n;
-                
-                unsigned int cell_idx = iz + dim.z * (iy + dim.y * ix);
+            iz = n;
+            
+            unsigned int cell_idx = iz + (dim.z/2+1) * (iy + dim.y * ix);
 
-                d_inf_f[cell_idx] = val;
+            d_inf_f[cell_idx] = val;
 
-                kval = (Scalar)l*b1+(Scalar)m*b2+(Scalar)n*b3;
-                d_k[cell_idx] = kval;
+            kval = (Scalar)l*b1+(Scalar)m*b2+(Scalar)n*b3;
+            d_k[cell_idx] = kval;
 
-                n *= -1;
-                }
             m *= -1;
             }
         l *= -1;

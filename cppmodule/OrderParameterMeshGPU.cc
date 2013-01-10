@@ -18,7 +18,7 @@ OrderParameterMeshGPU::OrderParameterMeshGPU(boost::shared_ptr<SystemDefinition>
                                             std::vector<Scalar> mode)
     : OrderParameterMesh(sysdef, nx, ny, nz, qstar, mode), m_sum(m_exec_conf), m_block_size(256)
     {
-    GPUArray<Scalar> sum_partial(m_mesh_points.x*m_mesh_points.y*m_mesh_points.z/m_block_size+1,m_exec_conf);
+    GPUArray<Scalar> sum_partial(m_mesh_points.x*m_mesh_points.y*(m_mesh_points.z/2+1)/m_block_size+1,m_exec_conf);
     m_sum_partial.swap(sum_partial);
     }
 
@@ -29,28 +29,31 @@ OrderParameterMeshGPU::~OrderParameterMeshGPU()
 
 void OrderParameterMeshGPU::initializeFFT()
     {
-    cufftPlan3d(&m_cufft_plan, m_mesh_points.x, m_mesh_points.y, m_mesh_points.z, CUFFT_C2C);
+    cufftPlan3d(&m_cufft_plan, m_mesh_points.x, m_mesh_points.y, m_mesh_points.z, CUFFT_R2C);
+
+    unsigned int num_cells = m_mesh_index.getNumElements();
+    m_num_fourier_cells = m_mesh_points.x * m_mesh_points.y * (m_mesh_points.z/2+1);
 
     int dims[3] = {m_mesh_points.x, m_mesh_points.y, m_mesh_points.z};
-    cufftPlanMany(&m_cufft_plan_force, 3, dims, NULL, 1, m_mesh_index.getNumElements(),
-                  NULL, 1, m_mesh_index.getNumElements(), CUFFT_C2C, 3);
+    cufftPlanMany(&m_cufft_plan_force, 3, dims, NULL, 1, m_num_fourier_cells,
+                  NULL, 1, num_cells, CUFFT_C2R, 3);
 
     // allocate mesh and transformed mesh
-    unsigned int num_cells = m_mesh_index.getNumElements();
 
-    GPUArray<cufftComplex> mesh(num_cells,m_exec_conf);
+    GPUArray<cufftReal> mesh(num_cells,m_exec_conf);
     m_mesh.swap(mesh);
 
-    GPUArray<cufftComplex> fourier_mesh(num_cells, m_exec_conf);
+
+    GPUArray<cufftComplex> fourier_mesh(m_num_fourier_cells, m_exec_conf);
     m_fourier_mesh.swap(fourier_mesh);
 
-    GPUArray<cufftComplex> fourier_mesh_G(num_cells, m_exec_conf);
+    GPUArray<cufftComplex> fourier_mesh_G(m_num_fourier_cells, m_exec_conf);
     m_fourier_mesh_G.swap(fourier_mesh_G);
 
-    GPUArray<cufftComplex> fourier_mesh_force(3*num_cells, m_exec_conf);
+    GPUArray<cufftComplex> fourier_mesh_force(3*m_num_fourier_cells, m_exec_conf);
     m_fourier_mesh_force.swap(fourier_mesh_force);
 
-    GPUArray<cufftComplex> ifourier_mesh_force(3*num_cells, m_exec_conf);
+    GPUArray<cufftReal> ifourier_mesh_force(3*num_cells, m_exec_conf);
     m_ifourier_mesh_force.swap(ifourier_mesh_force);
 
     GPUArray<Scalar4> force_mesh(num_cells, m_exec_conf);
@@ -65,10 +68,10 @@ void OrderParameterMeshGPU::assignParticles()
     if (m_prof) m_prof->push(m_exec_conf, "assign");
 
     ArrayHandle<Scalar4> d_postype(m_pdata->getPositions(), access_location::device, access_mode::read);
-    ArrayHandle<cufftComplex> d_mesh(m_mesh, access_location::device, access_mode::overwrite);
+    ArrayHandle<cufftReal> d_mesh(m_mesh, access_location::device, access_mode::overwrite);
     ArrayHandle<Scalar> d_mode(m_mode, access_location::device, access_mode::read);
 
-    cudaMemset(d_mesh.data, 0, sizeof(cufftComplex)*m_mesh.getNumElements());
+    cudaMemset(d_mesh.data, 0, sizeof(cufftReal)*m_mesh.getNumElements());
 
     gpu_assign_particles(m_pdata->getN(),
                          d_postype.data,
@@ -87,22 +90,22 @@ void OrderParameterMeshGPU::updateMeshes()
     {
     if (m_prof) m_prof->push(m_exec_conf,"FFT");
 
-    ArrayHandle<cufftComplex> d_mesh(m_mesh, access_location::device, access_mode::read);
+    ArrayHandle<cufftReal> d_mesh(m_mesh, access_location::device, access_mode::read);
     ArrayHandle<cufftComplex> d_fourier_mesh(m_fourier_mesh, access_location::device, access_mode::overwrite);
     ArrayHandle<cufftComplex> d_fourier_mesh_G(m_fourier_mesh_G, access_location::device, access_mode::overwrite);
 
     ArrayHandle<cufftComplex> d_fourier_mesh_force(m_fourier_mesh_force, access_location::device, access_mode::overwrite);
-    ArrayHandle<cufftComplex> d_ifourier_mesh_force(m_ifourier_mesh_force, access_location::device, access_mode::overwrite);
+    ArrayHandle<cufftReal> d_ifourier_mesh_force(m_ifourier_mesh_force, access_location::device, access_mode::overwrite);
 
     ArrayHandle<Scalar> d_inf_f(m_inf_f, access_location::device, access_mode::read);
     ArrayHandle<Scalar3> d_k(m_k, access_location::device, access_mode::read);
 
     // transform the particle mesh
-    cufftExecC2C(m_cufft_plan, d_mesh.data, d_fourier_mesh.data, CUFFT_FORWARD);
+    cufftExecR2C(m_cufft_plan, d_mesh.data, d_fourier_mesh.data);
 
     Scalar V_cell = m_pdata->getGlobalBox().getVolume()/(Scalar)m_mesh_index.getNumElements();
 
-    gpu_update_meshes(m_mesh_index.getNumElements(),
+    gpu_update_meshes(m_num_fourier_cells,
                       d_fourier_mesh.data,
                       d_fourier_mesh_G.data,
                       d_inf_f.data,
@@ -113,7 +116,7 @@ void OrderParameterMeshGPU::updateMeshes()
     if (m_exec_conf->isCUDAErrorCheckingEnabled())
         CHECK_CUDA_ERROR();
 
-    cufftExecC2C(m_cufft_plan, d_fourier_mesh_force.data, d_ifourier_mesh_force.data, CUFFT_INVERSE);
+    cufftExecC2R(m_cufft_plan_force, d_fourier_mesh_force.data, d_ifourier_mesh_force.data);
  
     if (m_exec_conf->isCUDAErrorCheckingEnabled())
         CHECK_CUDA_ERROR();
@@ -126,7 +129,7 @@ void OrderParameterMeshGPU::interpolateForces()
     if (m_prof) m_prof->push(m_exec_conf,"interpolate");
 
     ArrayHandle<Scalar4> d_postype(m_pdata->getPositions(), access_location::device, access_mode::read);
-    ArrayHandle<cufftComplex> d_ifourier_mesh_force(m_ifourier_mesh_force, access_location::device, access_mode::read);
+    ArrayHandle<cufftReal> d_ifourier_mesh_force(m_ifourier_mesh_force, access_location::device, access_mode::read);
     ArrayHandle<Scalar4> d_force_mesh(m_force_mesh, access_location::device, access_mode::overwrite);
     ArrayHandle<Scalar> d_mode(m_mode, access_location::device, access_mode::read);
 
@@ -157,17 +160,18 @@ Scalar OrderParameterMeshGPU::computeCV()
 
     ArrayHandle<Scalar> d_sum_partial(m_sum_partial, access_location::device, access_mode::overwrite);
 
-    gpu_compute_cv(m_mesh_index.getNumElements(),
+    gpu_compute_cv(m_num_fourier_cells,
                    d_sum_partial.data,
                    m_sum.getDeviceFlags(),
                    d_fourier_mesh.data,
                    d_fourier_mesh_G.data,
-                   m_block_size);
+                   m_block_size,
+                   m_mesh_index);
  
     if (m_exec_conf->isCUDAErrorCheckingEnabled())
         CHECK_CUDA_ERROR();
 
-    Scalar sum = m_sum.readFlags() * Scalar(1.0/2.0)/m_pdata->getGlobalBox().getVolume();
+    Scalar sum = m_sum.readFlags()*Scalar(1.0/2.0) /m_pdata->getGlobalBox().getVolume();
 
     if (m_prof) m_prof->pop(m_exec_conf);
 
