@@ -72,6 +72,8 @@ void OrderParameterMeshGPU::initializeFFT()
 
         GPUFlags<unsigned int> cell_overflowed(m_exec_conf);
         m_cell_overflowed.swap(cell_overflowed);
+
+        m_cell_overflowed.resetFlags(0);
         }
     }
 
@@ -108,7 +110,6 @@ void OrderParameterMeshGPU::assignParticles()
         bool cont = true;
         while (cont)
             {
-            m_cell_overflowed.resetFlags(0);
             cudaMemset(d_n_cell.data,0,sizeof(unsigned int)*m_mesh_index.getNumElements());
 
                 {
@@ -136,6 +137,7 @@ void OrderParameterMeshGPU::assignParticles()
 
                 GPUArray<Scalar4> particle_bins(m_mesh_index.getNumElements()*m_cell_size,m_exec_conf);
                 m_particle_bins.swap(particle_bins);
+                m_cell_overflowed.resetFlags(0);
                 }
             else
                 {

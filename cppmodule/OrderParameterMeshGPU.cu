@@ -261,13 +261,14 @@ __global__ void gpu_assign_binned_particles_to_mesh_kernel(unsigned int nx,
                     
                 unsigned int neigh_cell_idx = neighk + nz * (neighj + ny * neighi);
                 unsigned int n_cell = d_n_cell[neigh_cell_idx];
+                Scalar3 cell_shift = make_scalar3(l,m,n);
 
                 for (unsigned int neigh_idx = 0; neigh_idx < n_cell; neigh_idx++)
                     {
                     Scalar4 xyzm = tex1Dfetch(particle_bins_tex, maxn*neigh_cell_idx+neigh_idx);
                     Scalar3 shift_frac = make_scalar3(xyzm.x, xyzm.y, xyzm.z);
 
-                    Scalar3 dx_frac = shift_frac + make_scalar3(l,m,n);
+                    Scalar3 dx_frac = shift_frac + cell_shift;
 
                     // compute fraction of particle density assigned to cell
                     Scalar mode = xyzm.w;
