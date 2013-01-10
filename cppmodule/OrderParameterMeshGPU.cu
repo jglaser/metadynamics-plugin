@@ -223,13 +223,17 @@ __global__ void gpu_assign_binned_particles_to_mesh_kernel(unsigned int nx,
                                                            cufftReal *d_mesh,
                                                            const BoxDim box)
     {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    int j = blockIdx.y * blockDim.y + threadIdx.y;
-    int k = blockIdx.z * blockDim.z + threadIdx.z;
+    extern __shared__ cufftReal assign_sdata[];
+
+    unsigned int cell_idx = blockDim.y * blockIdx.y + threadIdx.y;
+
+    int i = cell_idx/(ny*nz); 
+    int j = (cell_idx - i*ny*nz)/nz;
+    int k = cell_idx - i *ny*nz - j *nz;
+
+    const unsigned int stride = blockDim.x;
 
     if (i>= (int)nx || j >= (int)ny || k >= (int)nz) return;
-
-    unsigned int cell_idx = k + nz * (j + ny * i);
 
     Scalar V_cell = box.getVolume()/(Scalar)(nx*ny*nz);
     Scalar grid_val(0.0);
@@ -262,7 +266,7 @@ __global__ void gpu_assign_binned_particles_to_mesh_kernel(unsigned int nx,
                 unsigned int neigh_cell_idx = neighk + nz * (neighj + ny * neighi);
                 unsigned int n_cell = d_n_cell[neigh_cell_idx];
 
-                for (unsigned int neigh_idx = 0; neigh_idx < n_cell; neigh_idx++)
+                for (unsigned int neigh_idx = threadIdx.x; neigh_idx < n_cell; neigh_idx+=stride)
                     {
                     Scalar4 xyzm = tex1Dfetch(particle_bins_tex, maxn*neigh_cell_idx+neigh_idx);
                     Scalar3 shift_frac = make_scalar3(xyzm.x, xyzm.y, xyzm.z);
@@ -273,10 +277,21 @@ __global__ void gpu_assign_binned_particles_to_mesh_kernel(unsigned int nx,
                     Scalar mode = xyzm.w;
                     grid_val += mode*assignTSC(dx_frac.x)*assignTSC(dx_frac.y)*assignTSC(dx_frac.z)/V_cell;
                     }
+
                 } // end of loop over neighboring bins
   
-    // write out mesh value
-    d_mesh[cell_idx] = grid_val;
+    // write out mesh value to shared memory
+    assign_sdata[threadIdx.y*blockDim.x+threadIdx.x] = grid_val;
+
+    // no syncthreads necessary, we are within one warp
+    if (threadIdx.x == 0)
+        {
+        cufftReal sum(0.0);
+        for (unsigned int t = 0; t < blockDim.x; ++t)
+            sum += assign_sdata[threadIdx.y*blockDim.x+t];
+
+        d_mesh[cell_idx] = sum;
+        }
     }
 
 void gpu_assign_binned_particles_to_mesh(const Index3D& mesh_idx,
@@ -292,14 +307,12 @@ void gpu_assign_binned_particles_to_mesh(const Index3D& mesh_idx,
     particle_bins_tex.filterMode = cudaFilterModePoint;
     cudaBindTexture(0, particle_bins_tex, d_particle_bins, sizeof(Scalar4)*num_cells*maxn);
 
-    unsigned int block_size = 8;
-    
-    dim3 blockDim(block_size,block_size,block_size);
-    dim3 gridDim((mesh_idx.getW() % block_size == 0) ? mesh_idx.getW()/block_size : mesh_idx.getW()/block_size+1,
-                 (mesh_idx.getH() % block_size == 0) ? mesh_idx.getH()/block_size : mesh_idx.getH()/block_size+1,
-                 (mesh_idx.getD() % block_size == 0) ? mesh_idx.getD()/block_size : mesh_idx.getW()/block_size+1);
-
-    gpu_assign_binned_particles_to_mesh_kernel<<<gridDim,blockDim>>>(mesh_idx.getW(),
+    unsigned int block_size_x = 2;
+    unsigned int block_size_y = 256;
+    dim3 blockDim(block_size_x,block_size_y);
+    dim3 gridDim(1,mesh_idx.getNumElements()/block_size_y+1,1);
+    size_t sdata_size = sizeof(cufftReal)*block_size_y*block_size_x;
+    gpu_assign_binned_particles_to_mesh_kernel<<<gridDim,blockDim,sdata_size>>>(mesh_idx.getW(),
                                                                      mesh_idx.getH(),
                                                                      mesh_idx.getD(),
                                                                      d_n_cell,
