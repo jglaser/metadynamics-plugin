@@ -5,6 +5,24 @@ __constant__ Scalar sinc_coeff[6];
 const Scalar coeff[] = {Scalar(1.0), Scalar(-1.0/6.0), Scalar(1.0/120.0), Scalar(-1.0/5040.0),
                         Scalar(1.0/362880.0), Scalar(-1.0/39916800.0)};
 
+//! Implements workaround atomic float addition on sm_1x hardware
+__device__ inline void atomicFloatAdd(float* address, float value)
+    {
+#if (__CUDA_ARCH__ < 200)
+    float old = value;
+    float new_old;
+    do
+        {
+        new_old = atomicExch(address, 0.0f);
+        new_old += old;
+        }
+    while ((old = atomicExch(address, new_old))!=0.0f);
+#else
+    atomicAdd(address, value);
+#endif
+    }
+
+
 /*! \param x Distance on mesh in units of the mesh size
  */
 __device__ Scalar assignTSC(Scalar x)
@@ -106,7 +124,7 @@ __global__ void gpu_assign_particles_kernel(const unsigned int N,
                 Scalar density_fraction = assignTSC(dx_frac.x)*assignTSC(dx_frac.y)*assignTSC(dx_frac.z)/V_cell;
                 unsigned int cell_idx = neighk + dim.z * (neighj + dim.y * neighi);
 
-                d_mesh[cell_idx] += mode*density_fraction;
+                atomicFloatAdd(&d_mesh[cell_idx], mode*density_fraction);
                 }
                  
     }
