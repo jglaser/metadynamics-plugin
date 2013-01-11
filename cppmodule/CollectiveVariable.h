@@ -37,19 +37,6 @@ class CollectiveVariable : public ForceCompute
         CollectiveVariable(boost::shared_ptr<SystemDefinition> sysdef, const std::string& name);
         virtual ~CollectiveVariable() {}
 
-        /*! \param timestep The current value of the time step
-         */
-        void computeForces(unsigned int timestep);
-
-        /*! Compute the biased forces for this collective variable.
-            The force that is written to the force arrays must be
-            multiplied by the bias factor.
-
-            \param timestep The current value of the time step
-         */
-        virtual void computeBiasForces(unsigned int timestep) = 0;
-
-
         /*! Returns the current value of the collective variable
          *  \param timestep The currnt value of the timestep
          */
@@ -97,7 +84,29 @@ class CollectiveVariable : public ForceCompute
             return m_cv_name;
             }
 
+        /*! Computes the derivative of the collective variable w.r.t. the particle coordinates
+         * and stores them in the force array.
+         */
+        void computeDerivatives(unsigned int timestep)
+            {
+            m_bias = Scalar(1.0);
+
+            computeBiasForces(timestep);
+            }
+
     protected:
+        /*! \param timestep The current value of the time step
+         */
+        void computeForces(unsigned int timestep);
+
+        /*! Compute the biased forces for this collective variable.
+            The force that is written to the force arrays must be
+            multiplied by the bias factor.
+
+            \param timestep The current value of the time step
+         */
+        virtual void computeBiasForces(unsigned int timestep) = 0;
+
         Scalar m_bias;         //!< The bias factor multiplying the force
 
         std::string m_cv_name; //!< Name of the collective variable

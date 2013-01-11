@@ -133,15 +133,26 @@ __global__ void gpu_update_grid_kernel(unsigned int num_elements,
         Scalar gauss_exp = Scalar(0.0);
 
         // evaluate Gaussian on grid point
-        for (unsigned int cv_idx = 0; cv_idx < dim; ++cv_idx)
+        for (unsigned int cv_i = 0; cv_i < dim; ++cv_i)
             {
-            Scalar min = cv_min[cv_idx];
-            Scalar max = cv_max[cv_idx];
-            Scalar delta = (max - min)/(Scalar)(lengths[cv_idx] - 1);
-            Scalar val = min + (Scalar)coords[cv_idx+dim*threadIdx.x]*delta;
-            Scalar sigma = cv_sigma[cv_idx];
-            Scalar d = val - current_val[cv_idx];
-            gauss_exp -= d*d/Scalar(2.0)/sigma/sigma;
+            Scalar min_i = cv_min[cv_i];
+            Scalar max_i = cv_max[cv_i];
+            Scalar delta_i = (max_i - min_i)/(Scalar)(lengths[cv_i] - 1);
+            Scalar val_i = min_i + (Scalar)coords[cv_i+dim*threadIdx.x]*delta_i;
+            Scalar d_i = val_i - current_val[cv_i];
+
+            for (unsigned int cv_j = 0; cv_j < dim; ++cv_j)
+                {
+                Scalar min_j = cv_min[cv_j];
+                Scalar max_j = cv_max[cv_j];
+                Scalar delta_j = (max_j - min_j)/(Scalar)(lengths[cv_j] - 1);
+                Scalar val_j = min_j + (Scalar)coords[cv_j+dim*threadIdx.x]*delta_j;
+                Scalar d_j = val_j - current_val[cv_j];
+
+                Scalar sigma_ij = cv_sigma[cv_i*dim+cv_j];
+
+                gauss_exp -= d_i*d_j*Scalar(1.0/2.0)/(sigma_ij*sigma_ij);
+                }
             }
 
         Scalar gauss = expf(gauss_exp);

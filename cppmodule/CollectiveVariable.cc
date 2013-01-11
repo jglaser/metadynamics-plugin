@@ -58,7 +58,6 @@ void export_CollectiveVariable()
     {
     class_<CollectiveVariableWrap, boost::shared_ptr<CollectiveVariableWrap>, bases<ForceCompute>, boost::noncopyable>
         ("CollectiveVariable", init< boost::shared_ptr<SystemDefinition>, const std::string& > ())
-        .def("computeForces", &CollectiveVariable::computeForces)
         .def("getCurrentValue", pure_virtual(&CollectiveVariable::getCurrentValue))
         .def("setHarmonic", &CollectiveVariable::setHarmonic)
         .def("setKappa", &CollectiveVariable::setKappa)

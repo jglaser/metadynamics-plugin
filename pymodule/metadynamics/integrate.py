@@ -294,7 +294,9 @@ class mode_metadynamics(_integrator):
     # \param stride The stride for bias potential updates
     # \param stride_multiply The factor with which the stride is multiplied after every update
     # \param min_label_change The threshold for the number of walker label changes before the bias potential is updated
-    def set_params(self, add_hills=None, mode=None, stride=None, stride_multiply=None, min_label_change=None):
+    # \param adaptive True if adaptive Gaussians should be used
+    # \param sigma_g Estimated RMSD of particle positions for adapative Gaussian mode
+    def set_params(self, add_hills=None, mode=None, stride=None, stride_multiply=None, min_label_change=None, adaptive=None, sigma_g=1.0):
         util.print_status_line();
       
         if add_hills is not None:
@@ -321,3 +323,9 @@ class mode_metadynamics(_integrator):
 
         if min_label_change is not None:
             self.cpp_integrator.setMinimumLabelChanges(int(min_label_change))
+
+        if adaptive is not None:
+            self.cpp_integrator.setAdaptive(adaptive)
+
+        if sigma_g is not None:
+            self.cpp_integrator.setSigmaG(sigma_g)

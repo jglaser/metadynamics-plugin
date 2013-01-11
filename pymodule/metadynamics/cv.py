@@ -23,7 +23,7 @@ class _collective_variable(_force):
     #
     # \param sigma Standard deviation of Gaussians added for this collective variable - only relevant in "well-tempered" or "standard" metadynamics
     # \param name Name of the collective variable
-    def __init__(self, sigma, name=None):
+    def __init__(self, sigma=1.0, name=None):
         _force.__init__(self, name)
 
         self.sigma = sigma

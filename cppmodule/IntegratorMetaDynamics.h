@@ -179,6 +179,10 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
                 {
                 return m_curr_bias_potential;
                 }
+            else if (quantity == m_log_names[1])
+                {
+                return sigmaDeterminant();
+                }
             else
                 { 
                 // default: throw exception
@@ -264,6 +268,22 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
             m_add_bias = add_bias;
             }
 
+        /*! Enable/disable adaptive Gaussians
+         * \param adpative True if adaptive Gaussians should be enabled
+         */
+        void setAdaptive(bool adaptive)
+            {
+            m_adaptive = adaptive;
+            }
+
+        /*! Set the estimate of the MSD of the particle positions (between two update steps)
+            \param sigma_g The particle MSD
+         */
+        void setSigmaG(Scalar sigma_g)
+            {
+            m_sigma_g = sigma_g;
+            }
+
     private:
         Scalar m_W;                                       //!< Height of Gaussians
         Scalar m_T_shift;                                 //!< Temperature shift
@@ -301,8 +321,10 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         GPUArray<unsigned int> m_lengths;                 //!< Grid dimensions in every direction
         GPUArray<Scalar> m_cv_min;                        //!< Minimum grid values per CV
         GPUArray<Scalar> m_cv_max;                        //!< Maximum grid values per CV
-        GPUArray<Scalar> m_sigma;                         //!< Standard deviations of Gaussians per CV
+        GPUArray<Scalar> m_sigma;                         //!< Square Matrix of Gaussian standard deviations
         GPUArray<Scalar> m_current_val;                   //!< Current CV values array
+        Scalar m_sigma_g;                                 //!< Estimated standard deviation of particle displacements
+        bool m_adaptive;                                  //!< True if adaptive Gaussians should be used
 
         Scalar m_temp;                                    //!< Temperature for flux-tempered MetaD
         bool m_compute_histograms;                        //!< True if histograms should be computed
@@ -365,6 +387,12 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
 
         //! Derivative of fraction of time spent in state plus w.r.t. collective variable
         Scalar fractionDerivative(Scalar val);
+
+        //! Compute sigma matrix
+        void computeSigma();
+
+        //! Compute determinant of sigma matrix
+        Scalar sigmaDeterminant();
 
     };
 

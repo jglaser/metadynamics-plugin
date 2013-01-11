@@ -18,8 +18,6 @@ class OrderParameterMesh : public CollectiveVariable
                            const std::vector<Scalar> mode);
         virtual ~OrderParameterMesh();
 
-        void computeBiasForces(unsigned int timestep);
-
         Scalar getCurrentValue(unsigned int timestep);
 
         /*! Returns the names of provided log quantities.
@@ -38,6 +36,14 @@ class OrderParameterMesh : public CollectiveVariable
         Scalar getLogValue(const std::string& quantity, unsigned int timestep);
 
     protected:
+        /*! Compute the biased forces for this collective variable.
+            The force that is written to the force arrays must be
+            multiplied by the bias factor.
+
+            \param timestep The current value of the time step
+         */
+        void computeBiasForces(unsigned int timestep);
+
         Scalar3 m_mesh_size;                //!< The dimensions of a single cell along every coordinate
         uint3 m_mesh_points;                //!< Number of sub-divisions along one coordinate
         Index3D m_mesh_index;               //!< Indexer for the particle mesh 
