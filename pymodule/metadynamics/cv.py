@@ -21,9 +21,9 @@ class _collective_variable(_force):
     #
     # This mainly sets some parameters of the collective variable
     #
-    # \param sigma Standard deviation of Gaussians added for this collective variable - only relevant in "well-tempered" or "standard" metadynamics
+    # \param sigma Standard deviation of Gaussians added for this collective variable - only relevant for "well-tempered" or "standard" metadynamics
     # \param name Name of the collective variable
-    def __init__(self, sigma=1.0, name=None):
+    def __init__(self, sigma=1.0, name=None, umbrella=None):
         _force.__init__(self, name)
 
         self.sigma = sigma
@@ -39,6 +39,8 @@ class _collective_variable(_force):
         self.ftm_max = 0.0
 
         self.ftm_parameters_set = False
+
+        self.umbrella = umbrella
 
     ## \var sigma
     # \internal
@@ -91,7 +93,11 @@ class _collective_variable(_force):
 
     ## Set parameters for this collective variable
     # \param sigma The standard deviation
-    def set_params(self, sigma=None, harmonic=None, kappa=None, cv0=None):
+    # \param harmonic If True enable harmonic potential
+    # \param kappa Harmonic spring constant
+    # \param cv0 Harmonic potential minimum position
+    # \param umbrella If True, do not add Gaussians in this collective variable
+    def set_params(self, sigma=None, harmonic=None, kappa=None, cv0=None, umbrella=None):
         util.print_status_line()
 
         if sigma is not None:
@@ -106,6 +112,8 @@ class _collective_variable(_force):
         if cv0 is not None:
             self.cpp_force.setMinimum(cv0)
 
+        if umbrella is not None:
+            self.umbrella = umbrella
 
 ## \brief Lamellar order parameter as a collective variable to study phase transitions in block copolymer systems
 #
@@ -145,7 +153,7 @@ class lamellar(_collective_variable):
     # \param mode Per-type list (dictionary) of mode coefficients
     # \param lattice_vectors List of reciprocal lattice vectors (Miller indices) for every mode
     # \param name Name given to this collective variable
-    def __init__(self, sigma, mode, lattice_vectors, name=None):
+    def __init__(self, mode, lattice_vectors, name=None,sigma=1.0):
         util.print_status_line()
 
         if name is not None:
@@ -204,7 +212,7 @@ class aspect_ratio(_collective_variable):
     # \param dir1 Cartesian index of first direction 
     # \param dir2 Cartesian index of second direction
     # \param sigma Standard deviation of deposited Gaussians
-    def __init__(self, sigma, dir1, dir2, name=""):
+    def __init__(self, dir1, dir2, name="",sigma=1.0):
         util.print_status_line()
 
         _collective_variable.__init__(self, sigma, name)
@@ -229,7 +237,7 @@ class mesh(_collective_variable):
     # \param ny Number of mesh points along second axis
     # \param nz Number of mesh points along third axis
     # \param name Name given to this collective variable
-    def __init__(self, sigma, qstar, mode, nx, ny=None, nz=None, name=None):
+    def __init__(self, qstar, mode, nx, ny=None, nz=None, name=None,sigma=1.0):
         util.print_status_line()
 
         if name is not None:

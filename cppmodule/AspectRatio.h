@@ -8,8 +8,6 @@ class AspectRatio :  public CollectiveVariable
         AspectRatio(boost::shared_ptr<SystemDefinition> sysdef, const unsigned int dir1, unsigned int dir2);
         virtual ~AspectRatio() {}
 
-        virtual void computeBiasForces(unsigned int timestep);
-
         virtual Scalar getCurrentValue(unsigned int timestep);
 
         /*! Returns the names of provided log quantities.
@@ -37,6 +35,14 @@ class AspectRatio :  public CollectiveVariable
             }
 
     private:
+        /*! Compute the biased forces for this collective variable.
+            The force that is written to the force arrays must be
+            multiplied by the bias factor.
+
+            \param timestep The current value of the time step
+        */ 
+        virtual void computeBiasForces(unsigned int timestep);
+
         unsigned int m_dir1; //!< The cartesian index of the first direction
         unsigned int m_dir2; //!< The cartesian index of the second direction
         std::string m_log_name; //!< The name of the collective variable
