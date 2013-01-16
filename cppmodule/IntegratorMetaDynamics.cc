@@ -46,6 +46,7 @@ IntegratorMetaDynamics::IntegratorMetaDynamics(boost::shared_ptr<SystemDefinitio
       m_is_appending(false),
       m_delimiter("\t"),
       m_use_grid(false),
+      m_num_biased_variables(0),
       m_add_bias(add_bias),
       m_restart_filename(""),
       m_grid_fname1(""),
@@ -103,6 +104,8 @@ void IntegratorMetaDynamics::writeFileHeader()
     std::vector<CollectiveVariableItem>::iterator it,itj;
     for (it = m_variables.begin(); it != m_variables.end(); ++it)
         {
+        if (it->m_umbrella) continue;
+
         m_file << it->m_cv->getName();
 
         for (itj = m_variables.begin(); itj != m_variables.end(); ++itj)
@@ -139,26 +142,26 @@ void IntegratorMetaDynamics::prepRun(unsigned int timestep)
         // Set up colllective variables
         if (! m_is_initialized)
             {
-            m_cv_values.resize(m_variables.size());
+            m_cv_values.resize(m_num_biased_variables);
             std::vector< std::vector<Scalar> >::iterator it;
 
             for (it = m_cv_values.begin(); it != m_cv_values.end(); ++it)
                 it->clear();
 
             // initialize GPU mirror values for collective variable data
-            GPUArray<Scalar> cv_min(m_variables.size(), m_exec_conf);
+            GPUArray<Scalar> cv_min(m_num_biased_variables, m_exec_conf);
             m_cv_min.swap(cv_min);
 
-            GPUArray<Scalar> cv_max(m_variables.size(), m_exec_conf);
+            GPUArray<Scalar> cv_max(m_num_biased_variables, m_exec_conf);
             m_cv_max.swap(cv_max);
 
-            GPUArray<Scalar> current_val(m_variables.size(), m_exec_conf);
+            GPUArray<Scalar> current_val(m_num_biased_variables, m_exec_conf);
             m_current_val.swap(current_val);
 
-            GPUArray<unsigned int> lengths(m_variables.size(), m_exec_conf);
+            GPUArray<unsigned int> lengths(m_num_biased_variables, m_exec_conf);
             m_lengths.swap(lengths);
 
-            GPUArray<Scalar> sigma(m_variables.size()*m_variables.size(), m_exec_conf);
+            GPUArray<Scalar> sigma(m_num_biased_variables*m_num_biased_variables, m_exec_conf);
             m_sigma.swap(sigma);
 
             ArrayHandle<Scalar> h_cv_min(m_cv_min, access_location::host, access_mode::overwrite);
@@ -166,14 +169,18 @@ void IntegratorMetaDynamics::prepRun(unsigned int timestep)
             ArrayHandle<unsigned int> h_lengths(m_lengths, access_location::host, access_mode::overwrite);
             ArrayHandle<Scalar> h_sigma(m_sigma, access_location::host, access_mode::overwrite);
            
-            memset(h_sigma.data, 0, sizeof(Scalar)*m_variables.size()*m_variables.size());
+            memset(h_sigma.data, 0, sizeof(Scalar)*m_num_biased_variables*m_num_biased_variables);
 
+            unsigned int idx = 0;
             for (unsigned int cv_idx = 0; cv_idx < m_variables.size(); cv_idx++)
                 {
-                h_cv_min.data[cv_idx] = m_variables[cv_idx].m_cv_min;
-                h_cv_max.data[cv_idx] = m_variables[cv_idx].m_cv_max;
-                h_sigma.data[cv_idx*m_variables.size()+cv_idx] = m_variables[cv_idx].m_sigma;
-                h_lengths.data[cv_idx] = m_variables[cv_idx].m_num_points;
+                if (m_variables[cv_idx].m_umbrella) continue;
+
+                h_cv_min.data[idx] = m_variables[cv_idx].m_cv_min;
+                h_cv_max.data[idx] = m_variables[cv_idx].m_cv_max;
+                h_sigma.data[idx*m_variables.size()+idx] = m_variables[cv_idx].m_sigma;
+                h_lengths.data[idx] = m_variables[cv_idx].m_num_points;
+                idx++;
                 }
             
             m_num_update_steps = 0;
@@ -183,7 +190,7 @@ void IntegratorMetaDynamics::prepRun(unsigned int timestep)
         // Set up histograms if necessary
         if (! m_is_initialized && m_compute_histograms)
             {
-            if (m_variables.size() != 1)
+            if (m_num_biased_variables != 1)
                 {
                 m_exec_conf->msg->error() << "integrate.mode_metadynamics: With histogram computation, exactly one CV is required." << std::endl;
                 throw std::runtime_error("Error initializing metadynamics");
@@ -302,7 +309,7 @@ void IntegratorMetaDynamics::update(unsigned int timestep)
 void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
     {
     // exit early if there are no collective variables
-    if (m_variables.size() == 0)
+    if (m_num_biased_variables == 0)
         return;
 
     // collect values of collective variables
@@ -310,19 +317,20 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
     std::vector<CollectiveVariableItem>::iterator it;
     for (it = m_variables.begin(); it != m_variables.end(); ++it)
         {
+        if (it->m_umbrella) continue;
         Scalar val = it->m_cv->getCurrentValue(timestep);
         current_val.push_back(val);
         }
 
-    std::vector<Scalar> bias(m_variables.size(), 0.0); 
+    std::vector<Scalar> bias(m_num_biased_variables, 0.0); 
 
     bool is_root = true;
 
     if (m_adaptive)
         {
         // compute derivatives of collective variables
-        for (it = m_variables.begin(); it != m_variables.end(); ++it)
-            it->m_cv->computeDerivatives(timestep);
+        for (unsigned int i = 0; i < m_num_biased_variables; ++i)
+            m_variables[i].m_cv->computeDerivatives(timestep);
        }
 
     if (m_prof)
@@ -339,21 +347,25 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
             {
             // record history of CV values every m_stride steps
             std::vector<CollectiveVariableItem>::iterator it;
-            for (it = m_variables.begin(); it != m_variables.end(); ++it)
+            for (unsigned int i = 0; i < m_num_biased_variables; ++i)
                 {
-                unsigned int cv_index = it - m_variables.begin();
-                m_cv_values[cv_index].push_back(current_val[cv_index]);
+                m_cv_values[i].push_back(current_val[i]);
                 }
             }
 
         if (m_compute_histograms)
             {
-            assert(m_variables.size() == 1);
+            assert(m_num_biased_variables == 1);
             Scalar val = current_val[0];
 
+            unsigned int idx = 0;
+            while (m_variables[idx].m_umbrella && idx < m_variables.size()) idx++;
+
+            assert(!m_variables[idx].m_umbrella);
+
             // change walker state if necessary
-            Scalar min = m_variables[0].m_ftm_min;
-            Scalar max = m_variables[0].m_ftm_max;
+            Scalar min = m_variables[idx].m_ftm_min;
+            Scalar max = m_variables[idx].m_ftm_max;
             if ( val <= min && m_walker_state == true)
                 {
                 m_walker_state = false;
@@ -405,13 +417,27 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
                 if (m_mode == mode_well_tempered)
                     scal = exp(-V/m_T_shift);
 
+                // add up umbrella potentials for reweighting
+                Scalar umbrella_energy = Scalar(0.0);
+                for (unsigned int i = 0; i < m_variables.size(); ++i)
+                    {
+                    if (m_variables[i].m_umbrella)
+                        {
+                        Scalar val = m_variables[i].m_cv->getUmbrellaPotential(timestep);
+                        umbrella_energy += val;
+                        }
+                    }
+
+                // reweight by Boltzmann factor
+                Scalar reweight = exp(umbrella_energy/m_temp);
+
 #ifdef ENABLE_CUDA
                 if (m_exec_conf->isCUDAEnabled())
-                    updateGridGPU(current_val, scal);
+                    updateGridGPU(current_val, scal, reweight);
                 else
-                    updateGrid(current_val, scal);
+                    updateGrid(current_val, scal,reweight);
 #else
-                updateGrid(current_val, scal);
+                updateGrid(current_val, scal, reweight);
 #endif
 
                 // reset statistics
@@ -423,11 +449,11 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
                 }
 
             // calculate partial derivatives numerically
-            for (unsigned int cv_idx = 0; cv_idx < m_variables.size(); ++cv_idx)
+            for (unsigned int cv_idx = 0; cv_idx < m_num_biased_variables; ++cv_idx)
                 bias[cv_idx] = biasPotentialDerivative(cv_idx, current_val);
 
             } 
-        else
+        else  //!m_use_grid
             {
             if (m_mode == mode_flux_tempered)
                 {
@@ -437,9 +463,16 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
 
             if (m_adaptive)
                 {
-                m_exec_conf->msg->error() << "integrate.mode_metadynamics: Adaptive Guassians only available in grid mode" << std::endl;
+                m_exec_conf->msg->error() << "integrate.mode_metadynamics: Adaptive Gaussians only available in grid mode" << std::endl;
                 throw std::runtime_error("Error in metadynamics integration.");
                 }
+
+            if (m_variables.size() != m_num_biased_variables)
+                {
+                m_exec_conf->msg->error() << "integrate.mode_metadynamics: Reweighting supported only in grid mode." << std::endl;
+                throw std::runtime_error("Error in metadynamics integration.");
+                }
+
 
 
             ArrayHandle<Scalar> h_sigma(m_sigma, access_location::host, access_mode::read);
@@ -449,20 +482,17 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
                 {
                 Scalar gauss_exp = 0.0;
                 // calculate Gaussian contribution from t'=gauss_idx*m_stride
-                std::vector<Scalar>::iterator val_iti,val_itj;
-                for (val_iti = current_val.begin(); val_iti != current_val.end(); ++val_iti)
+                for (unsigned int i = 0; i < m_num_biased_variables; ++i)
                     {
-                    Scalar vali = *val_iti;
-                    unsigned int cv_i = val_iti - current_val.begin();
-                    Scalar delta_i = vali - m_cv_values[cv_i][gauss_idx];
+                    Scalar vali = current_val[i];
+                    Scalar delta_i = vali - m_cv_values[i][gauss_idx];
 
-                    for (val_itj = current_val.begin(); val_itj != current_val.end(); ++val_itj)
+                    for (unsigned int j = 0; j < m_num_biased_variables; ++j)
                         {
-                        Scalar valj = *val_itj;
-                        unsigned int cv_j = val_itj - current_val.begin();
-                        Scalar delta_j = valj - m_cv_values[cv_j][gauss_idx];
+                        Scalar valj = current_val[j];
+                        Scalar delta_j = valj - m_cv_values[j][gauss_idx];
 
-                        Scalar sigmaij = h_sigma.data[cv_i*m_variables.size()+cv_j];
+                        Scalar sigmaij = h_sigma.data[i*m_num_biased_variables+j];
 
                         gauss_exp += delta_i*delta_j*Scalar(1.0/2.0)/(sigmaij*sigmaij);
                         }
@@ -470,27 +500,24 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
                 Scalar gauss = exp(-gauss_exp);
 
                 // calculate partial derivatives
-                std::vector<CollectiveVariableItem>::iterator cv_iti,cv_itj;
 
                 // scaling factor for well-tempered MetaD
                 Scalar scal = Scalar(1.0);
                 if (m_mode == mode_well_tempered)
                     scal = exp(-m_bias_potential[gauss_idx]/m_T_shift);
 
-                for (cv_iti = m_variables.begin(); cv_iti != m_variables.end(); ++cv_iti)
+                for (unsigned int i = 0; i < m_num_biased_variables; ++i)
                     {
-                    unsigned int cv_i = cv_iti - m_variables.begin();
-                    Scalar val_i = current_val[cv_i];
+                    Scalar val_i = current_val[i];
 
-                    for (cv_itj = m_variables.begin(); cv_itj != m_variables.end(); ++cv_itj)
+                    for (unsigned int j = 0; j < m_num_biased_variables; ++j)
                         {
-                        unsigned int cv_j = cv_itj - m_variables.begin();
-                        Scalar val_j = current_val[cv_j];
+                        Scalar val_j = current_val[j];
 
-                        Scalar sigmaij = h_sigma.data[cv_i*m_variables.size()+cv_j];
+                        Scalar sigmaij = h_sigma.data[i*m_num_biased_variables+j];
                         
-                        bias[cv_i] -= Scalar(1.0/2.0)*m_W*scal/(sigmaij*sigmaij)*(val_j - m_cv_values[cv_j][gauss_idx])*gauss;
-                        bias[cv_j] -= Scalar(1.0/2.0)*m_W*scal/(sigmaij*sigmaij)*(val_i - m_cv_values[cv_i][gauss_idx])*gauss;
+                        bias[i] -= Scalar(1.0/2.0)*m_W*scal/(sigmaij*sigmaij)*(val_j - m_cv_values[j][gauss_idx])*gauss;
+                        bias[j] -= Scalar(1.0/2.0)*m_W*scal/(sigmaij*sigmaij)*(val_i - m_cv_values[i][gauss_idx])*gauss;
                         }
                     }
 
@@ -517,7 +544,7 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
                 for (cvj = current_val.begin(); cvj != current_val.end(); ++cvj)
                     {
                     unsigned int cv_index_j = cvj - current_val.begin();
-                    Scalar sigmaij = h_sigma.data[cv_index*m_variables.size()+cv_index_j];
+                    Scalar sigmaij = h_sigma.data[cv_index*m_num_biased_variables+cv_index_j];
                     m_file << setprecision(10) << sigmaij;
                     }
 
@@ -533,6 +560,12 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
         // update stride
         if (m_num_update_steps && (m_num_update_steps % m_stride == 0))
             m_stride *= m_stride_multiply;
+
+        if (m_adaptive && m_use_grid)
+            {
+            // update sigma grid and histogram
+            updateSigmaGrid(current_val);
+            }
 
         // dump grid information if required using alternating scheme
         if (m_grid_period && (timestep % m_grid_period == 0))
@@ -562,6 +595,8 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
     std::vector<CollectiveVariableItem>::iterator cv_item;
     for (cv_item = m_variables.begin(); cv_item != m_variables.end(); ++cv_item)
         {
+        if (cv_item->m_umbrella) continue;
+
         unsigned int cv_index = cv_item - m_variables.begin();
         cv_item->m_cv->setBiasFactor(bias[cv_index]);
         }
@@ -573,15 +608,18 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
 void IntegratorMetaDynamics::setupGrid()
     {
     assert(! m_is_initialized);
-    assert(m_variables.size());
+    assert(m_num_biased_variables);
 
     std::vector< CollectiveVariableItem >::iterator it;
 
-    std::vector< unsigned int > lengths(m_variables.size());
+    std::vector< unsigned int > lengths(m_num_biased_variables);
 
+    unsigned int idx = 0;
     for (it = m_variables.begin(); it != m_variables.end(); ++it)
         {
-        lengths[it - m_variables.begin()] = it->m_num_points;
+        if (it->m_umbrella) continue;
+        lengths[idx] = it->m_num_points;
+        idx++;
         }
 
     m_grid_index.setLengths(lengths);
@@ -589,10 +627,28 @@ void IntegratorMetaDynamics::setupGrid()
     GPUArray<Scalar> grid(m_grid_index.getNumElements(),m_exec_conf);
     m_grid.swap(grid);
 
+    GPUArray<Scalar> reweighted_grid(m_grid_index.getNumElements(),m_exec_conf);
+    m_reweighted_grid.swap(reweighted_grid);
+
     // reset grid
     ArrayHandle<Scalar> h_grid(m_grid, access_location::host, access_mode::overwrite);
     memset(h_grid.data, 0, sizeof(Scalar)*m_grid.getNumElements());
-    } 
+
+    ArrayHandle<Scalar> h_reweighted_grid(m_reweighted_grid, access_location::host, access_mode::overwrite);
+    memset(h_reweighted_grid.data, 0, sizeof(Scalar)*m_reweighted_grid.getNumElements());
+ 
+    GPUArray<Scalar> sigma_grid(m_grid_index.getNumElements(),m_exec_conf);
+    m_sigma_grid.swap(sigma_grid);
+
+    GPUArray<unsigned int> grid_hist(m_grid_index.getNumElements(),m_exec_conf);
+    m_grid_hist.swap(grid_hist);
+
+    ArrayHandle<Scalar> h_sigma_grid(m_sigma_grid, access_location::host, access_mode::overwrite);
+    memset(h_sigma_grid.data, 0, sizeof(Scalar)*m_sigma_grid.getNumElements());
+
+    ArrayHandle<unsigned int> h_grid_hist(m_grid_hist, access_location::host, access_mode::overwrite);
+    memset(h_grid_hist.data, 0, sizeof(Scalar)*m_grid_hist.getNumElements());
+   } 
 
 Scalar IntegratorMetaDynamics::interpolateBiasPotential(const std::vector<Scalar>& val)
     {
@@ -605,6 +661,8 @@ Scalar IntegratorMetaDynamics::interpolateBiasPotential(const std::vector<Scalar
 
     for (unsigned int cv_idx = 0; cv_idx < m_variables.size(); cv_idx++)
         {
+        if (m_variables[cv_idx].m_umbrella) continue;
+
         Scalar delta = (m_variables[cv_idx].m_cv_max - m_variables[cv_idx].m_cv_min)/(m_variables[cv_idx].m_num_points - 1);
         int lower = (int) ((val[cv_idx] - m_variables[cv_idx].m_cv_min)/delta);
         int upper = lower+1;
@@ -657,8 +715,12 @@ Scalar IntegratorMetaDynamics::interpolateBiasPotential(const std::vector<Scalar
 
 Scalar IntegratorMetaDynamics::biasPotentialDerivative(unsigned int cv, const std::vector<Scalar>& val)
     {
-    Scalar delta = (m_variables[cv].m_cv_max - m_variables[cv].m_cv_min)/
-                   (m_variables[cv].m_num_points - 1);
+    ArrayHandle<Scalar> h_cv_min(m_cv_min, access_location::host, access_mode::read);
+    ArrayHandle<Scalar> h_cv_max(m_cv_max, access_location::host, access_mode::read);
+    ArrayHandle<unsigned int> h_lengths(m_lengths, access_location::host, access_mode::read);
+
+    Scalar delta = (h_cv_max.data[cv] - h_cv_min.data[cv])/
+                   (Scalar)(h_lengths.data[cv] - 1);
 
     if (val[cv] - delta < m_variables[cv].m_cv_min) 
         {
@@ -714,6 +776,8 @@ void IntegratorMetaDynamics::setGrid(bool use_grid)
 
         for (it = m_variables.begin(); it != m_variables.end(); ++it)
             {
+            if (it->m_umbrella) continue;
+
             if (it->m_cv_min >= it->m_cv_max)
                 {
                 m_exec_conf->msg->error() << "integrate.mode_metadyanmics: Maximum grid value of collective variable has to be greater than minimum value.";
@@ -792,10 +856,19 @@ void IntegratorMetaDynamics::writeGrid(const std::string& filename)
 
     file << "#num_histogram_entries: " << m_num_histogram_entries << std::endl;
 
-    for (unsigned int i = 0; i < m_grid_index.getDimension(); i++)
-        file << m_variables[i].m_cv->getName() << m_delimiter;
-
     file << "grid_value";
+
+    for (unsigned int i = 0; i < m_grid_index.getDimension(); i++)
+        {
+        if (m_variables[i].m_umbrella) continue;
+
+        file << m_delimiter << m_variables[i].m_cv->getName();
+        }
+
+
+    file << m_delimiter << "reweight";
+    file << m_delimiter << "det_sigma";
+    file << m_delimiter << "hist";
 
     file << std::endl;
 
@@ -804,6 +877,10 @@ void IntegratorMetaDynamics::writeGrid(const std::string& filename)
     unsigned int len = m_grid_index.getNumElements();
     std::vector<unsigned int> coords(m_grid_index.getDimension()); 
 
+    ArrayHandle<Scalar> h_sigma_grid(m_sigma_grid, access_location::host, access_mode::read);
+    ArrayHandle<unsigned int> h_grid_hist(m_grid_hist, access_location::host, access_mode::read);
+    ArrayHandle<Scalar> h_reweighted_grid(m_reweighted_grid, access_location::host, access_mode::read);
+
     for (unsigned int grid_idx = 0; grid_idx < len; grid_idx++)
         {
         // obtain d-dimensional coordinates
@@ -811,6 +888,8 @@ void IntegratorMetaDynamics::writeGrid(const std::string& filename)
 
         for (unsigned int cv_idx = 0; cv_idx < m_variables.size(); ++cv_idx)
             {
+            if (m_variables[cv_idx].m_umbrella) continue;
+
             Scalar delta = (m_variables[cv_idx].m_cv_max - m_variables[cv_idx].m_cv_min)/
                            (m_variables[cv_idx].m_num_points - 1);
             Scalar val = m_variables[cv_idx].m_cv_min + coords[cv_idx]*delta;
@@ -819,22 +898,40 @@ void IntegratorMetaDynamics::writeGrid(const std::string& filename)
             }
 
         file << setprecision(10) << h_grid.data[grid_idx];
+        file << m_delimiter << setprecision(10) << h_reweighted_grid.data[grid_idx];
+
+        // write average of Gaussian volume
+        Scalar val;
+        if (h_grid_hist.data[grid_idx] > 0)
+            {
+            val = h_sigma_grid.data[grid_idx]/(Scalar)h_grid_hist.data[grid_idx];
+            }
+        else
+            val = Scalar(0.0);
+
+        file << m_delimiter << setprecision(10) << val;
+        file << m_delimiter << h_grid_hist.data[grid_idx];
 
         file << std::endl;
         }
 
     if (m_compute_histograms)
         {
-        assert(m_variables.size() == 1);
+        assert(m_num_biased_variables == 1);
         ArrayHandle<Scalar> h_histogram(m_ftm_histogram, access_location::host, access_mode::read);
 
         file << std::endl;
+    
+        unsigned int idx = 0;
+        while (m_variables[idx].m_umbrella && idx < m_variables.size()) idx++;
 
-        for (unsigned int i = 0; i < m_variables[0].m_num_points; ++i)
+        assert(! m_variables[idx].m_umbrella);
+
+        for (unsigned int i = 0; i < m_variables[idx].m_num_points; ++i)
             {
-            Scalar delta = (m_variables[0].m_cv_max - m_variables[0].m_cv_min)/
-                           (m_variables[0].m_num_points - 1);
-            Scalar val = m_variables[0].m_cv_min + i*delta;
+            Scalar delta = (m_variables[idx].m_cv_max - m_variables[idx].m_cv_min)/
+                           (m_variables[idx].m_num_points - 1);
+            Scalar val = m_variables[idx].m_cv_min + i*delta;
 
             file << setprecision(10) << val << m_delimiter;
             file << setprecision(10) << h_histogram.data[i];
@@ -845,11 +942,11 @@ void IntegratorMetaDynamics::writeGrid(const std::string& filename)
 
         file << std::endl;
 
-        for (unsigned int i = 0; i < m_variables[0].m_num_points; ++i)
+        for (unsigned int i = 0; i < m_variables[idx].m_num_points; ++i)
             {
-            Scalar delta = (m_variables[0].m_cv_max - m_variables[0].m_cv_min)/
-                           (m_variables[0].m_num_points - 1);
-            Scalar val = m_variables[0].m_cv_min + i*delta;
+            Scalar delta = (m_variables[idx].m_cv_max - m_variables[idx].m_cv_min)/
+                           (m_variables[idx].m_num_points - 1);
+            Scalar val = m_variables[idx].m_cv_min + i*delta;
 
             file << setprecision(10) << val << m_delimiter;
             file << setprecision(10) << h_histogram_plus.data[i];
@@ -897,6 +994,11 @@ void IntegratorMetaDynamics::readGrid(const std::string& filename)
     unsigned int len = m_grid_index.getNumElements();
     std::vector<unsigned int> coords(m_grid_index.getDimension()); 
     ArrayHandle<Scalar> h_grid(m_grid, access_location::host, access_mode::overwrite);
+
+    ArrayHandle<Scalar> h_sigma_grid(m_sigma_grid, access_location::host, access_mode::overwrite);
+    ArrayHandle<unsigned int> h_grid_hist(m_grid_hist, access_location::host, access_mode::overwrite);
+    ArrayHandle<Scalar> h_reweighted_grid(m_reweighted_grid, access_location::host, access_mode::overwrite);
+
     for (unsigned int grid_idx = 0; grid_idx < len; grid_idx++)
         {
         if (! file.good())
@@ -909,16 +1011,23 @@ void IntegratorMetaDynamics::readGrid(const std::string& filename)
         istringstream iss(line);
 
         // skip values of collective variables
-        for (unsigned int i = 0; i < m_variables.size(); i++)
+        for (unsigned int i = 0; i < m_num_biased_variables; i++)
             iss >> tmp;
 
         iss >> h_grid.data[grid_idx];
+        iss >> h_reweighted_grid.data[grid_idx];
+        iss >> h_sigma_grid.data[grid_idx];
+        iss >> h_grid_hist.data[grid_idx];
+
+        h_sigma_grid.data[grid_idx] *= h_grid_hist.data[grid_idx];
+
+        iss >> h_reweighted_grid.data[grid_idx];
         }
     
     if (m_compute_histograms)
         {
         // read in histograms
-        assert(m_variables.size() == 1);
+        assert(m_num_biased_variables == 1);
 
         ArrayHandle<Scalar> h_histogram(m_ftm_histogram, access_location::host, access_mode::overwrite);
         ArrayHandle<Scalar> h_histogram_plus(m_ftm_histogram_plus, access_location::host, access_mode::overwrite);
@@ -967,7 +1076,7 @@ void IntegratorMetaDynamics::readGrid(const std::string& filename)
 
     } 
 
-void IntegratorMetaDynamics::updateGrid(std::vector<Scalar>& current_val, Scalar scal)
+void IntegratorMetaDynamics::updateGrid(std::vector<Scalar>& current_val, Scalar scal, Scalar reweight )
     {
     if (m_prof) m_prof->push("update grid");
 
@@ -978,6 +1087,7 @@ void IntegratorMetaDynamics::updateGrid(std::vector<Scalar>& current_val, Scalar
         }
 
     ArrayHandle<Scalar> h_grid(m_grid, access_location::host, access_mode::readwrite);
+    ArrayHandle<Scalar> h_reweighted_grid(m_reweighted_grid, access_location::host, access_mode::readwrite);
 
     ArrayHandle<Scalar> h_histogram(m_ftm_histogram, access_location::host, access_mode::read);
 
@@ -986,6 +1096,11 @@ void IntegratorMetaDynamics::updateGrid(std::vector<Scalar>& current_val, Scalar
     std::vector<unsigned int> coords(m_grid_index.getDimension()); 
 
     ArrayHandle<Scalar> h_sigma(m_sigma, access_location::host, access_mode::read);
+
+    unsigned int idx = 0;
+    if (m_mode == mode_flux_tempered)
+        while (m_variables[idx].m_umbrella && idx < m_variables.size()) idx++;
+
 
     for (unsigned int grid_idx = 0; grid_idx < len; grid_idx++)
         {
@@ -998,6 +1113,9 @@ void IntegratorMetaDynamics::updateGrid(std::vector<Scalar>& current_val, Scalar
             // evaluate Gaussian on grid point
             for (unsigned int cv_i = 0; cv_i < m_variables.size(); ++cv_i)
                 {
+                // do not include umbrella variables in metadynamics
+                if (m_variables[cv_i].m_umbrella) continue;
+
                 Scalar delta_i = (m_variables[cv_i].m_cv_max - m_variables[cv_i].m_cv_min)/
                                (m_variables[cv_i].m_num_points - 1);
                 Scalar val_i = m_variables[cv_i].m_cv_min + coords[cv_i]*delta_i;
@@ -1005,6 +1123,8 @@ void IntegratorMetaDynamics::updateGrid(std::vector<Scalar>& current_val, Scalar
 
                 for (unsigned int cv_j = 0; cv_j < m_variables.size(); ++cv_j)
                     {
+                    if (m_variables[cv_j].m_umbrella) continue;
+
                     Scalar delta_j = (m_variables[cv_j].m_cv_max - m_variables[cv_j].m_cv_min)/
                                    (m_variables[cv_j].m_num_points - 1);
                     Scalar val_j = m_variables[cv_j].m_cv_min + coords[cv_j]*delta_j;
@@ -1019,31 +1139,69 @@ void IntegratorMetaDynamics::updateGrid(std::vector<Scalar>& current_val, Scalar
 
             // add Gaussian to grid
             h_grid.data[grid_idx] += m_W*scal*gauss;
+            h_reweighted_grid.data[grid_idx] += m_W*reweight*scal*gauss;
             }
         else if (m_mode == mode_flux_tempered)
             {
-            assert(m_variables.size()==1);
+            assert(m_num_biased_variables==1);
 
-            Scalar grid_delta = (m_variables[0].m_cv_max - m_variables[0].m_cv_min)/
-                               (Scalar)(m_variables[0].m_num_points - 1);
-            Scalar val = m_variables[0].m_cv_min + coords[0]*grid_delta;
+            Scalar grid_delta = (m_variables[idx].m_cv_max - m_variables[idx].m_cv_min)/
+                               (Scalar)(m_variables[idx].m_num_points - 1);
+            Scalar val = m_variables[idx].m_cv_min + coords[idx]*grid_delta;
 
             Scalar dfds = fractionDerivative(val);
-            Scalar hist = h_histogram.data[coords[0]];
+            Scalar hist = h_histogram.data[coords[idx]];
 
             // normalize histogram
             hist /= m_num_histogram_entries; 
 
             Scalar del = -Scalar(1.0/2.0)*m_temp*(log(fabsf(dfds)) - log(hist));
             h_grid.data[grid_idx] += del;
+            h_reweighted_grid.data[grid_idx] += reweight*del;
             }
         }
 
     if (m_prof) m_prof->pop();
     }
 
+void IntegratorMetaDynamics::updateSigmaGrid(std::vector<Scalar>& current_val)
+    {
+    if (m_prof) m_prof->push("update sigma grid");
+
+    ArrayHandle<Scalar> h_sigma_grid(m_sigma_grid, access_location::host, access_mode::readwrite);
+    ArrayHandle<unsigned int> h_grid_hist(m_grid_hist, access_location::host, access_mode::readwrite);
+
+    assert(h_sigma_grid.data);
+
+    std::vector<unsigned int> grid_coord(m_variables.size());
+
+    // add current value of determinant of standard deviation matrix to grid
+    bool on_grid = true;
+    for (unsigned int cv_i = 0; cv_i < m_variables.size(); ++cv_i)
+        {
+        if (m_variables[cv_i].m_umbrella) continue;
+
+        Scalar delta = (m_variables[cv_i].m_cv_max - m_variables[cv_i].m_cv_min)/
+                       (m_variables[cv_i].m_num_points - 1);
+        grid_coord[cv_i] = (current_val[cv_i] - m_variables[cv_i].m_cv_min)/delta;
+        if (grid_coord[cv_i] >= m_variables[cv_i].m_num_points)
+            on_grid = false;
+        }
+
+    // add Gaussian to grid
+    if (on_grid)
+        {
+        unsigned int grid_idx = m_grid_index.getIndex(grid_coord);
+        h_sigma_grid.data[grid_idx] += sigmaDeterminant();
+        h_grid_hist.data[grid_idx]++;
+        }
+
+    if (m_prof) m_prof->pop();
+    }
+
+
 #ifdef ENABLE_CUDA
-void IntegratorMetaDynamics::updateGridGPU(std::vector<Scalar>& current_val, Scalar scal)
+void IntegratorMetaDynamics::updateGridGPU(std::vector<Scalar>& current_val, Scalar scal, Scalar reweight)
     {
     if (m_prof)
         m_prof->push(m_exec_conf, "update grid");
@@ -1052,11 +1210,17 @@ void IntegratorMetaDynamics::updateGridGPU(std::vector<Scalar>& current_val, Sca
         // copy current CV values into array
         ArrayHandle<Scalar> h_current_val(m_current_val, access_location::host, access_mode::overwrite);
 
+        unsigned int idx = 0;
         for (unsigned int cv_idx = 0; cv_idx < m_variables.size(); cv_idx++)
-            h_current_val.data[cv_idx] = current_val[cv_idx];
+            {
+            if (! m_variables[cv_idx].m_umbrella)
+                h_current_val.data[idx] = current_val[cv_idx];
+            idx++;
+            }
         }
 
     ArrayHandle<Scalar> d_grid(m_grid, access_location::device, access_mode::readwrite);
+    ArrayHandle<Scalar> d_reweighted_grid(m_reweighted_grid, access_location::device, access_mode::readwrite);
     ArrayHandle<unsigned int> d_lengths(m_lengths, access_location::device, access_mode::read);
     ArrayHandle<Scalar> d_cv_min(m_cv_min, access_location::device, access_mode::read);
     ArrayHandle<Scalar> d_cv_max(m_cv_max, access_location::device, access_mode::read);
@@ -1066,23 +1230,29 @@ void IntegratorMetaDynamics::updateGridGPU(std::vector<Scalar>& current_val, Sca
     ArrayHandle<Scalar> d_histogram(m_ftm_histogram, access_location::device, access_mode::readwrite);
     ArrayHandle<Scalar> d_histogram_plus(m_ftm_histogram_plus, access_location::device, access_mode::readwrite);
 
+    unsigned int idx = 0;
+    if (m_mode == mode_flux_tempered)
+        while (m_variables[idx].m_umbrella && idx < m_variables.size()) idx++;
+
     gpu_update_grid(m_grid_index.getNumElements(),
                     d_lengths.data,
-                    m_variables.size(),
+                    m_num_biased_variables,
                     d_current_val.data,
                     d_grid.data,
+                    d_reweighted_grid.data,
                     d_cv_min.data,
                     d_cv_max.data,
                     d_sigma.data,
                     scal,
+                    reweight,
                     m_W,
                     (m_mode == mode_flux_tempered),
                     m_temp,
                     d_histogram.data,
                     d_histogram_plus.data,
                     m_num_histogram_entries,
-                    m_variables[0].m_ftm_min,
-                    m_variables[0].m_ftm_max);
+                    m_variables[idx].m_ftm_min,
+                    m_variables[idx].m_ftm_max);
 
     if (m_prof) m_prof->pop(m_exec_conf);
     }
@@ -1093,7 +1263,10 @@ void IntegratorMetaDynamics::setupHistograms()
     {
     assert(m_variables.size() == 1);
 
-    unsigned int num_points = m_variables[0].m_num_points;
+    unsigned int idx = 0;
+    while (m_variables[idx].m_umbrella && idx < m_variables.size()) idx++;
+
+    unsigned int num_points = m_variables[idx].m_num_points;
 
     GPUArray<Scalar> histogram(num_points, m_exec_conf);
     m_ftm_histogram.swap(histogram);
@@ -1107,7 +1280,11 @@ void IntegratorMetaDynamics::setupHistograms()
 void IntegratorMetaDynamics::resetHistograms()
     {
     assert(m_variables.size() == 1);
-    unsigned int num_points = m_variables[0].m_num_points;
+
+    unsigned int idx = 0;
+    while (m_variables[idx].m_umbrella && idx < m_variables.size()) idx++;
+
+    unsigned int num_points = m_variables[idx].m_num_points;
     ArrayHandle<Scalar> h_histogram(m_ftm_histogram, access_location::host, access_mode::overwrite);
     ArrayHandle<Scalar> h_histogram_plus(m_ftm_histogram_plus, access_location::host, access_mode::overwrite);
 
@@ -1119,11 +1296,14 @@ void IntegratorMetaDynamics::sampleHistograms(Scalar val, bool state)
     {
     assert(m_variables.size()==1);
 
-    Scalar min = m_variables[0].m_cv_min;
-    Scalar max = m_variables[0].m_cv_max;
-    unsigned int num_points = m_variables[0].m_num_points;
+    unsigned int idx = 0;
+    while (m_variables[idx].m_umbrella && idx < m_variables.size()) idx++;
+
+    Scalar min = m_variables[idx].m_cv_min;
+    Scalar max = m_variables[idx].m_cv_max;
+    unsigned int num_points = m_variables[idx].m_num_points;
     Scalar delta = (max-min)/(Scalar)(num_points-1);
-    Scalar sigma = m_variables[0].m_sigma;
+    Scalar sigma = m_variables[idx].m_sigma;
 
     Scalar norm = Scalar(1.0)/sqrt(2.0*M_PI*sigma*sigma);
 
@@ -1149,11 +1329,14 @@ void IntegratorMetaDynamics::sampleHistogramsGPU(Scalar val, bool state)
     {
     assert(m_variables.size()==1);
 
-    Scalar min = m_variables[0].m_cv_min;
-    Scalar max = m_variables[0].m_cv_max;
-    unsigned int num_points = m_variables[0].m_num_points;
+    unsigned int idx = 0;
+    while (m_variables[idx].m_umbrella && idx < m_variables.size()) idx++;
+
+    Scalar min = m_variables[idx].m_cv_min;
+    Scalar max = m_variables[idx].m_cv_max;
+    unsigned int num_points = m_variables[idx].m_num_points;
     Scalar delta = (max-min)/(Scalar)(num_points-1);
-    Scalar sigma = m_variables[0].m_sigma;
+    Scalar sigma = m_variables[idx].m_sigma;
 
     ArrayHandle<Scalar> d_histogram(m_ftm_histogram, access_location::device, access_mode::readwrite);
     ArrayHandle<Scalar> d_histogram_plus(m_ftm_histogram_plus, access_location::device, access_mode::readwrite);
@@ -1171,11 +1354,14 @@ void IntegratorMetaDynamics::sampleHistogramsGPU(Scalar val, bool state)
  
 Scalar IntegratorMetaDynamics::interpolateHistogram(Scalar val,bool fraction)
     {
-    assert(m_variables.size()==1);
+    assert(m_num_biased_variables ==1);
 
-    Scalar min = m_variables[0].m_cv_min;
-    Scalar max = m_variables[0].m_cv_max;
-    unsigned int num_points = m_variables[0].m_num_points;
+    unsigned int idx = 0;
+    while (m_variables[idx].m_umbrella && idx < m_variables.size()) idx++;
+
+    Scalar min = m_variables[idx].m_cv_min;
+    Scalar max = m_variables[idx].m_cv_max;
+    unsigned int num_points = m_variables[idx].m_num_points;
 
     Scalar delta = (max-min)/(num_points-1);
 
@@ -1215,10 +1401,13 @@ Scalar IntegratorMetaDynamics::interpolateHistogram(Scalar val,bool fraction)
 
 Scalar IntegratorMetaDynamics::fractionDerivative(Scalar val)
     {
-    assert(m_variables.size() == 1);
-    Scalar delta = (m_variables[0].m_cv_max - m_variables[0].m_cv_min)/m_variables[0].m_num_points;
+    assert(m_num_biased_variables==1);
+    unsigned int idx = 0;
+    while (m_variables[idx].m_umbrella && idx < m_variables.size()) idx++;
 
-    if (val - delta < m_variables[0].m_cv_min) 
+    Scalar delta = (m_variables[idx].m_cv_max - m_variables[idx].m_cv_min)/m_variables[idx].m_num_points;
+
+    if (val - delta < m_variables[idx].m_cv_min) 
         {
         // forward difference
         Scalar val2 = val + delta;
@@ -1227,7 +1416,7 @@ Scalar IntegratorMetaDynamics::fractionDerivative(Scalar val)
         Scalar y1 = interpolateHistogram(val,true);
         return (y2-y1)/delta;
         }
-    else if (val + delta > m_variables[0].m_cv_max)
+    else if (val + delta > m_variables[idx].m_cv_max)
         {
         // backward difference
         Scalar val2 = val - delta;
@@ -1250,7 +1439,7 @@ void IntegratorMetaDynamics::computeSigma()
     {
     std::vector<CollectiveVariableItem>::iterator iti,itj;
 
-    unsigned int ncv = m_variables.size();
+    unsigned int ncv = m_num_biased_variables;
 
     assert(m_sigma.getNumElements() = ncv*ncv);
 
@@ -1258,6 +1447,8 @@ void IntegratorMetaDynamics::computeSigma()
 
     for (iti = m_variables.begin(); iti != m_variables.end(); ++iti)
         {
+        if (iti->m_umbrella) continue;
+
         ArrayHandle<Scalar4> handle_i = ArrayHandle<Scalar4>(iti->m_cv->getForceArray(), access_location::host, access_mode::read);
         unsigned int i = iti - m_variables.begin();
 
@@ -1265,9 +1456,11 @@ void IntegratorMetaDynamics::computeSigma()
 
         for (itj = m_variables.begin(); itj != m_variables.end(); ++itj)
             {
+            if (itj->m_umbrella) continue;
+
             unsigned int j = itj - m_variables.begin();
             ArrayHandle<Scalar4> handle_j = (i != j) ?
-                ArrayHandle<Scalar4>(itj->m_cv->getForceArray(), access_location::host, access_mode::read) : handle_i;
+            ArrayHandle<Scalar4>(itj->m_cv->getForceArray(), access_location::host, access_mode::read) : handle_i;
 
             Scalar sigmasq(0.0);
             // sum up products of derviatives

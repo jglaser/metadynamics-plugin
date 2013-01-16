@@ -24,6 +24,16 @@ void CollectiveVariable::computeForces(unsigned int timestep)
     computeBiasForces(timestep);
     }
 
+Scalar CollectiveVariable::getUmbrellaPotential(unsigned int timestep)
+    {
+    Scalar val = getCurrentValue(timestep);
+
+    if (m_harmonic)
+        return Scalar(1.0/2.0)*(val-m_cv0)*(val-m_cv0);
+
+    return Scalar(0.0);
+    }
+
 //! Wrapper for abstract class CollectiveVariable
 class CollectiveVariableWrap : public CollectiveVariable, public wrapper<CollectiveVariable>
     {

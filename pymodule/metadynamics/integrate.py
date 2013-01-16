@@ -218,7 +218,7 @@ class mode_metadynamics(_integrator):
             notfound = False;
             num_cv = 0
             for f in globals.forces:
-                if f.enabled and isinstance(f, cv._collective_variable) and not f.umbrella:
+                if f.enabled and isinstance(f, cv._collective_variable):
                     if f.name != self.cv_names[num_cv]:
                         notfound = True
                     num_cv += 1;
@@ -233,13 +233,13 @@ class mode_metadynamics(_integrator):
 
         use_grid = False;
         for f in globals.forces:
-            if f.enabled and isinstance(f, cv._collective_variable) and not f.umbrella:
+            if f.enabled and isinstance(f, cv._collective_variable):
 
                 # enable histograms if required
                 if f.ftm_parameters_set and not self.cpp_integrator.isInitialized():
                     self.cpp_integrator.setHistograms(True)
 
-                self.cpp_integrator.registerCollectiveVariable(f.cpp_force, f.sigma, f.cv_min, f.cv_max, f.num_points, f.ftm_min, f.ftm_max)
+                self.cpp_integrator.registerCollectiveVariable(f.cpp_force, f.sigma, f.cv_min, f.cv_max, f.num_points, f.ftm_min, f.ftm_max, f.umbrella)
 
                 if f.use_grid is True:
                     if len(self.cv_names) == 0:

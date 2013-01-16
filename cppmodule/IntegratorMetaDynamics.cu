@@ -97,10 +97,12 @@ __global__ void gpu_update_grid_kernel(unsigned int num_elements,
                                        unsigned int dim,
                                        Scalar *current_val,
                                        Scalar *grid,
+                                       Scalar *reweighted_grid,
                                        Scalar *cv_min,
                                        Scalar *cv_max,
                                        Scalar *cv_sigma,
                                        Scalar scal,
+                                       Scalar reweight,
                                        Scalar W,
                                        bool flux_tempered,
                                        Scalar T,
@@ -159,6 +161,7 @@ __global__ void gpu_update_grid_kernel(unsigned int num_elements,
 
         // add Gaussian to grid
         grid[grid_idx] += W*scal*gauss;
+        reweighted_grid[grid_idx] += W*scal*reweight*gauss;
         }
     else // flux-tempered
         {
@@ -183,6 +186,7 @@ __global__ void gpu_update_grid_kernel(unsigned int num_elements,
 
         Scalar del = -Scalar(1.0/2.0)*T*(logf(fabsf(dfds)) - logf(hist));
         grid[grid_idx] += del;
+        reweighted_grid[grid_idx] += reweight*del;
         } 
     }
 
@@ -191,10 +195,12 @@ cudaError_t gpu_update_grid(unsigned int num_elements,
                      unsigned int dim,
                      Scalar *d_current_val,
                      Scalar *d_grid,
+                     Scalar *d_reweighted_grid,
                      Scalar *d_cv_min,
                      Scalar *d_cv_max,
                      Scalar *d_cv_sigma,
                      Scalar scal,
+                     Scalar reweight,
                      Scalar W,
                      bool flux_tempered,
                      Scalar T,
@@ -211,10 +217,12 @@ cudaError_t gpu_update_grid(unsigned int num_elements,
                                                                                  dim,
                                                                                  d_current_val,
                                                                                  d_grid,
+                                                                                 d_reweighted_grid,
                                                                                  d_cv_min,
                                                                                  d_cv_max,
                                                                                  d_cv_sigma,
                                                                                  scal,
+                                                                                 reweight,
                                                                                  W,
                                                                                  flux_tempered,
                                                                                  T,

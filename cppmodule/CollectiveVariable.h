@@ -94,6 +94,11 @@ class CollectiveVariable : public ForceCompute
             computeBiasForces(timestep);
             }
 
+        /*! Returns the value of the harmonic umbrella potential
+         * \param timestep
+         */
+        Scalar getUmbrellaPotential(unsigned int timestep);
+
     protected:
         /*! \param timestep The current value of the time step
          */
