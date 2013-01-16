@@ -1492,7 +1492,7 @@ Scalar IntegratorMetaDynamics::sigmaDeterminant()
     {
     ArrayHandle<Scalar> h_sigma(m_sigma, access_location::host, access_mode::read);
 
-    unsigned int n_cv =m_variables.size();
+    unsigned int n_cv =m_num_biased_variables;
 
     bnu::matrix<Scalar> m(n_cv,n_cv);
     for (unsigned int i = 0; i < n_cv; ++i)
