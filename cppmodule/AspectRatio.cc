@@ -56,7 +56,8 @@ Scalar AspectRatio::getCurrentValue(unsigned int timestep)
 
 void AspectRatio::computeBiasForces(unsigned int timestep)
     {
-    Scalar3 L = m_pdata->getGlobalBox().getL();
+    const BoxDim& global_box = m_pdata->getGlobalBox();
+    Scalar3 L = global_box.getL();
 
     Scalar d_l_x(0.0), d_l_y(0.0), d_l_z(0.0);
 
@@ -109,12 +110,16 @@ void AspectRatio::computeBiasForces(unsigned int timestep)
             break;
         }
 
-    m_external_virial[0] = - m_bias*d_l_x * L.x;
-    m_external_virial[1] = - m_bias*d_l_x * L.y;
-    m_external_virial[2] = - m_bias*d_l_x * L.z;
-    m_external_virial[3] = - m_bias*d_l_y * L.y;
-    m_external_virial[4] = - m_bias*d_l_y * L.z;
-    m_external_virial[5] = - m_bias*d_l_z * L.z;
+    Scalar xy = global_box.getTiltFactorXY();
+    Scalar xz = global_box.getTiltFactorXZ();
+    Scalar yz = global_box.getTiltFactorYZ();
+
+    m_external_virial[0] = - m_bias*d_l_x * L.x;         // xx
+    m_external_virial[1] = - m_bias*d_l_x * (L.y * xy);  // xy
+    m_external_virial[2] = - m_bias*d_l_x * (L.z * xz);  // xz
+    m_external_virial[3] = - m_bias*d_l_y * L.y;         // yy
+    m_external_virial[4] = - m_bias*d_l_y * (L.z * yz);  // yz
+    m_external_virial[5] = - m_bias*d_l_z * L.z;         // zz
     }
 
 void export_AspectRatio()
