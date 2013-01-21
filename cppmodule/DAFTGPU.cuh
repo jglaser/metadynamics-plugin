@@ -9,6 +9,7 @@ void gpu_combine_buf(unsigned int n_cells,
                  const cufftComplex *d_stage_buf,
                  const bool sw,
                  const unsigned int n_current_dir,
+                 const unsigned int offset,
                  const unsigned int stride);
 
 void gpu_rotate_buf_z_y(unsigned int nx,

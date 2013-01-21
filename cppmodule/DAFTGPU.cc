@@ -128,6 +128,7 @@ void DAFTGPU::forwardFFT3D(const GPUArray<cufftComplex>& in, const GPUArray<cuff
                         cudaMemcpy(d_out_buf.data, d_src_buf.data, stride*sizeof(cufftComplex),cudaMemcpyDeviceToDevice);
                     }
 
+#if 0
                     {
                     std::cout << "R " << m_exec_conf->getRank() << " i == " << i << std::endl;
                     const GPUArray<cufftComplex>& src_array = (i == 2) ? ( (idx.getD() == 1) ? in : m_combine_buf): m_work_buf;
@@ -137,6 +138,7 @@ void DAFTGPU::forwardFFT3D(const GPUArray<cufftComplex>& in, const GPUArray<cuff
                     std::cout << "R " << m_exec_conf->getRank() << " src " << h_src_buf.data[0].x << " " << h_src_buf.data[0].y << std::endl;
                     std::cout << "R " << m_exec_conf->getRank() << " dst " << h_out_buf.data[0].x << " " << h_out_buf.data[0].y << std::endl;
                     }
+#endif
                 }
             else
                 {
@@ -203,12 +205,13 @@ void DAFTGPU::forwardFFT3D(const GPUArray<cufftComplex>& in, const GPUArray<cuff
                     MPI_Status stat[2];
                     MPI_Waitall(2, req, stat);
                     }
-                  
+                 
+#if 0
                     {
                     ArrayHandle<cufftComplex> h_stage_buf(m_stage_buf, access_location::host, access_mode::read);
                     std::cout << "R " << m_exec_conf->getRank() << " recvd " << h_stage_buf.data[0].x << " " << h_stage_buf.data[0].y << std::endl;
                     }
-
+#endif
                     {
                     // combine data sets
                     ArrayHandle<cufftComplex> d_combine_buf(m_combine_buf, access_location::device, access_mode::readwrite);
@@ -219,7 +222,8 @@ void DAFTGPU::forwardFFT3D(const GPUArray<cufftComplex>& in, const GPUArray<cuff
                                     d_combine_buf.data,
                                     d_stage_buf.data,
                                     dir == 1,
-                                    n_current_dir,
+                                    n_current_dir*div,
+                                    (dir == -1) ? n_current_dir* (grid_idx - div/2) : 0,
                                     stride);
                     }
 
