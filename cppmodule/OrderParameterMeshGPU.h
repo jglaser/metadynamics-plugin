@@ -19,6 +19,7 @@ class OrderParameterMeshGPU : public OrderParameterMesh
                            const std::vector<Scalar> mode);
         virtual ~OrderParameterMeshGPU();
 
+        void testFFT();
     protected:
         //! Helper function to setup FFT and allocate the mesh arrays
         virtual void initializeFFT();

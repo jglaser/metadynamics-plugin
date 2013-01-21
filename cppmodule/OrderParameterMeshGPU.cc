@@ -1,6 +1,8 @@
 #include "OrderParameterMeshGPU.h"
 #include "OrderParameterMeshGPU.cuh"
 
+#include "DAFTGPU.h"
+
 using namespace boost::python;
 
 /*! \param sysdef The system definition
@@ -275,6 +277,23 @@ void OrderParameterMeshGPU::computeInfluenceFunction()
     if (m_prof) m_prof->pop(m_exec_conf);
     }
 
+void OrderParameterMeshGPU::testFFT()
+    {
+    GPUArray<cufftComplex> in(1, m_exec_conf);
+    GPUArray<cufftComplex> out(1, m_exec_conf);
+        {
+        ArrayHandle<cufftComplex> h_in(in, access_location::host, access_mode::overwrite);
+        h_in.data[0].x = (Scalar)(m_exec_conf->getRank());
+        h_in.data[0].y = 0.0;
+        }
+
+    DAFTGPU daft(m_exec_conf,m_pdata->getDomainDecomposition(), 1,1,1);
+    daft.forwardFFT3D(in, out);
+
+    ArrayHandle<cufftComplex> h_out(out, access_location::host, access_mode::read);
+    std::cout << "Rank " << m_exec_conf->getRank() << " " << h_out.data[0].x << " " << h_out.data[0].y << std::endl;
+    }
+
 
 void export_OrderParameterMeshGPU()
     {
@@ -285,6 +304,7 @@ void export_OrderParameterMeshGPU()
                                      const unsigned int,
                                      const Scalar,
                                      const std::vector<Scalar>&
-                                    >());
+                                    >())
+        .def("testFFT", &OrderParameterMeshGPU::testFFT);
 
     }
