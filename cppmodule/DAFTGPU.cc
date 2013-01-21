@@ -54,6 +54,8 @@ void DAFTGPU::forwardFFT3D(const GPUArray<cufftComplex>& in, const GPUArray<cuff
     cufftHandle plan;
     unsigned int div;
 
+    bool input_read = false;
+
     for (int i = 2; i >= 0 ; --i)
         {
         switch(i)
@@ -112,7 +114,7 @@ void DAFTGPU::forwardFFT3D(const GPUArray<cufftComplex>& in, const GPUArray<cuff
                     }
 
                     {
-                    const GPUArray<cufftComplex>& src_array = (i == 2) ? ( (idx.getD() == 1) ? in : m_combine_buf): m_work_buf;
+                    const GPUArray<cufftComplex>& src_array = (i == 2) ? ( input_read ? m_combine_buf : in): m_work_buf;
                     const GPUArray<cufftComplex>& dest_array = (i == 0 && div == 1) ? out : m_combine_buf;
                     ArrayHandle<cufftComplex> d_src_buf(src_array, access_location::device, access_mode::read);
                     ArrayHandle<cufftComplex> d_out_buf(dest_array, access_location::device, access_mode::overwrite);
@@ -126,6 +128,15 @@ void DAFTGPU::forwardFFT3D(const GPUArray<cufftComplex>& in, const GPUArray<cuff
                         cudaMemcpy(d_out_buf.data, d_src_buf.data, stride*sizeof(cufftComplex),cudaMemcpyDeviceToDevice);
                     }
 
+                    {
+                    std::cout << "R " << m_exec_conf->getRank() << " i == " << i << std::endl;
+                    const GPUArray<cufftComplex>& src_array = (i == 2) ? ( (idx.getD() == 1) ? in : m_combine_buf): m_work_buf;
+                    const GPUArray<cufftComplex>& dest_array = (i == 0 && div == 1) ? out : m_combine_buf;
+                    ArrayHandle<cufftComplex> h_src_buf(src_array, access_location::host, access_mode::read);
+                    ArrayHandle<cufftComplex> h_out_buf(dest_array, access_location::host, access_mode::read);
+                    std::cout << "R " << m_exec_conf->getRank() << " src " << h_src_buf.data[0].x << " " << h_src_buf.data[0].y << std::endl;
+                    std::cout << "R " << m_exec_conf->getRank() << " dst " << h_out_buf.data[0].x << " " << h_out_buf.data[0].y << std::endl;
+                    }
                 }
             else
                 {
@@ -136,14 +147,22 @@ void DAFTGPU::forwardFFT3D(const GPUArray<cufftComplex>& in, const GPUArray<cuff
                 else
                     dir = 1;
 
-                const GPUArray<cufftComplex>& src_array = (div == idx.getW()) ? in : m_combine_buf;
+                if (!input_read)
+                    {
+                    // copy over data
+                    ArrayHandle<cufftComplex> d_combine_buf(m_combine_buf, access_location::device, access_mode::overwrite);
+                    ArrayHandle<cufftComplex> d_in_buf(in, access_location::device, access_mode::read);
+                    cudaMemcpy(d_combine_buf.data, d_in_buf.data, sizeof(cufftComplex)*local_size, cudaMemcpyDeviceToDevice);
+                    input_read = true;
+                    }
+
                     {
                     // send all cells to processor N/2 domains away in direction dir
                     #ifdef ENABLE_MPI_CUDA
-                    ArrayHandle<cufftComplex> in_handle(src_array, access_location::device, access_mode::read);
+                    ArrayHandle<cufftComplex> combine_buf_handle(m_combine_buf, access_location::device, access_mode::read);
                     ArrayHandle<cufftComplex> stage_buf_handle(m_stage_buf, access_location::device, access_mode::overwrite);
                     #else
-                    ArrayHandle<cufftComplex> in_handle(src_array, access_location::host, access_mode::read);
+                    ArrayHandle<cufftComplex> combine_buf_handle(m_combine_buf, access_location::host, access_mode::read);
                     ArrayHandle<cufftComplex> stage_buf_handle(m_stage_buf, access_location::host, access_mode::overwrite);
                     #endif
 
@@ -166,7 +185,7 @@ void DAFTGPU::forwardFFT3D(const GPUArray<cufftComplex>& in, const GPUArray<cuff
                     unsigned int pt_rank = idx(pt_grid_pos.x, pt_grid_pos.y, pt_grid_pos.z);
 
                     MPI_Request req[2];
-                    MPI_Isend(in_handle.data,
+                    MPI_Isend(combine_buf_handle.data,
                               local_size*sizeof(cufftComplex),
                               MPI_BYTE,
                               pt_rank,
@@ -184,7 +203,12 @@ void DAFTGPU::forwardFFT3D(const GPUArray<cufftComplex>& in, const GPUArray<cuff
                     MPI_Status stat[2];
                     MPI_Waitall(2, req, stat);
                     }
-                   
+                  
+                    {
+                    ArrayHandle<cufftComplex> h_stage_buf(m_stage_buf, access_location::host, access_mode::read);
+                    std::cout << "R " << m_exec_conf->getRank() << " recvd " << h_stage_buf.data[0].x << " " << h_stage_buf.data[0].y << std::endl;
+                    }
+
                     {
                     // combine data sets
                     ArrayHandle<cufftComplex> d_combine_buf(m_combine_buf, access_location::device, access_mode::readwrite);
