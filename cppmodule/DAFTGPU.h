@@ -3,7 +3,10 @@
 
 //! Class that implements the Daresbury Advanced Fourier Transform on the GPU, based on CUFFT
 /* see http://www.hector.ac.uk/cse/distributedcse/reports/DL_POLY03/DL_POLY03_domain/index.html
-*/
+ *
+ * Forward transform is Sande-Tukey followed by local FFT, output in bit-reversed order
+ * Inverse transform is FFT of bit-reversed input, followed by Cooley-Tukey
+ */
 
 #include <hoomd/hoomd.h>
 
@@ -17,9 +20,7 @@ class DAFTGPU
              unsigned int nz);
         virtual ~DAFTGPU();
 
-        void forwardFFT3D(const GPUArray<cufftComplex>& in, const GPUArray<cufftComplex>& out);
-
-        void backwardFFT3D(const GPUArray<cufftComplex>& in, const GPUArray<cufftComplex>& out);
+        void FFT3D(const GPUArray<cufftComplex>& in, const GPUArray<cufftComplex>& out, bool inverse);
 
     private:
         boost::shared_ptr<const ExecutionConfiguration> m_exec_conf;  //!< The execution configuration

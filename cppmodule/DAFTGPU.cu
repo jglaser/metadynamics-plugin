@@ -21,7 +21,7 @@ __device__ unsigned int get_grid_idx(uint3 grid_pos,
     return idx;
     }
 
-__global__ void gpu_combine_buf_kernel(unsigned int n_cells,
+__global__ void gpu_sande_tukey_kernel(unsigned int n_cells,
                           cufftComplex *d_combine_buf,
                           const cufftComplex *d_stage_buf,
                           const bool sw,
@@ -57,7 +57,7 @@ __global__ void gpu_combine_buf_kernel(unsigned int n_cells,
         } 
     }
 
-void gpu_combine_buf(unsigned int n_cells,
+void gpu_sande_tukey(unsigned int n_cells,
                      cufftComplex *d_combine_buf,
                      const cufftComplex *d_stage_buf,
                      const bool sw,
@@ -68,8 +68,62 @@ void gpu_combine_buf(unsigned int n_cells,
     unsigned int block_size = 512;
     unsigned int n_blocks = n_cells/block_size;
     if (n_cells % block_size) n_blocks+=1;
-    gpu_combine_buf_kernel<<<n_blocks, block_size>>>(n_cells,  d_combine_buf, d_stage_buf, sw, n_current_dir, offset,stride);
+    gpu_sande_tukey_kernel<<<n_blocks, block_size>>>(n_cells,  d_combine_buf, d_stage_buf, sw, n_current_dir, offset,stride);
     }
+
+__global__ void gpu_cooley_tukey_kernel(unsigned int n_cells,
+                          cufftComplex *d_combine_buf,
+                          const cufftComplex *d_stage_buf,
+                          const bool sw,
+                          const unsigned int n_current_dir,
+                          const unsigned int offset,
+                          const unsigned int stride)
+    {
+    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (idx >= n_cells) return;
+
+    cufftComplex local = d_combine_buf[idx];
+    cufftComplex remote = d_stage_buf[idx];
+
+    cufftComplex exp_fac,out;
+    unsigned int grid_idx = offset + idx % stride;
+
+    // twiddle factor
+    Scalar arg = -Scalar(2.0*M_PI)*(Scalar)grid_idx/(Scalar)n_current_dir;
+    exp_fac.x = cosf(arg);
+    exp_fac.y = sinf(arg);
+    
+    if (sw)
+        {
+        // upper half
+        out.x = local.x + remote.x * exp_fac.x - remote.y * exp_fac.y;
+        out.y = local.y + remote.x * exp_fac.y + remote.y * exp_fac.x;
+        }
+    else
+        {
+        // lower half
+        out.x = remote.x + local.x * exp_fac.x - local.y * exp_fac.y;
+        out.y = remote.y + local.y * exp_fac.x + local.x * exp_fac.y;
+        }
+
+    d_combine_buf[idx] = out;
+    }
+
+void gpu_cooley_tukey(unsigned int n_cells,
+                     cufftComplex *d_combine_buf,
+                     const cufftComplex *d_stage_buf,
+                     const bool sw,
+                     const unsigned int n_current_dir,
+                     const unsigned int offset,
+                     const unsigned int stride)
+    {
+    unsigned int block_size = 512;
+    unsigned int n_blocks = n_cells/block_size;
+    if (n_cells % block_size) n_blocks+=1;
+    gpu_cooley_tukey_kernel<<<n_blocks, block_size>>>(n_cells,  d_combine_buf, d_stage_buf, sw, n_current_dir, offset,stride);
+    }
+
 
 __global__ void gpu_rotate_buf_kernel_z_y(unsigned int nx,
                                       unsigned int ny,
@@ -101,6 +155,37 @@ __global__ void gpu_rotate_buf_kernel_y_x(unsigned int nx,
         d_combine_buf[grid_pos.y + ny * (grid_pos.x + nx * grid_pos.z)];
     } 
 
+__global__ void gpu_rotate_buf_kernel_x_y(unsigned int nx,
+                                      unsigned int ny,
+                                      unsigned int nz,
+                                      const cufftComplex *d_combine_buf,
+                                      cufftComplex *d_work_buf)
+    {
+    unsigned int idx = blockIdx.x * blockDim. x + threadIdx.x;
+
+    if (idx >= nx*ny*nz) return;
+
+    uint3 grid_pos = get_grid_pos(idx, nx, ny, nz);
+    d_work_buf[grid_pos.y + ny * (grid_pos.x + nx * grid_pos.z)] =
+        d_combine_buf[grid_pos.x + nx * (grid_pos.z + nz * grid_pos.y)];
+    }
+
+__global__ void gpu_rotate_buf_kernel_y_z(unsigned int nx,
+                                      unsigned int ny,
+                                      unsigned int nz,
+                                      const cufftComplex *d_combine_buf,
+                                      cufftComplex *d_work_buf)
+    {
+    unsigned int idx = blockIdx.x * blockDim. x + threadIdx.x;
+
+    if (idx >= nx*ny*nz) return;
+
+    uint3 grid_pos = get_grid_pos(idx, nx, ny, nz);
+    d_work_buf[grid_pos.z + nz * (grid_pos.y + ny * grid_pos.x)] =
+        d_combine_buf[grid_pos.y + ny * (grid_pos.x + nx * grid_pos.z)];
+    }
+
+
 void gpu_rotate_buf_z_y(unsigned int nx,
                         unsigned int ny,
                         unsigned int nz,
@@ -129,6 +214,34 @@ void gpu_rotate_buf_y_x(unsigned int nx,
     gpu_rotate_buf_kernel_y_x<<<n_blocks, block_size>>>(nx, ny, nz, d_combine_buf, d_work_buf);
     } 
 
+void gpu_rotate_buf_x_y(unsigned int nx,
+                        unsigned int ny,
+                        unsigned int nz,
+                        const cufftComplex *d_combine_buf,
+                        cufftComplex *d_work_buf)
+    {
+    unsigned int block_size = 512;
+    unsigned int n_cells = nx*ny*nz;
+    unsigned int n_blocks = n_cells/block_size;
+    if (n_cells % block_size) n_blocks+=1;
+
+    gpu_rotate_buf_kernel_x_y<<<n_blocks, block_size>>>(nx, ny, nz, d_combine_buf, d_work_buf);
+    } 
+
+void gpu_rotate_buf_y_z(unsigned int nx,
+                        unsigned int ny,
+                        unsigned int nz,
+                        const cufftComplex *d_combine_buf,
+                        cufftComplex *d_work_buf)
+    {
+    unsigned int block_size = 512;
+    unsigned int n_cells = nx*ny*nz;
+    unsigned int n_blocks = n_cells/block_size;
+    if (n_cells % block_size) n_blocks+=1;
+
+    gpu_rotate_buf_kernel_y_z<<<n_blocks, block_size>>>(nx, ny, nz, d_combine_buf, d_work_buf);
+    } 
+
 __global__ void gpu_partial_dft_kernel(const unsigned int long_idx,
                                        const unsigned int long_idx_remote,
                                        const unsigned int offset,
@@ -139,6 +252,7 @@ __global__ void gpu_partial_dft_kernel(const unsigned int long_idx,
                                        const unsigned int dir,
                                        const unsigned int N,
                                        const unsigned int stride,
+                                       const bool inverse,
                                        cufftComplex *d_combine_buf,
                                        const cufftComplex *d_stage_buf)
     {
@@ -150,10 +264,20 @@ __global__ void gpu_partial_dft_kernel(const unsigned int long_idx,
     cufftComplex exp_fac;
 
     // twiddle factor
-    exp_fac.x = cosf(Scalar(2.0*M_PI)*((Scalar)(long_idx*long_idx_remote)/(Scalar)L
-                     + (Scalar)((offset+grid_idx)*long_idx)/(Scalar)N));
-    exp_fac.y = sinf(Scalar(2.0*M_PI)*((Scalar)(long_idx*long_idx_remote)/(Scalar)L
-                     + (Scalar)((offset+grid_idx)*long_idx)/(Scalar)N));
+    Scalar arg;
+    if (inverse)
+        {
+        arg = -Scalar(2.0*M_PI)*((Scalar)(long_idx*long_idx_remote)/(Scalar)L
+             + (Scalar)((offset+grid_idx)*long_idx_remote)/(Scalar)N);
+        }
+    else
+        {
+        arg = Scalar(2.0*M_PI)*((Scalar)(long_idx*long_idx_remote)/(Scalar)L
+             + (Scalar)((offset+grid_idx)*long_idx)/(Scalar)N);
+        }
+
+    exp_fac.x = cosf(arg);
+    exp_fac.y = sinf(arg);
 
     cufftComplex local = d_combine_buf[idx];
     cufftComplex remote = d_stage_buf[idx];
@@ -174,6 +298,7 @@ void gpu_partial_dft(const unsigned int long_idx,
                      const unsigned int dir,
                      const unsigned int N,
                      const unsigned int stride,
+                     const bool inverse,
                      cufftComplex *d_combine_buf,
                      const cufftComplex *d_stage_buf)
     {
@@ -192,6 +317,7 @@ void gpu_partial_dft(const unsigned int long_idx,
                                               dir,
                                               N,
                                               stride,
+                                              inverse,
                                               d_combine_buf,
                                               d_stage_buf);
     return;

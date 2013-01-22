@@ -288,10 +288,18 @@ void OrderParameterMeshGPU::testFFT()
         }
 
     DAFTGPU daft(m_exec_conf,m_pdata->getDomainDecomposition(), 1,1,1);
-    daft.forwardFFT3D(in, out);
+    daft.FFT3D(in, out, false);
 
-    ArrayHandle<cufftComplex> h_out(out, access_location::host, access_mode::read);
-    std::cout << "Rank " << m_exec_conf->getRank() << " " << h_out.data[0].x << " " << h_out.data[0].y << std::endl;
+        {
+        ArrayHandle<cufftComplex> h_out(out, access_location::host, access_mode::read);
+        std::cout << "Rank " << m_exec_conf->getRank() << " " << h_out.data[0].x << " " << h_out.data[0].y << std::endl;
+        }
+
+    daft.FFT3D(out,in ,true);
+        {
+        ArrayHandle<cufftComplex> h_in(in, access_location::host, access_mode::read);
+        std::cout << "Rank " << m_exec_conf->getRank() << " " << h_in.data[0].x << " " << h_in.data[0].y << " (inverse)" << std::endl;
+        } 
     }
 
 
