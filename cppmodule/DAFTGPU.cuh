@@ -23,3 +23,17 @@ void gpu_rotate_buf_y_x(unsigned int nx,
                         unsigned int nz,
                         const cufftComplex *d_combine_buf,
                         cufftComplex *d_work_buf);
+
+void gpu_partial_dft(const unsigned int long_idx,
+                     const unsigned int long_idx_remote,
+                     const unsigned int offset,
+                     const unsigned int L,
+                     const unsigned int nx,
+                     const unsigned int ny,
+                     const unsigned int nz,
+                     const unsigned int dir,
+                     const unsigned int N,
+                     const unsigned int stride,
+                     cufftComplex *d_combine_buf,
+                     const cufftComplex *d_stage_buf);
+ 

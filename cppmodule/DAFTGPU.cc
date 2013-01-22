@@ -52,7 +52,7 @@ void DAFTGPU::forwardFFT3D(const GPUArray<cufftComplex>& in, const GPUArray<cuff
     unsigned int n_current_dir;
     unsigned int stride;
     cufftHandle plan;
-    unsigned int div;
+    unsigned int div,len;
 
     bool input_read = false;
 
@@ -61,21 +61,21 @@ void DAFTGPU::forwardFFT3D(const GPUArray<cufftComplex>& in, const GPUArray<cuff
         switch(i)
             {
             case 0:
-                div = idx.getW();
+                len = idx.getW();
                 plan = m_cufft_plan_x;
                 grid_idx = grid_pos.x;
                 n_current_dir = m_nx;
                 stride = m_ny*m_nz;
                 break;
             case 1:
-                div = idx.getH();
+                len = idx.getH();
                 plan = m_cufft_plan_y;
                 grid_idx = grid_pos.y;
                 n_current_dir = m_ny;
                 stride = m_nx*m_nz;
                 break;
             case 2:
-                div = idx.getD();
+                len = idx.getD();
                 plan = m_cufft_plan_z;
                 grid_idx = grid_pos.z;
                 n_current_dir = m_nz;
@@ -83,33 +83,177 @@ void DAFTGPU::forwardFFT3D(const GPUArray<cufftComplex>& in, const GPUArray<cuff
                 break;
             }
 
+        // Determine factorization of number of processors into S*L where S=2^i
+        div = 1;
+        while ((div < len)&& (len% (div*2) == 0)) div*=2;
+        unsigned int L = len/div;
+
+        /*
+         * Perform DFT on long factors
+         */
+        
+        if (L > 1)
+            {
+            for (unsigned int k = 0; k < L; ++k)
+                {
+                if (k == 0)
+                    {
+                    // initialize work buffer with local data
+                    ArrayHandle<cufftComplex> d_work_buf(m_work_buf, access_location::device, access_mode::overwrite);
+
+                    const GPUArray<cufftComplex>& src_array = ((i == 2) ? in : m_combine_buf);
+                    if (i == 2) input_read = true;
+
+                    ArrayHandle<cufftComplex> d_src_buf(src_array, access_location::device, access_mode::read);
+                    cudaMemcpy(d_work_buf.data,d_src_buf.data, sizeof(cufftComplex)*local_size, cudaMemcpyDeviceToDevice);
+                    }
+                else
+                    {
+                    // initialize work buffer with remote data
+                    ArrayHandle<cufftComplex> d_work_buf(m_work_buf, access_location::device, access_mode::overwrite);
+                    ArrayHandle<cufftComplex> d_stage_buf(m_stage_buf, access_location::device, access_mode::read);
+                    cudaMemcpy(d_work_buf.data,d_stage_buf.data, sizeof(cufftComplex)*local_size, cudaMemcpyDeviceToDevice);
+                    }
+
+                // receive from below and send to above using a systolic ring
+                int down = grid_idx - div;
+                if (down < 0) down += L*div;
+
+                int up = grid_idx + div;
+                if (up >= (int)(L*div)) up -= L*div;
+
+                uint3 up_grid_pos = grid_pos;
+                uint3 down_grid_pos = grid_pos;
+
+                switch (i)
+                    {
+                    case 0:
+                        up_grid_pos.x = up;
+                        down_grid_pos.x = down;
+                        break;
+                    case 1:
+                        up_grid_pos.y = up;
+                        down_grid_pos.y = down;
+                        break;
+                    case 2:
+                        up_grid_pos.z = up;
+                        down_grid_pos.z = down;
+                        break;
+                    }
+
+                unsigned int up_rank = idx(up_grid_pos.x, up_grid_pos.y, up_grid_pos.z);
+                unsigned int down_rank = idx(down_grid_pos.x, down_grid_pos.y, down_grid_pos.z);
+
+                    {
+                    #ifdef ENABLE_MPI_CUDA
+                    ArrayHandle<cufftComplex> work_buf_handle(m_work_buf, access_location::device, access_mode::read);
+                    ArrayHandle<cufftComplex> stage_buf_handle(m_stage_buf, access_location::device, access_mode::overwrite);
+                    #else
+                    ArrayHandle<cufftComplex> work_buf_handle(m_work_buf, access_location::host, access_mode::read);
+                    ArrayHandle<cufftComplex> stage_buf_handle(m_stage_buf, access_location::host, access_mode::overwrite);
+                    #endif
+
+                    MPI_Request req[2];
+                    MPI_Isend(work_buf_handle.data,
+                              local_size*sizeof(cufftComplex),
+                              MPI_BYTE,
+                              up_rank,
+                              0,
+                              m_exec_conf->getMPICommunicator(),
+                              &req[0]);
+                    MPI_Irecv(stage_buf_handle.data,
+                              local_size*sizeof(cufftComplex),
+                              MPI_BYTE,
+                              down_rank,
+                              0,
+                              m_exec_conf->getMPICommunicator(),
+                              &req[1]);
+
+                    MPI_Status stat[2];
+                    MPI_Waitall(2, req, stat);
+                    } 
+
+                if (k == 0)
+                    {
+                    // reset combining buffer
+                    ArrayHandle<cufftComplex> d_combine_buf(m_combine_buf, access_location::device, access_mode::overwrite);
+                    cudaMemset(d_combine_buf.data, 0, sizeof(cufftComplex)*local_size);
+                    }
+
+                    {
+                    // do partial DFT
+                    ArrayHandle<cufftComplex> d_combine_buf(m_combine_buf, access_location::device, access_mode::readwrite);
+                    ArrayHandle<cufftComplex> d_stage_buf(m_stage_buf, access_location::device, access_mode::read);
+
+                    int remote = down/div - k;
+                    if (remote < 0) remote += L;
+
+                    gpu_partial_dft(grid_idx / div,
+                                    remote,
+                                   (grid_idx % div)* n_current_dir,
+                                    L,
+                                    m_nx,
+                                    m_ny,
+                                    m_nz,
+                                    i,
+                                    n_current_dir * len,
+                                    stride,
+                                    d_combine_buf.data,
+                                    d_stage_buf.data);
+
+                    if (m_exec_conf->isCUDAErrorCheckingEnabled())
+                        CHECK_CUDA_ERROR();
+                    } 
+
+                    #if 0
+                    {
+                    ArrayHandle<cufftComplex> h_stage_buf(m_stage_buf, access_location::host, access_mode::read);
+                    ArrayHandle<cufftComplex> h_combine_buf(m_combine_buf, access_location::host, access_mode::read);
+                    std::cout << "R " << m_exec_conf->getRank() << " recvd " << h_stage_buf.data[0].x << " " << h_stage_buf.data[0].y << std::endl;
+                    std::cout << "R " << m_exec_conf->getRank() << " combine " << h_combine_buf.data[0].x << " " << h_combine_buf.data[0].y << std::endl;
+                    }
+                    #endif
+ 
+                }
+            }
+
+        /*
+         * Perform power-of-two FFT
+         */
+
         while (div >= 1)
             {
             if (div == 1)
                 {
-                // do local FFT
+                /*
+                 * do local FFT
+                 */
+                switch(i)
                     {
-                    switch(i)
+                    case 2:
+                        // do nothing
+                        break;
+                    case 1:
                         {
-                        case 2:
-                            // do nothing
-                            break;
-                        case 1:
-                            {
-                            ArrayHandle<cufftComplex> d_combine_buf(m_combine_buf, access_location::device, access_mode::read);
-                            ArrayHandle<cufftComplex> d_work_buf(m_work_buf, access_location::device, access_mode::overwrite);
-                            // rotate to column-major in y coordinate
-                            gpu_rotate_buf_z_y(m_nx, m_ny, m_nz, d_combine_buf.data, d_work_buf.data);
-                            break;
-                            }
-                        case 0:
-                            {
-                            ArrayHandle<cufftComplex> d_combine_buf(m_combine_buf, access_location::device, access_mode::read);
-                            ArrayHandle<cufftComplex> d_work_buf(m_work_buf, access_location::device, access_mode::overwrite);
-                            // rotate to column-major in x coordinate
-                            gpu_rotate_buf_y_x(m_nx, m_ny, m_nz, d_combine_buf.data, d_work_buf.data);
-                            break;
-                            }
+                        ArrayHandle<cufftComplex> d_combine_buf(m_combine_buf, access_location::device, access_mode::read);
+                        ArrayHandle<cufftComplex> d_work_buf(m_work_buf, access_location::device, access_mode::overwrite);
+
+                        // rotate to column-major in y coordinate
+                        gpu_rotate_buf_z_y(m_nx, m_ny, m_nz, d_combine_buf.data, d_work_buf.data);
+                        if (m_exec_conf->isCUDAErrorCheckingEnabled())
+                            CHECK_CUDA_ERROR();
+                        break;
+                        }
+                    case 0:
+                        {
+                        ArrayHandle<cufftComplex> d_combine_buf(m_combine_buf, access_location::device, access_mode::read);
+                        ArrayHandle<cufftComplex> d_work_buf(m_work_buf, access_location::device, access_mode::overwrite);
+
+                        // rotate to column-major in x coordinate
+                        gpu_rotate_buf_y_x(m_nx, m_ny, m_nz, d_combine_buf.data, d_work_buf.data);
+                        if (m_exec_conf->isCUDAErrorCheckingEnabled())
+                            CHECK_CUDA_ERROR();
+                        break;
                         }
                     }
 
@@ -225,6 +369,8 @@ void DAFTGPU::forwardFFT3D(const GPUArray<cufftComplex>& in, const GPUArray<cuff
                                     n_current_dir*div,
                                     (dir == -1) ? n_current_dir* (grid_idx - div/2) : 0,
                                     stride);
+                    if (m_exec_conf->isCUDAErrorCheckingEnabled())
+                        CHECK_CUDA_ERROR();
                     }
 
                 }

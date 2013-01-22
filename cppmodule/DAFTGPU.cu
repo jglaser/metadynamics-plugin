@@ -128,3 +128,71 @@ void gpu_rotate_buf_y_x(unsigned int nx,
 
     gpu_rotate_buf_kernel_y_x<<<n_blocks, block_size>>>(nx, ny, nz, d_combine_buf, d_work_buf);
     } 
+
+__global__ void gpu_partial_dft_kernel(const unsigned int long_idx,
+                                       const unsigned int long_idx_remote,
+                                       const unsigned int offset,
+                                       const unsigned int L,
+                                       const unsigned int nx,
+                                       const unsigned int ny,
+                                       const unsigned int nz,
+                                       const unsigned int dir,
+                                       const unsigned int N,
+                                       const unsigned int stride,
+                                       cufftComplex *d_combine_buf,
+                                       const cufftComplex *d_stage_buf)
+    {
+    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= nx*ny*nz) return;
+
+    unsigned int grid_idx = idx % stride;
+
+    cufftComplex exp_fac;
+
+    // twiddle factor
+    exp_fac.x = cosf(Scalar(2.0*M_PI)*((Scalar)(long_idx*long_idx_remote)/(Scalar)L
+                     + (Scalar)((offset+grid_idx)*long_idx)/(Scalar)N));
+    exp_fac.y = sinf(Scalar(2.0*M_PI)*((Scalar)(long_idx*long_idx_remote)/(Scalar)L
+                     + (Scalar)((offset+grid_idx)*long_idx)/(Scalar)N));
+
+    cufftComplex local = d_combine_buf[idx];
+    cufftComplex remote = d_stage_buf[idx];
+
+    local.x += remote.x * exp_fac.x - remote.y * exp_fac.y;
+    local.y += remote.x * exp_fac.y + remote.y * exp_fac.x;
+    
+    d_combine_buf[idx] = local;
+    }
+
+void gpu_partial_dft(const unsigned int long_idx,
+                     const unsigned int long_idx_remote,
+                     const unsigned int offset,
+                     const unsigned int L,
+                     const unsigned int nx,
+                     const unsigned int ny,
+                     const unsigned int nz,
+                     const unsigned int dir,
+                     const unsigned int N,
+                     const unsigned int stride,
+                     cufftComplex *d_combine_buf,
+                     const cufftComplex *d_stage_buf)
+    {
+    unsigned int block_size = 512;
+    unsigned int n_cells = nx*ny*nz;
+    unsigned int n_blocks = n_cells/block_size;
+    if (n_cells % block_size) n_blocks+=1;
+
+    gpu_partial_dft_kernel<<<n_blocks, block_size>>>(long_idx,
+                                              long_idx_remote,
+                                              offset,
+                                              L,
+                                              nx,
+                                              ny,
+                                              nz,
+                                              dir,
+                                              N,
+                                              stride,
+                                              d_combine_buf,
+                                              d_stage_buf);
+    return;
+    }
