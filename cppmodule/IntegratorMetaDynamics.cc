@@ -41,6 +41,7 @@ IntegratorMetaDynamics::IntegratorMetaDynamics(boost::shared_ptr<SystemDefinitio
       m_num_update_steps(0),
       m_curr_bias_potential(0.0),
       m_is_initialized(false),
+      m_histograms_initialized(false),
       m_filename(filename),
       m_overwrite(overwrite),
       m_is_appending(false),
@@ -188,7 +189,7 @@ void IntegratorMetaDynamics::prepRun(unsigned int timestep)
             }
 
         // Set up histograms if necessary
-        if (! m_is_initialized && m_compute_histograms)
+        if (! m_histograms_initialized && m_compute_histograms)
             {
             if (m_num_biased_variables != 1)
                 {
@@ -802,11 +803,6 @@ void IntegratorMetaDynamics::setHistograms(bool compute_histograms)
     if (m_pdata->getDomainDecomposition())
         if (! m_exec_conf->isRoot()) return;
 #endif
-    if (m_is_initialized)
-        {
-        m_exec_conf->msg->error() << "integrate.mode_metadynamics: Cannot change histogram mode after initialization." << endl;
-        throw std::runtime_error("Error setting up metadynamics parameters.");
-        }
 
     m_compute_histograms = compute_histograms;
     }

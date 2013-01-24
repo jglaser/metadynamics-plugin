@@ -236,7 +236,7 @@ class mode_metadynamics(_integrator):
             if f.enabled and isinstance(f, cv._collective_variable):
 
                 # enable histograms if required
-                if f.ftm_parameters_set and not self.cpp_integrator.isInitialized():
+                if f.ftm_parameters_set:
                     self.cpp_integrator.setHistograms(True)
 
                 self.cpp_integrator.registerCollectiveVariable(f.cpp_force, f.sigma, f.cv_min, f.cv_max, f.num_points, f.ftm_min, f.ftm_max, f.umbrella)

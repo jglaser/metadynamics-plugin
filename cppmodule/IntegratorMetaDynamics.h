@@ -306,6 +306,7 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         std::vector<Scalar> m_bias_potential;             //!< List of values of the bias potential
 
         bool m_is_initialized;                            //!< True if history-dependent potential has been initialized
+        bool m_histograms_initialized;                    //!< True if histograms have been set up
         const std::string m_filename;                     //!< Name of output file
         bool m_overwrite;                                 //!< True if the file should be overwritten
         bool m_is_appending;                              //!< True if we are appending to the file
