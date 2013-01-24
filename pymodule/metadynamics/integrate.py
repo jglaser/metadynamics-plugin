@@ -288,6 +288,14 @@ class mode_metadynamics(_integrator):
 
         self.cpp_integrator.restartFromGridFile(filename)
 
+    ## Reset histograms
+    # This command resets the histogram of values of the collective variable visited.
+    # In flux-tempered mode, it also resets the non-labeled and labeled walker histograms.
+    def reset_histograms(self):
+        util.print_status_line();
+
+        self.cpp_integrator.resetHistograms()
+
     ## Set parameters of the integration
     # \param mode The variant of metadynamics to be used
     # \param add_hills True if new Gaussians should be added during the simulation

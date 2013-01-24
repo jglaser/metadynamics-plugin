@@ -290,6 +290,9 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
             m_sigma_g = sigma_g;
             }
 
+        //! Reset the histograms
+        void resetHistograms();
+
     private:
         Scalar m_W;                                       //!< Height of Gaussians
         Scalar m_T_shift;                                 //!< Temperature shift
@@ -381,9 +384,6 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
 
         //! Setup histograms for flux-tempered MetaD
         void setupHistograms();
-
-        //! Reset the histograms
-        void resetHistograms();
 
         //! Sample the histograms for flux-tempered MetaD
         void sampleHistograms(Scalar val, bool state);

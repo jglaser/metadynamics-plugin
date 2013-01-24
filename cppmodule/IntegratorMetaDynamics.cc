@@ -1277,16 +1277,22 @@ void IntegratorMetaDynamics::resetHistograms()
     {
     assert(m_variables.size() == 1);
 
-    unsigned int idx = 0;
-    while (m_variables[idx].m_umbrella && idx < m_variables.size()) idx++;
+    if (m_compute_histograms)
+        {
+        unsigned int idx = 0;
+        while (m_variables[idx].m_umbrella && idx < m_variables.size()) idx++;
 
-    unsigned int num_points = m_variables[idx].m_num_points;
-    ArrayHandle<Scalar> h_histogram(m_ftm_histogram, access_location::host, access_mode::overwrite);
-    ArrayHandle<Scalar> h_histogram_plus(m_ftm_histogram_plus, access_location::host, access_mode::overwrite);
+        unsigned int num_points = m_variables[idx].m_num_points;
+        ArrayHandle<Scalar> h_histogram(m_ftm_histogram, access_location::host, access_mode::overwrite);
+        ArrayHandle<Scalar> h_histogram_plus(m_ftm_histogram_plus, access_location::host, access_mode::overwrite);
 
-    memset(h_histogram.data, 0, num_points*sizeof(Scalar));
-    memset(h_histogram_plus.data, 0, num_points*sizeof(Scalar));
-    m_num_histogram_entries = 0;
+        memset(h_histogram.data, 0, num_points*sizeof(Scalar));
+        memset(h_histogram_plus.data, 0, num_points*sizeof(Scalar));
+        m_num_histogram_entries = 0;
+        }
+
+    ArrayHandle<unsigned int> h_grid_hist(m_grid_hist, access_location::host, access_mode::overwrite);
+    memset(h_grid_hist.data, 0, sizeof(Scalar)*m_grid_hist.getNumElements());
     } 
 
 void IntegratorMetaDynamics::sampleHistograms(Scalar val, bool state)
@@ -1541,6 +1547,7 @@ void export_IntegratorMetaDynamics()
     .def("setMinimumLabelChanges", &IntegratorMetaDynamics::setMinimumLabelChanges)
     .def("setAdaptive", &IntegratorMetaDynamics::setAdaptive)
     .def("setSigmaG", &IntegratorMetaDynamics::setSigmaG)
+    .def("resetHistograms", &IntegratorMetaDynamics::resetHistograms)
     ;
 
     enum_<IntegratorMetaDynamics::Enum>("mode")
