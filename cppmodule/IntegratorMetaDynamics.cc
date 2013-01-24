@@ -1286,6 +1286,7 @@ void IntegratorMetaDynamics::resetHistograms()
 
     memset(h_histogram.data, 0, num_points*sizeof(Scalar));
     memset(h_histogram_plus.data, 0, num_points*sizeof(Scalar));
+    m_num_histogram_entries = 0;
     } 
 
 void IntegratorMetaDynamics::sampleHistograms(Scalar val, bool state)
