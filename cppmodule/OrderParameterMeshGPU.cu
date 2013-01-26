@@ -173,19 +173,23 @@ __global__ void gpu_bin_particles_kernel(const unsigned int N,
         }
     else
         {
-        // store distance to cell center in bin
-        Scalar3 dim_inv = make_scalar3(Scalar(1.0)/(Scalar)dim.x,
-                                       Scalar(1.0)/(Scalar)dim.y,
-                                       Scalar(1.0)/(Scalar)dim.z);
+        // store distance to cell center in bin in units of cell dimensions
+        Scalar3 f = box.makeFraction(pos);
+        f = f*make_scalar3((Scalar)dim.x,(Scalar)dim.y,(Scalar)dim.z);
+        Scalar3 c = make_scalar3((Scalar)cell_coord.x+Scalar(0.5),
+                                 (Scalar)cell_coord.y+Scalar(0.5),
+                                 (Scalar)cell_coord.z+Scalar(0.5));
+        Scalar3 shift = f - c;
+        uchar3 periodic = box.getPeriodic();
 
-        Scalar3 c = box.makeCoordinates(make_scalar3((Scalar)cell_coord.x+Scalar(0.5),
-                                                 (Scalar)cell_coord.y+Scalar(0.5),
-                                                 (Scalar)cell_coord.z+Scalar(0.5))*dim_inv);
-        Scalar3 shift = box.minImage(pos-c);
-        Scalar3 shift_frac = box.makeFraction(shift) - make_scalar3(0.5,0.5,0.5);
-        shift_frac *= make_scalar3(dim.x,dim.y,dim.z);
+        if (periodic.x && shift.x > Scalar(1.0))
+            shift.x -= (Scalar)dim.x;
+        if (periodic.y && shift.y > Scalar(1.0))
+            shift.y -= (Scalar)dim.y;
+        if (periodic.z && shift.z > Scalar(1.0))
+            shift.z -= (Scalar)dim.z;
 
-        d_particle_bins[cell_idx*maxn+n] = make_scalar4(shift_frac.x,shift_frac.y,shift_frac.z, mode);
+        d_particle_bins[cell_idx*maxn+n] = make_scalar4(shift.x,shift.y,shift.z, mode);
         }
     }
 
