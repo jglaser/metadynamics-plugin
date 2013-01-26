@@ -61,3 +61,18 @@ void gpu_bin_particles(const unsigned int N,
                        const Index3D& mesh_idx,
                        const Scalar *d_mode,
                        const BoxDim& box);
+
+void gpu_compute_mesh_virial(const unsigned int n_wave_vectors,
+                             cufftComplex *d_fourier_mesh,
+                             cufftComplex *d_fourier_mesh_G,
+                             Scalar *d_virial_mesh,
+                             const Scalar3 *d_k,
+                             const Scalar qstarsq);
+
+void gpu_compute_virial(unsigned int n_wave_vectors,
+                   Scalar *d_sum_virial_partial,
+                   Scalar *d_sum_virial,
+                   const Scalar *d_mesh_virial,
+                   const unsigned int block_size,
+                   const Index3D& mesh_idx);
+ 

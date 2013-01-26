@@ -39,6 +39,9 @@ class OrderParameterMeshGPU : public OrderParameterMesh
         //! Helper function to calculate value of collective variable
         virtual Scalar computeCV();
 
+        //! Helper function to compute the virial
+        virtual void computeVirial();
+
     private:
         cufftHandle m_cufft_plan;          //!< The FFT plan
         cufftHandle m_cufft_plan_force;    //!< The FFT plan for the force mesh
@@ -57,6 +60,8 @@ class OrderParameterMeshGPU : public OrderParameterMesh
 
         GPUFlags<Scalar> m_sum;                    //!< Sum over fourier mesh values
         GPUArray<Scalar> m_sum_partial;            //!< Partial sums over fourier mesh values
+        GPUArray<Scalar> m_sum_virial_partial;     //!< Partial sums over virial mesh values
+        GPUArray<Scalar> m_sum_virial;             //!< Final sum over virial mesh values
         unsigned int m_block_size;                 //!< Block size for fourier mesh reduction
         unsigned m_num_fourier_cells;              //!< Number of complex values in fourier mesh
     };

@@ -59,6 +59,8 @@ class OrderParameterMesh : public CollectiveVariable
         bool m_box_changed;                 //!< True if box has changed since last compute
 	    Scalar m_cv;			    //!< Current value of collective variable
 
+        GPUArray<Scalar> m_virial_mesh;     //!< k-space mesh of virial tensor values
+
         //! Helper function to be called when box changes
         void setBoxChange()
             {
@@ -92,6 +94,9 @@ class OrderParameterMesh : public CollectiveVariable
         //! Helper function to calculate value of collective variable
         virtual Scalar computeCV();
 
+        //! Helper function to compute the virial
+        virtual void computeVirial();
+
     private:
         kiss_fftnd_cfg m_kiss_fft;         //!< The FFT configuration
         kiss_fftnd_cfg m_kiss_ifft_x;      //!< Inverse FFT configuration, x component of force
@@ -111,6 +116,9 @@ class OrderParameterMesh : public CollectiveVariable
         boost::signals::connection m_boxchange_connection; //!< Connection to ParticleData box change signal
 
         std::string m_log_name;                    //!< Name of the log quantity
+
+        //!< Compute virial on mesh
+        void computeVirialMesh();
     };
 
 void export_OrderParameterMesh();

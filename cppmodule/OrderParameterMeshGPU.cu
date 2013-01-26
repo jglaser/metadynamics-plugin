@@ -327,6 +327,62 @@ void gpu_assign_particles_30(const unsigned int N,
                                                                 box);
     }
 
+__global__ void gpu_compute_mesh_virial_kernel(const unsigned int n_wave_vectors,
+                                         cufftComplex *d_fourier_mesh,
+                                         cufftComplex *d_fourier_mesh_G,
+                                         Scalar *d_virial_mesh,
+                                         const Scalar3 *d_k,
+                                         const Scalar qstarsq)
+    {
+    unsigned int idx = blockDim.x * blockIdx.x + threadIdx.x;
+
+    if (idx >= n_wave_vectors) return;
+
+    if (idx != 0)
+        {
+        // non-zero wave vector
+        cufftComplex f_g = d_fourier_mesh_G[idx];
+        cufftComplex f = d_fourier_mesh[idx];
+
+        Scalar rhog = f_g.x * f.x + f_g.y * f.y;
+        Scalar3 k = d_k[idx];
+        Scalar ksq = dot(k,k);
+        Scalar kfac = Scalar(2.0)*(Scalar(1.0)+Scalar(1.0/2.0)*ksq/qstarsq)/ksq;
+        d_virial_mesh[0*n_wave_vectors+idx] = rhog*(Scalar(1.0) - kfac*k.x*k.x); // xx
+        d_virial_mesh[1*n_wave_vectors+idx] = rhog*(            - kfac*k.x*k.y); // xy
+        d_virial_mesh[2*n_wave_vectors+idx] = rhog*(            - kfac*k.x*k.z); // xz
+        d_virial_mesh[3*n_wave_vectors+idx] = rhog*(Scalar(1.0) - kfac*k.y*k.y); // yy
+        d_virial_mesh[4*n_wave_vectors+idx] = rhog*(            - kfac*k.y*k.z); // yz
+        d_virial_mesh[5*n_wave_vectors+idx] = rhog*(Scalar(1.0) - kfac*k.z*k.z); // zz
+        }
+    else
+        {
+        d_virial_mesh[0*n_wave_vectors+idx] = Scalar(0.0);
+        d_virial_mesh[1*n_wave_vectors+idx] = Scalar(0.0);
+        d_virial_mesh[2*n_wave_vectors+idx] = Scalar(0.0);
+        d_virial_mesh[3*n_wave_vectors+idx] = Scalar(0.0);
+        d_virial_mesh[4*n_wave_vectors+idx] = Scalar(0.0);
+        d_virial_mesh[5*n_wave_vectors+idx] = Scalar(0.0);
+        } 
+    }
+
+void gpu_compute_mesh_virial(const unsigned int n_wave_vectors,
+                             cufftComplex *d_fourier_mesh,
+                             cufftComplex *d_fourier_mesh_G,
+                             Scalar *d_virial_mesh,
+                             const Scalar3 *d_k,
+                             const Scalar qstarsq)
+    {
+    const unsigned int block_size = 512;
+
+    gpu_compute_mesh_virial_kernel<<<n_wave_vectors/block_size+1, block_size>>>(n_wave_vectors,
+                                                                          d_fourier_mesh,
+                                                                          d_fourier_mesh_G,
+                                                                          d_virial_mesh,
+                                                                          d_k,
+                                                                          qstarsq);
+    }
+ 
 __global__ void gpu_update_meshes_kernel(const unsigned int n_wave_vectors,
                                          cufftComplex *d_fourier_mesh,
                                          cufftComplex *d_fourier_mesh_G,
@@ -629,6 +685,177 @@ void gpu_compute_cv(unsigned int n_wave_vectors,
     kernel_final_reduce_cv<<<1, final_block_size,shared_size>>>(d_sum_partial,
                                                                   n_blocks,
                                                                   d_sum);
+    }
+
+__global__ void kernel_calculate_virial_partial(
+            int n_wave_vectors,
+            Scalar *sum_virial_partial,
+            const Scalar *d_mesh_virial,
+            const unsigned int dimz)
+    {
+    extern __shared__ Scalar sdata[];
+
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
+    unsigned int tidx = threadIdx.x;
+
+    Scalar mySum_xx = Scalar(0.0);
+    Scalar mySum_xy = Scalar(0.0);
+    Scalar mySum_xz = Scalar(0.0);
+    Scalar mySum_yy = Scalar(0.0);
+    Scalar mySum_yz = Scalar(0.0);
+    Scalar mySum_zz = Scalar(0.0);
+
+    if (j < n_wave_vectors)
+        {
+        mySum_xx = d_mesh_virial[0*n_wave_vectors+j];
+        mySum_xy = d_mesh_virial[1*n_wave_vectors+j];
+        mySum_xz = d_mesh_virial[2*n_wave_vectors+j];
+        mySum_yy = d_mesh_virial[3*n_wave_vectors+j];
+        mySum_yz = d_mesh_virial[4*n_wave_vectors+j];
+        mySum_zz = d_mesh_virial[5*n_wave_vectors+j];
+
+        if (j % dimz)
+            {
+            mySum_xx *= Scalar(2.0);
+            mySum_xy *= Scalar(2.0);
+            mySum_xz *= Scalar(2.0);
+            mySum_yy *= Scalar(2.0);
+            mySum_yz *= Scalar(2.0);
+            mySum_zz *= Scalar(2.0);
+            }
+        }
+
+    sdata[0*blockDim.x+tidx] = mySum_xx;
+    sdata[1*blockDim.x+tidx] = mySum_xy;
+    sdata[2*blockDim.x+tidx] = mySum_xz;
+    sdata[3*blockDim.x+tidx] = mySum_yy;
+    sdata[4*blockDim.x+tidx] = mySum_yz;
+    sdata[5*blockDim.x+tidx] = mySum_zz;
+
+   __syncthreads();
+
+    // reduce the sum
+    int offs = blockDim.x >> 1;
+    while (offs > 0)
+        {
+        if (tidx < offs)
+            {
+            sdata[0*blockDim.x+tidx] += sdata[0*blockDim.x+tidx + offs];
+            sdata[1*blockDim.x+tidx] += sdata[1*blockDim.x+tidx + offs];
+            sdata[2*blockDim.x+tidx] += sdata[2*blockDim.x+tidx + offs];
+            sdata[3*blockDim.x+tidx] += sdata[3*blockDim.x+tidx + offs];
+            sdata[4*blockDim.x+tidx] += sdata[4*blockDim.x+tidx + offs];
+            sdata[5*blockDim.x+tidx] += sdata[5*blockDim.x+tidx + offs];
+            }
+        offs >>= 1;
+        __syncthreads();
+        }
+
+    // write result to global memeory
+    if (tidx == 0)
+        {
+        sum_virial_partial[0*gridDim.x+blockIdx.x] = sdata[0*blockDim.x];
+        sum_virial_partial[1*gridDim.x+blockIdx.x] = sdata[1*blockDim.x];
+        sum_virial_partial[2*gridDim.x+blockIdx.x] = sdata[2*blockDim.x];
+        sum_virial_partial[3*gridDim.x+blockIdx.x] = sdata[3*blockDim.x];
+        sum_virial_partial[4*gridDim.x+blockIdx.x] = sdata[4*blockDim.x];
+        sum_virial_partial[5*gridDim.x+blockIdx.x] = sdata[5*blockDim.x];
+        }
+    }
+
+
+__global__ void kernel_final_reduce_virial(Scalar* sum_virial_partial,
+                                           unsigned int nblocks,
+                                           Scalar *sum_virial)
+    {
+    extern __shared__ Scalar smem[];
+
+    if (threadIdx.x == 0)
+        {
+        sum_virial[0] = Scalar(0.0);
+        sum_virial[1] = Scalar(0.0);
+        sum_virial[2] = Scalar(0.0);
+        sum_virial[3] = Scalar(0.0);
+        sum_virial[4] = Scalar(0.0);
+        sum_virial[5] = Scalar(0.0);
+        }
+
+    for (int start = 0; start< nblocks; start += blockDim.x)
+        {
+        __syncthreads();
+        if (start + threadIdx.x < nblocks)
+            {
+            smem[0*blockDim.x+threadIdx.x] = sum_virial_partial[0*nblocks+start+threadIdx.x];
+            smem[1*blockDim.x+threadIdx.x] = sum_virial_partial[1*nblocks+start+threadIdx.x];
+            smem[2*blockDim.x+threadIdx.x] = sum_virial_partial[2*nblocks+start+threadIdx.x];
+            smem[3*blockDim.x+threadIdx.x] = sum_virial_partial[3*nblocks+start+threadIdx.x];
+            smem[4*blockDim.x+threadIdx.x] = sum_virial_partial[4*nblocks+start+threadIdx.x];
+            smem[5*blockDim.x+threadIdx.x] = sum_virial_partial[5*nblocks+start+threadIdx.x];
+            }
+        else
+            {
+            smem[0*blockDim.x+threadIdx.x] = Scalar(0.0);
+            smem[1*blockDim.x+threadIdx.x] = Scalar(0.0);
+            smem[2*blockDim.x+threadIdx.x] = Scalar(0.0);
+            smem[3*blockDim.x+threadIdx.x] = Scalar(0.0);
+            smem[4*blockDim.x+threadIdx.x] = Scalar(0.0);
+            smem[5*blockDim.x+threadIdx.x] = Scalar(0.0);
+            }
+
+        __syncthreads();
+
+        // reduce the sum
+        int offs = blockDim.x >> 1;
+        while (offs > 0)
+            {
+            if (threadIdx.x < offs)
+                {
+                smem[0*blockDim.x+threadIdx.x] += smem[0*blockDim.x+threadIdx.x + offs];
+                smem[1*blockDim.x+threadIdx.x] += smem[1*blockDim.x+threadIdx.x + offs];
+                smem[2*blockDim.x+threadIdx.x] += smem[2*blockDim.x+threadIdx.x + offs];
+                smem[3*blockDim.x+threadIdx.x] += smem[3*blockDim.x+threadIdx.x + offs];
+                smem[4*blockDim.x+threadIdx.x] += smem[4*blockDim.x+threadIdx.x + offs];
+                smem[5*blockDim.x+threadIdx.x] += smem[5*blockDim.x+threadIdx.x + offs];
+                }
+            offs >>= 1;
+            __syncthreads();
+            }
+
+         if (threadIdx.x == 0)
+            {
+            sum_virial[0] += smem[0*blockDim.x];
+            sum_virial[1] += smem[1*blockDim.x];
+            sum_virial[2] += smem[2*blockDim.x];
+            sum_virial[3] += smem[3*blockDim.x];
+            sum_virial[4] += smem[4*blockDim.x];
+            sum_virial[5] += smem[5*blockDim.x];
+            }
+        }
+    }
+
+void gpu_compute_virial(unsigned int n_wave_vectors,
+                   Scalar *d_sum_virial_partial,
+                   Scalar *d_sum_virial,
+                   const Scalar *d_mesh_virial,
+                   const unsigned int block_size,
+                   const Index3D& mesh_idx)
+    {
+    unsigned int n_blocks = n_wave_vectors/block_size + 1;
+
+    unsigned int shared_size = 6* block_size * sizeof(Scalar);
+    kernel_calculate_virial_partial<<<n_blocks, block_size, shared_size>>>(
+               n_wave_vectors,
+               d_sum_virial_partial,
+               d_mesh_virial,
+               mesh_idx.getD()/2+1
+               );
+
+    // calculate final virial values 
+    const unsigned int final_block_size = 512;
+    shared_size = 6*final_block_size*sizeof(Scalar);
+    kernel_final_reduce_virial<<<1, final_block_size,shared_size>>>(d_sum_virial_partial,
+                                                                  n_blocks,
+                                                                  d_sum_virial);
     }
 
 __device__ Scalar convolution_kernel(Scalar ksq, Scalar qstarsq)

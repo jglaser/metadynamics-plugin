@@ -131,6 +131,9 @@ void OrderParameterMesh::setupMesh()
     GPUArray<Scalar3> k(m_mesh_index.getNumElements(), m_exec_conf);
     m_k.swap(k);
 
+    GPUArray<Scalar> virial_mesh(6*m_mesh_index.getNumElements(), m_exec_conf);
+    m_virial_mesh.swap(virial_mesh);
+
     initializeFFT();
     } 
 
@@ -597,7 +600,52 @@ Scalar OrderParameterMesh::getCurrentValue(unsigned int timestep)
 
     return val;
     }
-   
+
+void OrderParameterMesh::computeVirial()
+    {
+    if (m_prof) m_prof->push("virial");
+
+    ArrayHandle<kiss_fft_cpx> h_mesh(m_mesh, access_location::host, access_mode::read);
+    ArrayHandle<kiss_fft_cpx> h_fourier_mesh(m_fourier_mesh, access_location::host, access_mode::overwrite);
+    ArrayHandle<kiss_fft_cpx> h_fourier_mesh_G(m_fourier_mesh_G, access_location::host, access_mode::overwrite);
+
+    ArrayHandle<Scalar> h_inf_f(m_inf_f, access_location::host, access_mode::read);
+    ArrayHandle<Scalar3> h_k(m_k, access_location::host, access_mode::read);
+
+    Scalar virial[6];
+    for (unsigned int i = 0; i < 6; ++i)
+        virial[i] = Scalar(0.0);
+
+    // multiply with influence function
+    for (unsigned int idx = 0; idx < m_mesh_index.getNumElements(); ++idx)
+        {
+        if (idx != 0)
+            {
+            // non-zero wave vector
+            kiss_fft_cpx f_g = h_fourier_mesh_G.data[idx];
+            kiss_fft_cpx f = h_fourier_mesh.data[idx];
+
+            Scalar rhog = f_g.r * f.r + f_g.i * f.i;
+            Scalar3 k = h_k.data[idx];
+            Scalar ksq = dot(k,k);
+            Scalar kfac = Scalar(2.0)*(Scalar(1.0)+Scalar(1.0/2.0)*ksq/m_qstarsq)/ksq;
+            virial[0] += rhog*(Scalar(1.0) - kfac*k.x*k.x); // xx
+            virial[1] += rhog*(            - kfac*k.x*k.y); // xy
+            virial[2] += rhog*(            - kfac*k.x*k.z); // xz
+            virial[3] += rhog*(Scalar(1.0) - kfac*k.y*k.y); // yy
+            virial[4] += rhog*(            - kfac*k.y*k.z); // yz
+            virial[5] += rhog*(Scalar(1.0) - kfac*k.z*k.z); // zz
+            }
+        } 
+
+    Scalar V = m_pdata->getGlobalBox().getVolume();
+    for (unsigned int i = 0; i < 6; ++i)
+        m_external_virial[i] = m_bias*Scalar(1.0/2.0)*virial[i]/V;
+
+    if (m_prof) m_prof->pop();
+    }
+ 
+
 void OrderParameterMesh::computeBiasForces(unsigned int timestep)
     {
 
@@ -607,6 +655,18 @@ void OrderParameterMesh::computeBiasForces(unsigned int timestep)
     if (m_prof) m_prof->push("Mesh");
 
     interpolateForces();
+
+    PDataFlags flags = m_pdata->getFlags();
+
+    if (flags[pdata_flag::pressure_tensor] || flags[pdata_flag::isotropic_virial])
+        {
+        computeVirial();
+        }
+    else
+        {
+        for (unsigned int i = 0; i < 6; ++i)
+            m_external_virial[i] = Scalar(0.0);
+        }
 
     if (m_prof) m_prof->pop();
     }

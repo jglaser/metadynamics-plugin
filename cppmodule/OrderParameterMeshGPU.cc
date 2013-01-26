@@ -23,6 +23,13 @@ OrderParameterMeshGPU::OrderParameterMeshGPU(boost::shared_ptr<SystemDefinition>
     GPUArray<Scalar> sum_partial(m_mesh_points.x*m_mesh_points.y*(m_mesh_points.z/2+1)/m_block_size+1,m_exec_conf);
     m_sum_partial.swap(sum_partial);
 
+    GPUArray<Scalar> sum_virial_partial(6*m_mesh_points.x*m_mesh_points.y*(m_mesh_points.z/2+1)/m_block_size+1,m_exec_conf);
+    m_sum_virial_partial.swap(sum_virial_partial);
+
+    GPUArray<Scalar> sum_virial(6,m_exec_conf);
+    m_sum_virial.swap(sum_virial);
+
+    // initial value of number of particles per bin
     m_cell_size = 2;
     }
 
@@ -226,6 +233,49 @@ void OrderParameterMeshGPU::interpolateForces()
     if (m_exec_conf->isCUDAErrorCheckingEnabled())
         CHECK_CUDA_ERROR();
 
+    if (m_prof) m_prof->pop(m_exec_conf);
+    }
+
+void OrderParameterMeshGPU::computeVirial()
+    {
+    if (m_prof) m_prof->push(m_exec_conf,"virial");
+
+    ArrayHandle<cufftComplex> d_fourier_mesh(m_fourier_mesh, access_location::device, access_mode::read);
+    ArrayHandle<cufftComplex> d_fourier_mesh_G(m_fourier_mesh_G, access_location::device, access_mode::read);
+    ArrayHandle<Scalar3> d_k(m_k, access_location::device, access_mode::read);
+    ArrayHandle<Scalar> d_virial_mesh(m_virial_mesh, access_location::device, access_mode::overwrite);
+
+    gpu_compute_mesh_virial(m_num_fourier_cells,
+                            d_fourier_mesh.data,
+                            d_fourier_mesh_G.data,
+                            d_virial_mesh.data,
+                            d_k.data,
+                            m_qstarsq);
+
+    if (m_exec_conf->isCUDAErrorCheckingEnabled())
+        CHECK_CUDA_ERROR();
+
+        {
+        ArrayHandle<Scalar> d_sum_virial(m_sum_virial, access_location::device, access_mode::overwrite);
+        ArrayHandle<Scalar> d_sum_virial_partial(m_sum_virial_partial, access_location::device, access_mode::overwrite);
+
+        gpu_compute_virial(m_num_fourier_cells,
+                           d_sum_virial_partial.data,
+                           d_sum_virial.data,
+                           d_virial_mesh.data,
+                           m_block_size,
+                           m_mesh_index);
+
+        if (m_exec_conf->isCUDAErrorCheckingEnabled())
+            CHECK_CUDA_ERROR();
+        }
+     
+    ArrayHandle<Scalar> h_sum_virial(m_sum_virial, access_location::host, access_mode::read);
+
+    Scalar V = m_pdata->getGlobalBox().getVolume();
+    for (unsigned int i = 0; i<6; ++i)
+        m_external_virial[i] = m_bias*Scalar(1.0/2.0)*h_sum_virial.data[i]/V;
+       
     if (m_prof) m_prof->pop(m_exec_conf);
     }
 
