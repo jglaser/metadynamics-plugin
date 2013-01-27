@@ -1011,13 +1011,12 @@ void IntegratorMetaDynamics::readGrid(const std::string& filename)
             iss >> tmp;
 
         iss >> h_grid.data[grid_idx];
+
         iss >> h_reweighted_grid.data[grid_idx];
         iss >> h_sigma_grid.data[grid_idx];
         iss >> h_grid_hist.data[grid_idx];
 
         h_sigma_grid.data[grid_idx] *= h_grid_hist.data[grid_idx];
-
-        iss >> h_reweighted_grid.data[grid_idx];
         }
     
     if (m_compute_histograms)
