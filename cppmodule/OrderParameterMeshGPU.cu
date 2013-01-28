@@ -47,16 +47,16 @@ __device__ uint3 find_cell(Scalar3 pos,
                                        f.z * (Scalar)nz);
 
     // find cell the particle is in
-    unsigned int ix = reduced_pos.x;
-    unsigned int iy = reduced_pos.y;
-    unsigned int iz = reduced_pos.z;
+    int ix = reduced_pos.x;
+    int iy = reduced_pos.y;
+    int iz = reduced_pos.z;
 
     // handle particles on the boundary
-    if (ix == nx)
+    if (ix == (int)nx)
         ix = 0;
-    if (iy == ny)
+    if (iy == (int)ny)
         iy = 0;
-    if (iz == nz) 
+    if (iz == (int)nz) 
         iz = 0;
 
     return make_uint3(ix, iy, iz);
@@ -182,6 +182,7 @@ __global__ void gpu_bin_particles_kernel(const unsigned int N,
         Scalar3 shift = f - c;
         uchar3 periodic = box.getPeriodic();
 
+        // handle particles at upper cell boundary
         if (periodic.x && shift.x > Scalar(1.0))
             shift.x -= (Scalar)dim.x;
         if (periodic.y && shift.y > Scalar(1.0))
