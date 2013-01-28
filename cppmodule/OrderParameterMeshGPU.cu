@@ -460,6 +460,7 @@ __global__ void gpu_coalesce_forces_kernel(const unsigned int n_wave_vectors,
     }
 
 __global__ void gpu_interpolate_forces_kernel(const unsigned int N,
+                                       const unsigned int Nglobal,
                                        const Scalar4 *d_postype,
                                        Scalar4 *d_force,
                                        const Scalar bias,
@@ -551,12 +552,14 @@ __global__ void gpu_interpolate_forces_kernel(const unsigned int N,
                 }  
 
     // Multiply with bias potential derivative
-    force *= bias/V;
+    Scalar Nsq = Nglobal * Nglobal;
+    force *= bias/V/Nsq/Nsq;
 
     d_force[idx] = make_scalar4(force.x,force.y,force.z,0.0);
     }
 
 void gpu_interpolate_forces(const unsigned int N,
+                             const unsigned int Nglobal,
                              const Scalar4 *d_postype,
                              Scalar4 *d_force,
                              const Scalar bias,
@@ -578,6 +581,7 @@ void gpu_interpolate_forces(const unsigned int N,
     cudaBindTexture(0, force_mesh_tex, d_force_mesh, sizeof(Scalar4)*num_cells);
 
     gpu_interpolate_forces_kernel<<<N/block_size+1,block_size>>>(N,
+                                                                 Nglobal,
                                                                  d_postype,
                                                                  d_force,
                                                                  bias,
@@ -893,9 +897,7 @@ __global__ void gpu_compute_influence_function_kernel(const Index3D mesh_idx,
     Scalar3 kval = (Scalar)l*b1+(Scalar)m*b2+(Scalar)n*b3;
     Scalar ksq = dot(kval,kval);
 
-    Scalar Nsq = (Scalar)N*(Scalar)N;
-
-    Scalar val = convolution_kernel(ksq,qstarsq)/Nsq/Nsq*V_box;
+    Scalar val = convolution_kernel(ksq,qstarsq)*V_box;
 
     int numi = (l > 0) ? 2 : 1;
     int numj = (m > 0) ? 2 : 1;

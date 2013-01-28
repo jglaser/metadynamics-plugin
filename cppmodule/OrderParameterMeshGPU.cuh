@@ -21,6 +21,7 @@ void gpu_update_meshes(const unsigned int n_wave_vectors,
                      cufftComplex *d_fourier_mesh_force);
 
 void gpu_interpolate_forces(const unsigned int N,
+                            const unsigned int Nglobal,
                              const Scalar4 *d_postype,
                              Scalar4 *d_force,
                              const Scalar bias,
