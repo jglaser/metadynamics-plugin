@@ -350,8 +350,7 @@ __global__ void gpu_compute_mesh_virial_kernel(const unsigned int n_wave_vectors
 
         Scalar rhog = f_g.x * f.x + f_g.y * f.y;
         Scalar3 k = d_k[idx];
-        Scalar ksq = dot(k,k);
-        Scalar kfac = Scalar(2.0)*(Scalar(1.0)+Scalar(1.0/2.0)*ksq/qstarsq)/ksq;
+        Scalar kfac = Scalar(1.0)/qstarsq;
         d_virial_mesh[0*n_wave_vectors+idx] = rhog*(Scalar(1.0) - kfac*k.x*k.x); // xx
         d_virial_mesh[1*n_wave_vectors+idx] = rhog*(            - kfac*k.x*k.y); // xy
         d_virial_mesh[2*n_wave_vectors+idx] = rhog*(            - kfac*k.x*k.z); // xz

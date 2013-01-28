@@ -627,8 +627,7 @@ void OrderParameterMesh::computeVirial()
 
             Scalar rhog = f_g.r * f.r + f_g.i * f.i;
             Scalar3 k = h_k.data[idx];
-            Scalar ksq = dot(k,k);
-            Scalar kfac = Scalar(2.0)*(Scalar(1.0)+Scalar(1.0/2.0)*ksq/m_qstarsq)/ksq;
+            Scalar kfac = Scalar(1.0)/m_qstarsq;
             virial[0] += rhog*(Scalar(1.0) - kfac*k.x*k.x); // xx
             virial[1] += rhog*(            - kfac*k.x*k.y); // xy
             virial[2] += rhog*(            - kfac*k.x*k.z); // xz
