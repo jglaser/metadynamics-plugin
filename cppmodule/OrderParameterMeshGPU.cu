@@ -303,7 +303,7 @@ void gpu_assign_binned_particles_to_mesh(const Index3D& mesh_idx,
     dim3 blockDim(block_size,block_size,block_size);
     dim3 gridDim((mesh_idx.getW() % block_size == 0) ? mesh_idx.getW()/block_size : mesh_idx.getW()/block_size+1,
                  (mesh_idx.getH() % block_size == 0) ? mesh_idx.getH()/block_size : mesh_idx.getH()/block_size+1,
-                 (mesh_idx.getD() % block_size == 0) ? mesh_idx.getD()/block_size : mesh_idx.getW()/block_size+1);
+                 (mesh_idx.getD() % block_size == 0) ? mesh_idx.getD()/block_size : mesh_idx.getD()/block_size+1);
 
     gpu_assign_binned_particles_to_mesh_kernel<<<gridDim,blockDim>>>(mesh_idx.getW(),
                                                                      mesh_idx.getH(),
