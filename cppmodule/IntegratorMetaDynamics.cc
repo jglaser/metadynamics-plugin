@@ -1443,8 +1443,6 @@ void IntegratorMetaDynamics::computeSigma()
 
     unsigned int ncv = m_num_biased_variables;
 
-    assert(m_sigma.getNumElements() = ncv*ncv);
-
     ArrayHandle<Scalar> h_sigma(m_sigma, access_location::host, access_mode::overwrite);
 
     for (iti = m_variables.begin(); iti != m_variables.end(); ++iti)
@@ -1453,8 +1451,6 @@ void IntegratorMetaDynamics::computeSigma()
 
         ArrayHandle<Scalar4> handle_i = ArrayHandle<Scalar4>(iti->m_cv->getForceArray(), access_location::host, access_mode::read);
         unsigned int i = iti - m_variables.begin();
-
-        assert(m_sigma[i].size() = ncv);
 
         for (itj = m_variables.begin(); itj != m_variables.end(); ++itj)
             {

@@ -4,6 +4,7 @@
 #define __ORDER_PARAMETER_MESH_H__
 
 #include "CollectiveVariable.h"
+
 /*! Order parameter evaluated using the particle mesh method
  */
 class OrderParameterMesh : public CollectiveVariable
@@ -46,10 +47,12 @@ class OrderParameterMesh : public CollectiveVariable
 
         Scalar3 m_mesh_size;                //!< The dimensions of a single cell along every coordinate
         uint3 m_mesh_points;                //!< Number of sub-divisions along one coordinate
+        uint3 m_n_ghost_cells;              //!< Number of ghost cells along every axis
         Index3D m_mesh_index;               //!< Indexer for the particle mesh 
         GPUArray<unsigned int> m_cell_adj;  //!< Cell adjacency list
         Index2D m_cell_adj_indexer;         //!< Indexes elements in the cell adjacency list
-        unsigned int m_radius;              //!< Radius of particle smearing (in units of mesh size)
+        unsigned int m_radius;              //!< Stencil radius (in units of mesh size)
+        unsigned int m_n_inner_cells;       //!< Number of inner mesh points (without ghost cells)
         GPUArray<Scalar> m_mode;            //!< Per-type scalar multiplying density ("charges")
         GPUArray<Scalar> m_inf_f;           //!< Fourier representation of the influence function (real part)
         GPUArray<Scalar3> m_k;              //!< Mesh of k values
@@ -57,7 +60,7 @@ class OrderParameterMesh : public CollectiveVariable
         bool m_is_first_step;               //!< True if we have not yet computed the influence function
         unsigned int m_cv_last_updated;     //!< Timestep of last update of collective variable
         bool m_box_changed;                 //!< True if box has changed since last compute
-	    Scalar m_cv;			    //!< Current value of collective variable
+	    Scalar m_cv;			            //!< Current value of collective variable
 
         GPUArray<Scalar> m_virial_mesh;     //!< k-space mesh of virial tensor values
 
@@ -103,6 +106,14 @@ class OrderParameterMesh : public CollectiveVariable
         kiss_fftnd_cfg m_kiss_ifft_y;      //!< Inverse FFT configuration, y component of force
         kiss_fftnd_cfg m_kiss_ifft_z;      //!< Inverse FFT configuration, z component of force
 
+        #ifdef ENABLE_MPI
+        boost::shared_ptr<DistributedKISSFFT> m_kiss_dfft;  //!< Distributed FFT for forward and inverse transforms
+        boost::shared_ptr<CommunicatorMesh<kiss_fft_cpx> > m_mesh_comm_forward; //!< Communicator for density map
+        boost::shared_ptr<CommunicatorMesh<kiss_fft_cpx> > m_mesh_comm_inverse; //!< Communicator for force mesh
+        #endif
+
+        bool m_kiss_fft_initialized;               //!< True if a local KISS FFT has been set up
+
         GPUArray<kiss_fft_cpx> m_mesh;             //!< The particle density mesh
         GPUArray<kiss_fft_cpx> m_fourier_mesh;     //!< The fourier transformed mesh
         GPUArray<kiss_fft_cpx> m_fourier_mesh_G;   //!< Fourier transformed mesh times the influence function
@@ -120,6 +131,15 @@ class OrderParameterMesh : public CollectiveVariable
         //!< Compute virial on mesh
         void computeVirialMesh();
     };
+
+//! Define plus operator for complex data type (needed by CommunicatorMesh)
+inline kiss_fft_cpx operator + (kiss_fft_cpx& lhs, kiss_fft_cpx& rhs)
+    {
+    kiss_fft_cpx res;
+    res.r = lhs.r + rhs.r;
+    res.i = lhs.i + rhs.i;
+    return res;
+    }
 
 void export_OrderParameterMesh();
 

@@ -1,8 +1,6 @@
 #include "OrderParameterMeshGPU.h"
 #include "OrderParameterMeshGPU.cuh"
 
-#include "DAFTGPU.h"
-
 using namespace boost::python;
 
 /*! \param sysdef The system definition
@@ -273,12 +271,12 @@ void OrderParameterMeshGPU::computeVirial()
      
     ArrayHandle<Scalar> h_sum_virial(m_sum_virial, access_location::host, access_mode::read);
 
-    Scalar Nsq = m_pdata->getNGlobal();
+    unsigned int Nsq = m_pdata->getNGlobal();
     Nsq *= Nsq;
 
     Scalar V = m_pdata->getGlobalBox().getVolume();
     for (unsigned int i = 0; i<6; ++i)
-        m_external_virial[i] = m_bias*Scalar(1.0/2.0)*h_sum_virial.data[i]/V/Nsq/Nsq;
+        m_external_virial[i] = m_bias*Scalar(1.0/2.0)*h_sum_virial.data[i]/V/((Scalar)(Nsq*Nsq));
       
     if (m_prof) m_prof->pop(m_exec_conf);
     }
@@ -334,32 +332,6 @@ void OrderParameterMeshGPU::computeInfluenceFunction()
     if (m_prof) m_prof->pop(m_exec_conf);
     }
 
-void OrderParameterMeshGPU::testFFT()
-    {
-    GPUArray<cufftComplex> in(1, m_exec_conf);
-    GPUArray<cufftComplex> out(1, m_exec_conf);
-        {
-        ArrayHandle<cufftComplex> h_in(in, access_location::host, access_mode::overwrite);
-        h_in.data[0].x = (Scalar)(m_exec_conf->getRank());
-        h_in.data[0].y = 0.0;
-        }
-
-    DAFTGPU daft(m_exec_conf,m_pdata->getDomainDecomposition(), 1,1,1);
-    daft.FFT3D(in, out, false);
-
-        {
-        ArrayHandle<cufftComplex> h_out(out, access_location::host, access_mode::read);
-        std::cout << "Rank " << m_exec_conf->getRank() << " " << h_out.data[0].x << " " << h_out.data[0].y << std::endl;
-        }
-
-    daft.FFT3D(out,in ,true);
-        {
-        ArrayHandle<cufftComplex> h_in(in, access_location::host, access_mode::read);
-        std::cout << "Rank " << m_exec_conf->getRank() << " " << h_in.data[0].x << " " << h_in.data[0].y << " (inverse)" << std::endl;
-        } 
-    }
-
-
 void export_OrderParameterMeshGPU()
     {
     class_<OrderParameterMeshGPU, boost::shared_ptr<OrderParameterMeshGPU>, bases<OrderParameterMesh>, boost::noncopyable >
@@ -369,7 +341,5 @@ void export_OrderParameterMeshGPU()
                                      const unsigned int,
                                      const Scalar,
                                      const std::vector<Scalar>&
-                                    >())
-        .def("testFFT", &OrderParameterMeshGPU::testFFT);
-
+                                    >());
     }
