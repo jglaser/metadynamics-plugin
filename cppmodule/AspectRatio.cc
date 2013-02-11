@@ -56,6 +56,11 @@ Scalar AspectRatio::getCurrentValue(unsigned int timestep)
 
 void AspectRatio::computeBiasForces(unsigned int timestep)
     {
+    #ifdef ENABLE_MPI
+    // only add contribution to external virial once (on root processor)
+    if (m_exec_conf->getRank()) return;
+    #endif
+
     const BoxDim& global_box = m_pdata->getGlobalBox();
     Scalar3 L = global_box.getL();
 
