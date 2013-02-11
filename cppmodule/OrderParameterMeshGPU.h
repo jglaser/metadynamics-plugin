@@ -5,6 +5,7 @@
 #ifndef __ORDER_PARAMETER_MESH_GPU_H__
 #define __ORDER_PARAMETER_MESH_GPU_H__
 
+#ifdef ENABLE_CUDA
 /*! Order parameter evaluated using the particle mesh method
  */
 class OrderParameterMeshGPU : public OrderParameterMesh
@@ -43,14 +44,27 @@ class OrderParameterMeshGPU : public OrderParameterMesh
 
     private:
         cufftHandle m_cufft_plan;          //!< The FFT plan
-        cufftHandle m_cufft_plan_force;    //!< The FFT plan for the force mesh
+        bool m_local_fft;                  //!< True if we are only doing local FFTs (not distributed)
 
-        GPUArray<cufftReal> m_mesh;                //!< The particle density mesh
-        GPUArray<cufftComplex> m_fourier_mesh;     //!< The fourier transformed mesh
-        GPUArray<cufftComplex> m_fourier_mesh_G;   //!< Fourier transformed mesh times the influence function
-        GPUArray<cufftComplex> m_fourier_mesh_force; //!< The fourier transformed force mesh
-        GPUArray<cufftReal> m_ifourier_mesh_force;//!< The inverse-fourier transformed force mesh
-        GPUArray<Scalar4> m_force_mesh;             //!< The force mesh
+        #ifdef ENABLE_MPI
+        typedef CommunicatorMeshGPU<cufftComplex, gpu_communicate_complex_mesh_map> CommunicatorMeshGPUComplex;
+        typedef CommunicatorMeshGPU<Scalar4, gpu_communicate_scalar4_mesh_map> CommunicatorMeshGPUScalar4;
+
+        boost::shared_ptr<DistributedFFTGPU> m_gpu_dfft;  //!< Distributed FFT for forward and inverse transforms
+        boost::shared_ptr<CommunicatorMeshGPUComplex> m_gpu_mesh_comm_forward; //!< Communicator for density map
+        boost::shared_ptr<CommunicatorMeshGPUScalar4> m_gpu_mesh_comm_inverse; //!< Communicator for force mesh
+        #endif
+
+        GPUArray<cufftComplex> m_mesh;                 //!< The particle density mesh
+        GPUArray<cufftComplex> m_fourier_mesh;         //!< The fourier transformed mesh
+        GPUArray<cufftComplex> m_fourier_mesh_G;       //!< Fourier transformed mesh times the influence function
+        GPUArray<cufftComplex> m_fourier_mesh_force_x; //!< Force mesh in Fourier space, x component
+        GPUArray<cufftComplex> m_fourier_mesh_force_y; //!< Force mesh in Fourier space, y component
+        GPUArray<cufftComplex> m_fourier_mesh_force_z; //!< Force mesh in Fourier space, z component
+        GPUArray<cufftComplex> m_force_mesh_x;      //!< The inverse-fourier transformed force mesh, x component
+        GPUArray<cufftComplex> m_force_mesh_y;      //!< The inverse-fourier transformed force mesh, y component
+        GPUArray<cufftComplex> m_force_mesh_z;      //!< The inverse-fourier transformed force mesh, z component
+        GPUArray<Scalar4> m_force_mesh;             //!< Storage for force vectors
 
         GPUArray<Scalar4> m_particle_bins;         //!< Cell list for particle positions and modes
         GPUArray<unsigned int> m_n_cell;           //!< Number of particles per cell
@@ -62,9 +76,30 @@ class OrderParameterMeshGPU : public OrderParameterMesh
         GPUArray<Scalar> m_sum_virial_partial;     //!< Partial sums over virial mesh values
         GPUArray<Scalar> m_sum_virial;             //!< Final sum over virial mesh values
         unsigned int m_block_size;                 //!< Block size for fourier mesh reduction
-        unsigned m_num_fourier_cells;              //!< Number of complex values in fourier mesh
     };
+
+//! Define plus operator for complex data type (only need to compile by CommunicatorMesh base class)
+inline cufftComplex operator + (cufftComplex& lhs, cufftComplex& rhs)
+    {
+    cufftComplex res;
+    res.x = lhs.x + rhs.x;
+    res.y = lhs.y + rhs.y;
+    return res;
+    }
+
+//! Define plus operator for Scalar4 data type (only need to compile by CommunicatorMesh base class)
+inline Scalar4 operator + (Scalar4& lhs, Scalar4& rhs)
+    {
+    Scalar4 res;
+    res.x = lhs.x + rhs.x;
+    res.y = lhs.y + rhs.y;
+    res.z = lhs.z + rhs.z;
+    res.w = lhs.w + rhs.w;
+    return res;
+    }
+
 
 void export_OrderParameterMeshGPU();
 
-#endif
+#endif // ENABLE_CUDA
+#endif // __ORDER_PARAMETER_MESH_GPU_H__

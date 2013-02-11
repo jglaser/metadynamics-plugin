@@ -47,6 +47,42 @@ OrderParameterMesh::OrderParameterMesh(boost::shared_ptr<SystemDefinition> sysde
 
     m_mesh_points = make_uint3(nx, ny, nz);
 
+    #ifdef ENABLE_MPI
+    if (m_pdata->getDomainDecomposition())
+        {
+        const Index3D& didx = m_pdata->getDomainDecomposition()->getDomainIndexer();
+
+        if (nx % didx.getW())
+            {
+            m_exec_conf->msg->error()
+                << "The number of mesh points along the x-direction ("<< nx <<") is not" << std::endl
+                << "a multiple of the width (" << didx.getW() << ") of the processsor grid!" << std::endl
+                << std::endl;
+            throw std::runtime_error("Error initializing cv.mesh");
+            }
+        if (ny % didx.getH())
+            {
+            m_exec_conf->msg->error()
+                << "The number of mesh points along the y-direction ("<< ny <<") is not" << std::endl 
+                << "a multiple of the height (" << didx.getH() << ") of the processsor grid!" << std::endl
+                << std::endl;
+            throw std::runtime_error("Error initializing cv.mesh");
+            }
+        if (nz % didx.getD())
+            {
+            m_exec_conf->msg->error()
+                << "The number of mesh points along the z-direction ("<< nz <<") is not" << std::endl
+                << "a multiple of the depth (" << didx.getD() << ") of the processsor grid!" << std::endl
+                << std::endl;
+            throw std::runtime_error("Error initializing cv.mesh");
+            }
+
+        m_mesh_points.x /= didx.getW();
+        m_mesh_points.y /= didx.getH();
+        m_mesh_points.z /= didx.getD();
+        }
+    #endif // ENABLE_MPI
+
     // reset virial
     ArrayHandle<Scalar> h_virial(m_virial, access_location::host, access_mode::overwrite);
     memset(h_virial.data, 0, sizeof(Scalar)*m_virial.getNumElements());
@@ -69,13 +105,6 @@ OrderParameterMesh::~OrderParameterMesh()
 
 void OrderParameterMesh::setupMesh()
     {
-    if ((m_mesh_points.x % 2) || (m_mesh_points.y % 2) || (m_mesh_points.z %2))
-        {
-        m_exec_conf->msg->warning() << "Number of mesh points must be even."
-                                    << std::endl << std::endl;
-        throw std::runtime_error("Error setting up mesh.");
-        } 
-
     // set up ghost layer
     const BoxDim& box = m_pdata->getBox();
     uchar3 periodic = box.getPeriodic();
@@ -238,7 +267,7 @@ void OrderParameterMesh::computeInfluenceFunction()
 
         int3 n = make_int3(wave_idx.x,wave_idx.y,wave_idx.z);
 
-        // compute wave number
+        // compute Miller indices
         if (n.x >= (int)(global_dim.x/2 + global_dim.x%2))
             n.x -= (int) global_dim.x;
         if (n.y >= (int)(global_dim.y/2 + global_dim.y%2))
@@ -387,9 +416,9 @@ void OrderParameterMesh::assignParticles()
                                            f.z * (Scalar) m_mesh_points.z);
 
         // find cell the particle is in
-        unsigned int ix = ((unsigned int)reduced_pos.x) + m_n_ghost_cells.x/2;
-        unsigned int iy = ((unsigned int)reduced_pos.y) + m_n_ghost_cells.y/2;
-        unsigned int iz = ((unsigned int)reduced_pos.z) + m_n_ghost_cells.z/2;
+        unsigned int ix = (((int)reduced_pos.x) + (int)m_n_ghost_cells.x/2);
+        unsigned int iy = (((int)reduced_pos.y) + (int)m_n_ghost_cells.y/2);
+        unsigned int iz = (((int)reduced_pos.z) + (int)m_n_ghost_cells.z/2);
 
         // handle particles on the boundary
         if (ix == m_mesh_points.x && !m_n_ghost_cells.x)
@@ -413,7 +442,7 @@ void OrderParameterMesh::assignParticles()
                                               (Scalar) (cell_coord.y) - (Scalar)(m_n_ghost_cells.y/2) + Scalar(0.5),
                                               (Scalar) (cell_coord.z) - (Scalar)(m_n_ghost_cells.z/2) + Scalar(0.5));
  
-                        // coordinates of the neighboring cell between 0..1 
+            // coordinates of the neighboring cell between 0..1 
             Scalar3 neigh_frac_box = neigh_frac * dim_inv;
             Scalar3 neigh_pos = box.makeCoordinates(neigh_frac_box);
 
@@ -601,9 +630,9 @@ void OrderParameterMesh::interpolateForces()
                                            f.z * (Scalar) m_mesh_points.z);
 
         // find cell the particle is in
-        unsigned int ix = ((unsigned int)reduced_pos.x) + m_n_ghost_cells.x/2;
-        unsigned int iy = ((unsigned int)reduced_pos.y) + m_n_ghost_cells.y/2;
-        unsigned int iz = ((unsigned int)reduced_pos.z) + m_n_ghost_cells.z/2;
+        unsigned int ix = (((int)reduced_pos.x) + (int)m_n_ghost_cells.x/2);
+        unsigned int iy = (((int)reduced_pos.y) + (int)m_n_ghost_cells.y/2);
+        unsigned int iz = (((int)reduced_pos.z) + (int)m_n_ghost_cells.z/2);
 
         // handle particles on the boundary
         if (ix == m_mesh_points.x && !m_n_ghost_cells.x)
@@ -683,14 +712,17 @@ Scalar OrderParameterMesh::computeCV()
 
     for (unsigned int k = 0; k < m_n_inner_cells; ++k)
         {
-        uint3 n;
+        bool exclude;
         if (local_fft)
-            n = m_mesh_index.getTriple(k);
+            // exclude DC bin
+            exclude = (k == 0);
         #ifdef ENABLE_MPI
         else
-            n = dffti(k);
+            {
+            uint3 n = dffti(k);
+            exclude = (n.x == 0 && n.y == 0 && n.z == 0);
+            }
         #endif
-        bool exclude = (n.x == 0 && n.y == 0 && n.z == 0);
 
         if (! exclude)
             sum += h_fourier_mesh_G.data[k].r * h_fourier_mesh.data[k].r
@@ -771,14 +803,17 @@ void OrderParameterMesh::computeVirial()
 
     for (unsigned int kidx = 0; kidx < m_n_inner_cells; ++kidx)
         {
-        uint3 n;
+        bool exclude;
         if (local_fft)
-            n = m_mesh_index.getTriple(kidx);
+            // exclude DC bin
+            exclude = (kidx == 0);
         #ifdef ENABLE_MPI
         else
-            n = dffti(kidx);
+            {
+            uint3 n = dffti(kidx);
+            exclude = (n.x == 0 && n.y == 0 && n.z == 0);
+            }
         #endif
-        bool exclude = (n.x == 0 && n.y == 0 && n.z == 0);
 
         if (! exclude)
             {
