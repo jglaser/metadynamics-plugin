@@ -278,7 +278,7 @@ void OrderParameterMesh::computeInfluenceFunction()
         Scalar3 k = (Scalar)n.x*b1+(Scalar)n.y*b2+(Scalar)n.z*b3;
         Scalar ksq = dot(k,k);
 
-        Scalar val = exp(-ksq/m_qstarsq*Scalar(1.0/2.0))*V_box;
+        Scalar val = exp(-ksq/m_qstarsq*Scalar(1.0/2.0));
 
         h_inf_f.data[cell_idx] = val;
 
@@ -515,6 +515,8 @@ void OrderParameterMesh::updateMeshes()
     #endif
     Scalar V_cell = V/((Scalar)n_tot_mesh_points);
 
+    unsigned int N_global = m_pdata->getNGlobal();
+
         {
         ArrayHandle<kiss_fft_cpx> h_fourier_mesh_x(m_fourier_mesh_x, access_location::host, access_mode::overwrite);
         ArrayHandle<kiss_fft_cpx> h_fourier_mesh_y(m_fourier_mesh_y, access_location::host, access_mode::overwrite);
@@ -523,18 +525,21 @@ void OrderParameterMesh::updateMeshes()
         // multiply with influence function
         for (unsigned int k = 0; k < m_n_inner_cells; ++k)
             {
-            h_fourier_mesh.data[k].r *= V_cell;
-            h_fourier_mesh.data[k].i *= V_cell;
-
             kiss_fft_cpx f = h_fourier_mesh.data[k];
+
+            // normalization
+            f.r *= V_cell/ (Scalar) N_global;
+            f.i *= V_cell/ (Scalar) N_global;
 
             Scalar val = f.r*f.r+f.i*f.i;
 
             h_fourier_mesh_G.data[k].r = f.r * val * h_inf_f.data[k];
             h_fourier_mesh_G.data[k].i = f.i * val * h_inf_f.data[k];
 
+            h_fourier_mesh.data[k] = f;
+
             // factor of two to account for derivative of fourth power of a mode
-            Scalar3 kval = Scalar(2.0)*h_k.data[k];
+            Scalar3 kval = Scalar(2.0)*h_k.data[k]/(Scalar)N_global;
             h_fourier_mesh_x.data[k].r = -h_fourier_mesh_G.data[k].i*kval.x;
             h_fourier_mesh_x.data[k].i = h_fourier_mesh_G.data[k].r*kval.x;
 
@@ -599,10 +604,7 @@ void OrderParameterMesh::interpolateForces()
 
     ArrayHandle<Scalar4> h_force(m_force, access_location::host, access_mode::overwrite);
 
-    const BoxDim& global_box = m_pdata->getGlobalBox();
     const BoxDim& box = m_pdata->getBox();
-
-    const Scalar V = global_box.getVolume();
 
     // inverse dimensions
     Scalar3 dim_inv = make_scalar3(Scalar(1.0)/(Scalar)m_mesh_points.x,
@@ -610,10 +612,6 @@ void OrderParameterMesh::interpolateForces()
                                    Scalar(1.0)/(Scalar)m_mesh_points.z); 
 
     // particle number
-    Scalar N_global = m_pdata->getNGlobal();
-    unsigned int Nsq = N_global*N_global;
-    Scalar norm = V*(Scalar)(Nsq*Nsq);
-
     bool local_fft = m_kiss_fft_initialized;
 
     for (unsigned int idx = 0; idx < m_pdata->getN(); ++idx)
@@ -682,7 +680,7 @@ void OrderParameterMesh::interpolateForces()
             }  
 
         // Multiply with bias potential derivative
-        force *= m_bias/norm;
+        force *= m_bias;
 
         h_force.data[idx] = make_scalar4(force.x,force.y,force.z,0.0);
          
@@ -699,10 +697,6 @@ Scalar OrderParameterMesh::computeCV()
     ArrayHandle<kiss_fft_cpx> h_fourier_mesh_G(m_fourier_mesh_G, access_location::host, access_mode::read);
 
     Scalar sum(0.0);
-
-    Scalar V = m_pdata->getGlobalBox().getVolume();
-    Scalar N_global = m_pdata->getNGlobal();
-    unsigned int Nsq = N_global*N_global;
 
     bool local_fft = m_kiss_fft_initialized;
     #ifdef ENABLE_MPI
@@ -729,7 +723,7 @@ Scalar OrderParameterMesh::computeCV()
                 + h_fourier_mesh_G.data[k].i * h_fourier_mesh.data[k].i;
         }
 
-    sum *= Scalar(1.0/2.0)/V/((Scalar)(Nsq*Nsq));
+    sum *= Scalar(1.0/2.0);
 
     #ifdef ENABLE_MPI
     if (m_pdata->getDomainDecomposition())
@@ -833,12 +827,8 @@ void OrderParameterMesh::computeVirial()
             }
         } 
 
-    Scalar V = m_pdata->getGlobalBox().getVolume();
-    Scalar N_global = m_pdata->getNGlobal();
-    unsigned int Nsq = N_global * N_global;
-    Scalar norm = V*(Scalar)(Nsq*Nsq);
     for (unsigned int i = 0; i < 6; ++i)
-        m_external_virial[i] = m_bias*Scalar(1.0/2.0)*virial[i]/norm;
+        m_external_virial[i] = m_bias*Scalar(1.0/2.0)*virial[i];
 
     if (m_prof) m_prof->pop();
     }
