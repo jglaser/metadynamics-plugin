@@ -254,6 +254,7 @@ void OrderParameterMeshGPU::updateMeshes()
                           d_inf_f.data,
                           d_k.data,
                           V_cell,
+                          m_pdata->getNGlobal(),
                           d_fourier_mesh_force_x.data,
                           d_fourier_mesh_force_y.data,
                           d_fourier_mesh_force_z.data);
@@ -328,7 +329,6 @@ void OrderParameterMeshGPU::interpolateForces()
     ArrayHandle<Scalar4> d_force(m_force, access_location::device, access_mode::overwrite);
 
     gpu_interpolate_forces(m_pdata->getN(),
-                           m_pdata->getNGlobal(),
                            d_postype.data,
                            d_force.data,
                            m_bias,
@@ -374,8 +374,7 @@ void OrderParameterMeshGPU::computeVirial()
                            d_sum_virial_partial.data,
                            d_sum_virial.data,
                            d_virial_mesh.data,
-                           m_block_size,
-                           m_mesh_index);
+                           m_block_size);
 
         if (m_exec_conf->isCUDAErrorCheckingEnabled())
             CHECK_CUDA_ERROR();
@@ -383,12 +382,8 @@ void OrderParameterMeshGPU::computeVirial()
      
     ArrayHandle<Scalar> h_sum_virial(m_sum_virial, access_location::host, access_mode::read);
 
-    unsigned int Nsq = m_pdata->getNGlobal();
-    Nsq *= Nsq;
-
-    Scalar V = m_pdata->getGlobalBox().getVolume();
     for (unsigned int i = 0; i<6; ++i)
-        m_external_virial[i] = m_bias*Scalar(1.0/2.0)*h_sum_virial.data[i]/V/((Scalar)(Nsq*Nsq));
+        m_external_virial[i] = m_bias*Scalar(1.0/2.0)*h_sum_virial.data[i];
       
     if (m_prof) m_prof->pop(m_exec_conf);
     }
@@ -414,10 +409,7 @@ Scalar OrderParameterMeshGPU::computeCV()
     if (m_exec_conf->isCUDAErrorCheckingEnabled())
         CHECK_CUDA_ERROR();
 
-    Scalar sum = m_sum.readFlags()*Scalar(1.0/2.0) /m_pdata->getGlobalBox().getVolume();
-    Scalar Nsq = m_pdata->getNGlobal();
-    Nsq *= Nsq;
-    sum /= Nsq*Nsq;
+    Scalar sum = m_sum.readFlags()*Scalar(1.0/2.0);
 
     #ifdef ENABLE_MPI
     if (m_pdata->getDomainDecomposition())

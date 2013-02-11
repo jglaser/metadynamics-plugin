@@ -52,6 +52,7 @@ void gpu_update_meshes(const unsigned int n_wave_vectors,
                          const Scalar *d_inf_f,
                          const Scalar3 *d_k,
                          const Scalar V_cell,
+                         const unsigned int N_global,
                          cufftComplex *d_fourier_mesh_force_x,
                          cufftComplex *d_fourier_mesh_force_y,
                          cufftComplex *d_fourier_mesh_force_z);
@@ -63,7 +64,6 @@ void gpu_coalesce_forces(const unsigned int num_force_cells,
                          Scalar4 *d_force_mesh);
 
 void gpu_interpolate_forces(const unsigned int N,
-                             const unsigned int Nglobal,
                              const Scalar4 *d_postype,
                              Scalar4 *d_force,
                              const Scalar bias,
@@ -88,8 +88,7 @@ void gpu_compute_virial(unsigned int n_wave_vectors,
                    Scalar *d_sum_virial_partial,
                    Scalar *d_sum_virial,
                    const Scalar *d_mesh_virial,
-                   const unsigned int block_size,
-                   const Index3D& mesh_idx);
+                   const unsigned int block_size);
 
 void gpu_compute_influence_function(const Index3D& mesh_idx,
                                     const uint3 n_ghost_cells,

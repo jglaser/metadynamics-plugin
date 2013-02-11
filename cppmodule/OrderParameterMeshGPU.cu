@@ -482,6 +482,7 @@ __global__ void gpu_update_meshes_kernel(const unsigned int n_wave_vectors,
                                          const Scalar *d_inf_f,
                                          const Scalar3 *d_k,
                                          const Scalar V_cell,
+                                         const unsigned int N_global,
                                          cufftComplex *d_fourier_mesh_force_x,
                                          cufftComplex *d_fourier_mesh_force_y,
                                          cufftComplex *d_fourier_mesh_force_z)
@@ -494,14 +495,17 @@ __global__ void gpu_update_meshes_kernel(const unsigned int n_wave_vectors,
 
     f.x *= V_cell;
     f.y *= V_cell;
+    
+    // Normalization
+    f.x /= (Scalar)N_global;
+    f.y /= (Scalar)N_global;
 
     Scalar val = f.x*f.x+f.y*f.y;
-
     cufftComplex fourier_G;
     fourier_G.x =f.x * val * d_inf_f[k];
     fourier_G.y =f.y * val * d_inf_f[k];
 
-    Scalar3 kval = Scalar(2.0)*d_k[k];
+    Scalar3 kval = Scalar(2.0)*d_k[k]/(Scalar)N_global;
     d_fourier_mesh_force_x[k].x = -fourier_G.y*kval.x;
     d_fourier_mesh_force_x[k].y = fourier_G.x*kval.x;
 
@@ -521,6 +525,7 @@ void gpu_update_meshes(const unsigned int n_wave_vectors,
                          const Scalar *d_inf_f,
                          const Scalar3 *d_k,
                          const Scalar V_cell,
+                         const unsigned int N_global,
                          cufftComplex *d_fourier_mesh_force_x,
                          cufftComplex *d_fourier_mesh_force_y,
                          cufftComplex *d_fourier_mesh_force_z)
@@ -534,6 +539,7 @@ void gpu_update_meshes(const unsigned int n_wave_vectors,
                                                                           d_inf_f,
                                                                           d_k,
                                                                           V_cell,
+                                                                          N_global,
                                                                           d_fourier_mesh_force_x,
                                                                           d_fourier_mesh_force_y,
                                                                           d_fourier_mesh_force_z);
@@ -560,7 +566,6 @@ __global__ void gpu_coalesce_forces_kernel(const unsigned int n_force_cells,
 
 template<bool local_fft>
 __global__ void gpu_interpolate_forces_kernel(const unsigned int N,
-                                              const unsigned int Nglobal,
                                               const Scalar4 *d_postype,
                                               Scalar4 *d_force,
                                               const Scalar bias,
@@ -647,8 +652,7 @@ __global__ void gpu_interpolate_forces_kernel(const unsigned int N,
                 }  
 
     // Multiply with bias potential derivative
-    Scalar Nsq = Nglobal * Nglobal;
-    force *= bias/V/Nsq/Nsq;
+    force *= bias;
 
     d_force[idx] = make_scalar4(force.x,force.y,force.z,0.0);
     }
@@ -670,7 +674,6 @@ void gpu_coalesce_forces(const unsigned int num_force_cells,
     }
 
 void gpu_interpolate_forces(const unsigned int N,
-                             const unsigned int Nglobal,
                              const Scalar4 *d_postype,
                              Scalar4 *d_force,
                              const Scalar bias,
@@ -692,7 +695,6 @@ void gpu_interpolate_forces(const unsigned int N,
 
     if (local_fft)
         gpu_interpolate_forces_kernel<true><<<N/block_size+1,block_size>>>(N,
-                                                                     Nglobal,
                                                                      d_postype,
                                                                      d_force,
                                                                      bias,
@@ -703,7 +705,6 @@ void gpu_interpolate_forces(const unsigned int N,
                                                                      global_box.getVolume());
     else
         gpu_interpolate_forces_kernel<false><<<N/block_size+1,block_size>>>(N,
-                                                                     Nglobal,
                                                                      d_postype,
                                                                      d_force,
                                                                      bias,
@@ -871,7 +872,7 @@ __global__ void kernel_calculate_virial_partial(
         __syncthreads();
         }
 
-    // write result to global memeory
+    // write result to global memory
     if (tidx == 0)
         {
         sum_virial_partial[0*gridDim.x+blockIdx.x] = sdata[0*blockDim.x];
@@ -957,8 +958,7 @@ void gpu_compute_virial(unsigned int n_wave_vectors,
                    Scalar *d_sum_virial_partial,
                    Scalar *d_sum_virial,
                    const Scalar *d_mesh_virial,
-                   const unsigned int block_size,
-                   const Index3D& mesh_idx)
+                   const unsigned int block_size)
     {
     unsigned int n_blocks = n_wave_vectors/block_size + 1;
 
@@ -990,7 +990,6 @@ __global__ void gpu_compute_influence_function_kernel(const Index3D mesh_idx,
                                           const Scalar3 b1,
                                           const Scalar3 b2,
                                           const Scalar3 b3,
-                                          const Scalar V_box,
                                           const Scalar qstarsq
 #ifdef ENABLE_MPI
                                           , const DFFTIndex dffti
@@ -1033,7 +1032,7 @@ __global__ void gpu_compute_influence_function_kernel(const Index3D mesh_idx,
     Scalar3 kval = (Scalar)l*b1+(Scalar)m*b2+(Scalar)n*b3;
     Scalar ksq = dot(kval,kval);
 
-    Scalar val = convolution_kernel(ksq,qstarsq)*V_box;
+    Scalar val = convolution_kernel(ksq,qstarsq);
 
     unsigned int cell_idx;
     if (local_fft)
@@ -1087,7 +1086,6 @@ void gpu_compute_influence_function(const Index3D& mesh_idx,
                                                                               b1,
                                                                               b2,
                                                                               b3,
-                                                                              V_box, 
                                                                               qstarsq
 #ifdef ENABLE_MPI
                                                                               , dffti
@@ -1104,7 +1102,6 @@ void gpu_compute_influence_function(const Index3D& mesh_idx,
                                                                              b1,
                                                                              b2,
                                                                              b3,
-                                                                             V_box,
                                                                              qstarsq,
                                                                              dffti);
 #endif 
