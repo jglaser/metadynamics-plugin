@@ -31,116 +31,7 @@ OrderParameterMeshGPU::OrderParameterMeshGPU(boost::shared_ptr<SystemDefinition>
 
     // initial value of number of particles per bin
     m_cell_size = 2;
-
-    #ifdef ENABLE_MPI
-    m_local_fft = !m_pdata->getDomainDecomposition();
-    #endif
     }
-
-inline bool operator < (int4 lhs, int4 rhs)
-    {
-    return lhs.w < rhs.w;
-    }
-
-void OrderParameterMeshGPU::initializeBinAdj()
-    {
-    m_bin_adj_indexer = Index2D((m_radius*2+1)*(m_radius*2+1)*(m_radius*2+1), m_mesh_index.getNumElements());
-
-    // allocate adjacency matrix and neighbor bin cout
-    GPUArray<int4> bin_adj(m_bin_adj_indexer.getNumElements(), m_exec_conf);
-    m_bin_adj.swap(bin_adj);
-
-    GPUArray<unsigned int> n_bin_adj(m_mesh_index.getNumElements(), m_exec_conf);
-    m_n_bin_adj.swap(n_bin_adj);
-
-    ArrayHandle<int4> h_bin_adj(m_bin_adj, access_location::host, access_mode::overwrite);
-    ArrayHandle<unsigned int> h_n_bin_adj(m_n_bin_adj, access_location::host, access_mode::overwrite);
-
-    // reset bin adjacency matrix and neighbor bin count to zero
-    memset(h_bin_adj.data, 0, sizeof(int4)*m_bin_adj.getNumElements());
-    memset(h_n_bin_adj.data, 0, sizeof(unsigned int)*m_n_bin_adj.getNumElements());
-
-    // loop over all inner cells
-    for (int k = 0; k < int(m_mesh_index.getD()); k++)
-        for (int j = 0; j < int(m_mesh_index.getH()); j++)
-            for (int i = 0; i < int(m_mesh_index.getW()); i++)
-                {
-                unsigned int cur_cell;
-                if (m_local_fft)
-                    // for local FFT, use cuFFT's memory layout
-                    cur_cell = k + m_mesh_index.getD() * (j + m_mesh_index.getH() * i);
-                else
-                    cur_cell = m_mesh_index(i,j,k);
-
-                unsigned int offset = 0;
-
-                // loop over neighboring cells
-                // need signed integer values for performing index calculations with negative values
-                int r = m_radius;
-                for (int nk = k-r; nk <= k+r; nk++)
-                    for (int nj = j-r; nj <= j+r; nj++)
-                        for (int ni = i-r; ni <= i+r; ni++)
-                            {
-                            int3 shift = make_int3(ni-i, nj-j, nk-k);
-                            int wrapi = ni;
-                            int wrapj = nj;
-                            int wrapk = nk;
-
-                            // when using ghost cells, only add particles from inner bins
-                            if (m_n_ghost_cells.x)
-                                {
-                                if ((wrapi >= (int)(m_mesh_points.x+m_n_ghost_cells.x/2)) ||
-                                    (wrapi < (int)m_n_ghost_cells.x/2)) continue;
-                                }
-                            else
-                                {
-                                if (wrapi == (int)m_mesh_points.x)
-                                    wrapi = 0;
-                                else if (wrapi < 0)
-                                    wrapi += (int)m_mesh_points.x; 
-                                }
-
-                            if (m_n_ghost_cells.y)
-                                {
-                                if ((wrapj >= (int)(m_mesh_points.y+m_n_ghost_cells.y/2)) ||
-                                    (wrapj < (int)m_n_ghost_cells.y/2)) continue;
-                                }
-                            else
-                                {
-                                if (wrapj == (int)m_mesh_points.y)
-                                    wrapj = 0;
-                                else if (wrapj < 0)
-                                    wrapj += (int) m_mesh_points.y;
-                                }
-
-                            if (m_n_ghost_cells.z)
-                                {
-                                if ((wrapk >= (int)(m_mesh_points.z+m_n_ghost_cells.z/2)) ||
-                                    (wrapk < (int)m_n_ghost_cells.z/2)) continue;
-                                }
-                            else
-                                {
-                                if (wrapk == (int)m_mesh_points.z)
-                                    wrapk = 0;
-                                else if (wrapk < 0)
-                                    wrapk += (int)m_mesh_points.z;
-                                }
-                            uint3 bin_idx = make_uint3((unsigned int)wrapi - m_n_ghost_cells.x/2,
-                                                       (unsigned int)wrapj - m_n_ghost_cells.y/2,
-                                                       (unsigned int)wrapk - m_n_ghost_cells.z/2);
-                            unsigned int neigh_bin = bin_idx.z + m_mesh_points.z *(bin_idx.y + m_mesh_points.y * bin_idx.x);
-
-                            int4 adj = make_int4(shift.x, shift.y, shift.z, neigh_bin);
-                            h_bin_adj.data[m_bin_adj_indexer(offset, cur_cell)] = adj;
-                            offset++;
-                            }
-
-                // sort the adj list for each cell
-                sort(&h_bin_adj.data[m_cell_adj_indexer(0, cur_cell)],
-                     &h_bin_adj.data[m_cell_adj_indexer(offset, cur_cell)]);
-                h_n_bin_adj.data[cur_cell] = offset;
-                }
-    } 
 
 OrderParameterMeshGPU::~OrderParameterMeshGPU()
     {
@@ -150,6 +41,8 @@ OrderParameterMeshGPU::~OrderParameterMeshGPU()
 void OrderParameterMeshGPU::initializeFFT()
     {
     #ifdef ENABLE_MPI
+    m_local_fft = !m_pdata->getDomainDecomposition();
+
     if (! m_local_fft)
         {
         // ghost cell exchanger for forward direction
@@ -163,7 +56,6 @@ void OrderParameterMeshGPU::initializeFFT()
         // set up distributed FFT 
         m_gpu_dfft = boost::shared_ptr<DistributedFFTGPU>(
             new DistributedFFTGPU(m_exec_conf, m_pdata->getDomainDecomposition(), m_mesh_index, m_n_ghost_cells));
-        m_gpu_dfft->setProfiler(m_prof);
         }
     #endif // ENABLE_MPI
 
@@ -216,8 +108,6 @@ void OrderParameterMeshGPU::initializeFFT()
         m_cell_overflowed.swap(cell_overflowed);
 
         m_cell_overflowed.resetFlags(0);
-
-        initializeBinAdj();
         }
     }
 
@@ -296,14 +186,9 @@ void OrderParameterMeshGPU::assignParticles()
 
         // assign particles to mesh
         ArrayHandle<Scalar4> d_particle_bins(m_particle_bins, access_location::device, access_mode::read);
-        ArrayHandle<unsigned int> d_n_bin_adj(m_n_bin_adj, access_location::device, access_mode::read);
-        ArrayHandle<int4> d_bin_adj(m_bin_adj, access_location::device, access_mode::read);
         
         gpu_assign_binned_particles_to_mesh(m_mesh_index,
                                             m_n_ghost_cells,
-                                            m_bin_adj_indexer,
-                                            d_n_bin_adj.data,
-                                            d_bin_adj.data,
                                             d_particle_bins.data,     
                                             d_n_cell.data,
                                             m_cell_size,
