@@ -56,6 +56,7 @@ void OrderParameterMeshGPU::initializeFFT()
         // set up distributed FFT 
         m_gpu_dfft = boost::shared_ptr<DistributedFFTGPU>(
             new DistributedFFTGPU(m_exec_conf, m_pdata->getDomainDecomposition(), m_mesh_index, m_n_ghost_cells));
+        m_gpu_dfft->setProfiler(m_prof);
         }
     #endif // ENABLE_MPI
 
