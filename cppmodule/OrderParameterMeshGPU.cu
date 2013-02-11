@@ -235,6 +235,7 @@ void gpu_bin_particles(const unsigned int N,
 
 
 texture<Scalar4, 1, cudaReadModeElementType> particle_bins_tex;
+texture<int4, 1, cudaReadModeElementType> bin_adj_tex;
 
 template<bool local_fft>
 __global__ void gpu_assign_binned_particles_to_mesh_kernel(const unsigned int inner_nx,
@@ -242,6 +243,8 @@ __global__ void gpu_assign_binned_particles_to_mesh_kernel(const unsigned int in
                                                            const unsigned int inner_nz,
                                                            const Index3D mesh_idx,
                                                            const uint3 n_ghost_cells,
+                                                           const unsigned int *d_n_bin_adj,
+                                                           const Index2D badji,
                                                            const unsigned int *d_n_cell,
                                                            const unsigned int maxn,
                                                            cufftComplex *d_mesh,
@@ -263,75 +266,28 @@ __global__ void gpu_assign_binned_particles_to_mesh_kernel(const unsigned int in
     Scalar V_cell = box.getVolume()/(Scalar)(inner_nx*inner_ny*inner_nz);
     Scalar grid_val(0.0);
 
-    // loop over particles in neighboring bins
-    for (int l = -1; l <= 1 ; ++l)
-    	for (int m = -1; m <= 1; ++m)
-            for (int n = -1; n <= 1; ++n)
-                {
-                int neighi = i + l;
-                int neighj = j + m;
-                int neighk = k + n;
+    unsigned int n_adj = d_n_bin_adj[cell_idx];
+    for (unsigned int k = 0; k < n_adj; ++k)
+        {
+        int4 adj = tex1Dfetch(bin_adj_tex,badji(k, cell_idx));
+        unsigned neigh_bin = adj.w;
 
-                // when using ghost cells, only add particles from inner bins
-                if (n_ghost_cells.x)
-                    {
-                    if ((neighi >= (int)(inner_nx+n_ghost_cells.x/2)) ||
-                        (neighi < (int)n_ghost_cells.x/2)) continue;
-                    }
-                else
-                    {
-                    if (neighi == (int)inner_nx)
-                        neighi = 0;
-                    else if (neighi < 0)
-                        neighi += (int)inner_nx; 
-                    }
+        unsigned int n_bin = d_n_cell[neigh_bin];
+        Scalar3 cell_shift = make_scalar3((Scalar)adj.x, (Scalar)adj.y,(Scalar)adj.z);
 
-                if (n_ghost_cells.y)
-                    {
-                    if ((neighj >= (int)(inner_ny+n_ghost_cells.y/2)) ||
-                        (neighj < (int)n_ghost_cells.y/2)) continue;
-                    }
-                else
-                    {
-                    if (neighj == (int)inner_ny)
-                        neighj = 0;
-                    else if (neighj < 0)
-                        neighj += (int) inner_ny;
-                    }
+        // loop over particles in bin
+        for (unsigned int neigh_idx = 0; neigh_idx < n_bin; neigh_idx++)
+            {
+            Scalar4 xyzm = tex1Dfetch(particle_bins_tex, maxn*neigh_bin+neigh_idx);
+            Scalar3 shift_frac = make_scalar3(xyzm.x, xyzm.y, xyzm.z);
 
-                if (n_ghost_cells.z)
-                    {
-                    if ((neighk >= (int)(inner_nz+n_ghost_cells.z/2)) ||
-                        (neighk < (int)n_ghost_cells.z/2)) continue;
-                    }
-                else
-                    {
-                    if (neighk == (int)inner_nz)
-                        neighk = 0;
-                    else if (neighk < 0)
-                        neighk += (int)inner_nz;
-                    }
-                uint3 bin_idx = make_uint3((unsigned int)neighi - n_ghost_cells.x/2,
-                                           (unsigned int)neighj - n_ghost_cells.y/2,
-                                           (unsigned int)neighk - n_ghost_cells.z/2);
-                unsigned int neigh_bin = bin_idx.z + inner_nz * (bin_idx.y + inner_ny * bin_idx.x);
+            Scalar3 dx_frac = shift_frac + cell_shift;
 
-                unsigned int n_bin = d_n_cell[neigh_bin];
-                Scalar3 cell_shift = make_scalar3((Scalar)l,(Scalar)m,(Scalar)n);
-
-                // loop over particles in bin
-                for (unsigned int neigh_idx = 0; neigh_idx < n_bin; neigh_idx++)
-                    {
-                    Scalar4 xyzm = tex1Dfetch(particle_bins_tex, maxn*neigh_bin+neigh_idx);
-                    Scalar3 shift_frac = make_scalar3(xyzm.x, xyzm.y, xyzm.z);
-
-                    Scalar3 dx_frac = shift_frac + cell_shift;
-
-                    // compute fraction of particle density assigned to cell
-                    Scalar mode = xyzm.w;
-                    grid_val += mode*assignTSC(dx_frac.x)*assignTSC(dx_frac.y)*assignTSC(dx_frac.z)/V_cell;
-                    }
-                } // end of loop over neighboring bins
+            // compute fraction of particle density assigned to cell
+            Scalar mode = xyzm.w;
+            grid_val += mode*assignTSC(dx_frac.x)*assignTSC(dx_frac.y)*assignTSC(dx_frac.z)/V_cell;
+            }
+        } // end of loop over neighboring bins
 
     // write out mesh value
     d_mesh[cell_idx].x = grid_val;
@@ -339,6 +295,9 @@ __global__ void gpu_assign_binned_particles_to_mesh_kernel(const unsigned int in
 
 void gpu_assign_binned_particles_to_mesh(const Index3D& mesh_idx,
                                          const uint3 n_ghost_cells,
+                                         const Index2D& badji,
+                                         const unsigned int *d_n_bin_adj,
+                                         const int4 *d_bin_adj,
                                          const Scalar4 *d_particle_bins,
                                          const unsigned int *d_n_cell,
                                          const unsigned int maxn,
@@ -358,6 +317,9 @@ void gpu_assign_binned_particles_to_mesh(const Index3D& mesh_idx,
     particle_bins_tex.filterMode = cudaFilterModePoint;
     cudaBindTexture(0, particle_bins_tex, d_particle_bins, sizeof(Scalar4)*num_bins*maxn);
 
+    particle_bins_tex.normalized = false;
+    particle_bins_tex.filterMode = cudaFilterModePoint;
+    cudaBindTexture(0, bin_adj_tex, d_bin_adj, sizeof(int4)*badji.getNumElements());
 
     dim3 blockDim(block_size,block_size,block_size);
     dim3 gridDim((mesh_idx.getW() % block_size == 0) ? mesh_idx.getW()/block_size : mesh_idx.getW()/block_size+1,
@@ -371,6 +333,8 @@ void gpu_assign_binned_particles_to_mesh(const Index3D& mesh_idx,
                                                                               inner_dim.z,
                                                                               mesh_idx,
                                                                               n_ghost_cells,
+                                                                              d_n_bin_adj,
+                                                                              badji,
                                                                               d_n_cell,
                                                                               maxn,
                                                                               d_mesh,
@@ -381,6 +345,8 @@ void gpu_assign_binned_particles_to_mesh(const Index3D& mesh_idx,
                                                                                inner_dim.z,
                                                                                mesh_idx,
                                                                                n_ghost_cells,
+                                                                               d_n_bin_adj,
+                                                                               badji,
                                                                                d_n_cell,
                                                                                maxn,
                                                                                d_mesh,

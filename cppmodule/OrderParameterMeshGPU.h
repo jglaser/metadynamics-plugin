@@ -76,6 +76,13 @@ class OrderParameterMeshGPU : public OrderParameterMesh
         GPUArray<Scalar> m_sum_virial_partial;     //!< Partial sums over virial mesh values
         GPUArray<Scalar> m_sum_virial;             //!< Final sum over virial mesh values
         unsigned int m_block_size;                 //!< Block size for fourier mesh reduction
+
+        GPUArray<int4> m_bin_adj;                 //!< Particle bin adjacency list
+        Index2D m_bin_adj_indexer;                 //!< Indexes elements in the bin adjacency list
+        GPUArray<unsigned int> m_n_bin_adj;        //!< Number of adjacent bins for a cell
+        
+        // initialize the bin adjaceny indexer
+        void initializeBinAdj();
     };
 
 //! Define plus operator for complex data type (only need to compile by CommunicatorMesh base class)

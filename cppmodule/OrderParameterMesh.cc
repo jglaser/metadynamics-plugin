@@ -161,6 +161,7 @@ void OrderParameterMesh::initializeFFT()
         // set up distributed FFT 
         m_kiss_dfft = boost::shared_ptr<DistributedKISSFFT>(
             new DistributedKISSFFT(m_exec_conf, m_pdata->getDomainDecomposition(), m_mesh_index, m_n_ghost_cells));
+        m_kiss_dfft->setProfiler(m_prof);
         }
     #endif // ENABLE_MPI
 
