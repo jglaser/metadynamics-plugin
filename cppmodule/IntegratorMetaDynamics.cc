@@ -327,12 +327,15 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
 
     bool is_root = true;
 
-    if (m_adaptive)
+   if (m_adaptive && (m_num_update_steps % m_stride == 0))
         {
         // compute derivatives of collective variables
         for (unsigned int i = 0; i < m_num_biased_variables; ++i)
             m_variables[i].m_cv->computeDerivatives(timestep);
-       }
+
+        // compute instantaneous estimate of standard deviation matrix
+        computeSigma();
+        } 
 
     if (m_prof)
         m_prof->push("Metadynamics");
@@ -580,10 +583,11 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
                 writeGrid(m_grid_fname1);
             }
 
-        // increment number of updated steps
-        m_num_update_steps++;
-     
+    
         } // endif root processor
+
+    // increment number of updated steps
+    m_num_update_steps++;
 
 #ifdef ENABLE_MPI
     // broadcast bias factors
@@ -1443,7 +1447,7 @@ void IntegratorMetaDynamics::computeSigma()
 
     unsigned int ncv = m_num_biased_variables;
 
-    ArrayHandle<Scalar> h_sigma(m_sigma, access_location::host, access_mode::overwrite);
+    Scalar *sigma = new Scalar[ncv*ncv];
 
     for (iti = m_variables.begin(); iti != m_variables.end(); ++iti)
         {
@@ -1457,6 +1461,8 @@ void IntegratorMetaDynamics::computeSigma()
             if (itj->m_umbrella) continue;
 
             unsigned int j = itj - m_variables.begin();
+
+            // this releases an array twice, so may create problems in debug mode
             ArrayHandle<Scalar4> handle_j = (i != j) ?
             ArrayHandle<Scalar4>(itj->m_cv->getForceArray(), access_location::host, access_mode::read) : handle_i;
 
@@ -1471,9 +1477,36 @@ void IntegratorMetaDynamics::computeSigma()
                 sigmasq += m_sigma_g*m_sigma_g*dot(force_i,force_j);
                 }
 
-            h_sigma.data[i*ncv+j] = sqrt(sigmasq);
+            sigma[i*ncv+j] = sqrt(sigmasq);
+            j++;
             } 
+        i++;
         }
+
+    #ifdef ENABLE_MPI
+    if (m_pdata->getDomainDecomposition())
+        {
+        MPI_Reduce(MPI_IN_PLACE,
+                   &sigma[0],
+                   ncv*ncv,
+                   MPI_HOOMD_SCALAR,
+                   MPI_SUM,
+                   0,
+                   m_exec_conf->getMPICommunicator()); 
+    }
+    #endif
+
+    bool is_root = m_exec_conf->getRank() == 0;
+
+    if (is_root)
+        {
+        // write out result
+        ArrayHandle<Scalar> h_sigma(m_sigma, access_location::host, access_mode::overwrite);
+        for (unsigned int i = 0; i < ncv*ncv; ++i)
+            h_sigma.data[i] = sigma[i];
+        }
+
+    delete[] sigma;
     }
 
 int determinant_sign(const bnu::permutation_matrix<std ::size_t>& pm)
