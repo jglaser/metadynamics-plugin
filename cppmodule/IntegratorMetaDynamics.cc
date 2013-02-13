@@ -408,12 +408,6 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
                 && (! (m_mode == mode_flux_tempered) || m_num_label_change >= m_min_label_change))
                 {
 
-                if (m_adaptive)
-                    {
-                    // compute instantaneous estimate of standard deviation matrix
-                    computeSigma();
-                    } 
-
                 // add Gaussian to grid
                
                 // scaling factor for well-tempered MetaD
@@ -1486,12 +1480,11 @@ void IntegratorMetaDynamics::computeSigma()
     #ifdef ENABLE_MPI
     if (m_pdata->getDomainDecomposition())
         {
-        MPI_Reduce(MPI_IN_PLACE,
+        MPI_Allreduce(MPI_IN_PLACE,
                    &sigma[0],
                    ncv*ncv,
                    MPI_HOOMD_SCALAR,
                    MPI_SUM,
-                   0,
                    m_exec_conf->getMPICommunicator()); 
     }
     #endif
