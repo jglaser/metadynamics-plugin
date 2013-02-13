@@ -20,17 +20,18 @@ __device__ inline void atomicFloatAdd(float* address, float value)
 
 /*! \param x Distance on mesh in units of the mesh size
  */
-__device__ Scalar assignTSC(Scalar x)
+__device__ inline Scalar assignTSC(Scalar x)
     {
     Scalar xsq = x*x;
-    Scalar xabs = sqrtf(xsq);
+    Scalar fac =(Scalar(3.0/2.0)-copysignf(x,Scalar(1.0)));
 
+    Scalar ret(0.0);
     if (xsq <= Scalar(1.0/4.0))
-        return Scalar(3.0/4.0) - xsq;
+        ret = Scalar(3.0/4.0) - xsq;
     else if (xsq <= Scalar(9.0/4.0))
-        return Scalar(1.0/2.0)*(Scalar(3.0/2.0)-xabs)*(Scalar(3.0/2.0)-xabs);
-    else
-        return Scalar(0.0);
+        ret = Scalar(1.0/2.0)*fac*fac;
+
+    return ret;
     }
 
 __device__ uint3 find_cell(const Scalar3& pos,
@@ -330,19 +331,19 @@ __global__ void gpu_assign_binned_particles_to_mesh_kernel(const unsigned int in
                 for (unsigned int neigh_idx = 0; neigh_idx < n_bin; neigh_idx++)
                     {
                     Scalar4 xyzm = tex1Dfetch(particle_bins_tex, maxn*neigh_bin+neigh_idx);
-                    Scalar3 shift_frac = make_scalar3(xyzm.x, xyzm.y, xyzm.z);
-
-                    Scalar3 dx_frac = shift_frac + cell_shift;
+                    Scalar shift_x = xyzm.x + cell_shift.x;
+                    Scalar shift_y = xyzm.y + cell_shift.y;
+                    Scalar shift_z = xyzm.z + cell_shift.z;
 
                     // compute fraction of particle density assigned to cell
-                    Scalar mode = xyzm.w;
-                    grid_val += mode*assignTSC(dx_frac.x)*assignTSC(dx_frac.y)*assignTSC(dx_frac.z)/V_cell;
+                    Scalar& mode = xyzm.w;
+                    grid_val += mode*assignTSC(shift_x)*assignTSC(shift_y)*assignTSC(shift_z);
                     }
                 } // end of loop over neighboring bins
 
     // write out mesh value
     cufftComplex c;
-    c.x = grid_val;
+    c.x = grid_val/V_cell;
     c.y = Scalar(0.0);
     d_mesh[cell_idx] = c;
     }
