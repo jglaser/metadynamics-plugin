@@ -57,6 +57,18 @@ void OrderParameterMeshGPU::initializeFFT()
         m_gpu_dfft = boost::shared_ptr<DistributedFFTGPU>(
             new DistributedFFTGPU(m_exec_conf, m_pdata->getDomainDecomposition(), m_mesh_index, m_n_ghost_cells));
         m_gpu_dfft->setProfiler(m_prof);
+
+        m_gpu_dfft_x = boost::shared_ptr<DistributedFFTGPU>(
+            new DistributedFFTGPU(m_exec_conf, m_pdata->getDomainDecomposition(), m_mesh_index, m_n_ghost_cells));
+        m_gpu_dfft_x->setProfiler(m_prof);
+
+        m_gpu_dfft_y = boost::shared_ptr<DistributedFFTGPU>(
+            new DistributedFFTGPU(m_exec_conf, m_pdata->getDomainDecomposition(), m_mesh_index, m_n_ghost_cells));
+        m_gpu_dfft_y->setProfiler(m_prof);
+
+        m_gpu_dfft_z = boost::shared_ptr<DistributedFFTGPU>(
+            new DistributedFFTGPU(m_exec_conf, m_pdata->getDomainDecomposition(), m_mesh_index, m_n_ghost_cells));
+        m_gpu_dfft_z->setProfiler(m_prof);
         }
     #endif // ENABLE_MPI
 
@@ -282,9 +294,17 @@ void OrderParameterMeshGPU::updateMeshes()
     else
         {
         // Distributed inverse transform of force mesh
-        m_gpu_dfft->FFT3D(m_fourier_mesh_force_x, m_force_mesh_x, true);
-        m_gpu_dfft->FFT3D(m_fourier_mesh_force_y, m_force_mesh_y, true);
-        m_gpu_dfft->FFT3D(m_fourier_mesh_force_z, m_force_mesh_z, true);
+
+        bool done_x = false;
+        bool done_y = false;
+        bool done_z = false;
+
+        while (!done_x || !done_y || !done_z)
+            {
+            done_x = done_x ? true : m_gpu_dfft_x->FFT3D(m_fourier_mesh_force_x, m_force_mesh_x, true, true);
+            done_y = done_y ? true : m_gpu_dfft_y->FFT3D(m_fourier_mesh_force_y, m_force_mesh_y, true, true);
+            done_z = done_z ? true : m_gpu_dfft_z->FFT3D(m_fourier_mesh_force_z, m_force_mesh_z, true, true);
+            }
         }
     #endif
 

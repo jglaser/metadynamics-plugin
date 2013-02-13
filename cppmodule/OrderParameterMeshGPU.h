@@ -50,7 +50,10 @@ class OrderParameterMeshGPU : public OrderParameterMesh
         typedef CommunicatorMeshGPU<cufftComplex, gpu_communicate_complex_mesh_map> CommunicatorMeshGPUComplex;
         typedef CommunicatorMeshGPU<Scalar4, gpu_communicate_scalar4_mesh_map> CommunicatorMeshGPUScalar4;
 
-        boost::shared_ptr<DistributedFFTGPU> m_gpu_dfft;  //!< Distributed FFT for forward and inverse transforms
+        boost::shared_ptr<DistributedFFTGPU> m_gpu_dfft;  //!< Distributed FFT for forward transform
+        boost::shared_ptr<DistributedFFTGPU> m_gpu_dfft_x;//!< Distributed FFT for inverse transform, x direction
+        boost::shared_ptr<DistributedFFTGPU> m_gpu_dfft_y;//!< Distributed FFT for inverse transform, y direction
+        boost::shared_ptr<DistributedFFTGPU> m_gpu_dfft_z;//!< Distributed FFT for inverse transform, z direction
         boost::shared_ptr<CommunicatorMeshGPUComplex> m_gpu_mesh_comm_forward; //!< Communicator for density map
         boost::shared_ptr<CommunicatorMeshGPUScalar4> m_gpu_mesh_comm_inverse; //!< Communicator for force mesh
         #endif
