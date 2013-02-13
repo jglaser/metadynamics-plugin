@@ -25,6 +25,7 @@ OrderParameterMesh::OrderParameterMesh(boost::shared_ptr<SystemDefinition> sysde
       m_is_first_step(true),
       m_cv_last_updated(0),
       m_box_changed(false),
+      m_cv(Scalar(0.0)),
       m_kiss_fft_initialized(false),
       m_log_name("mesh_energy")
     {
@@ -746,6 +747,9 @@ Scalar OrderParameterMesh::computeCV()
 
 Scalar OrderParameterMesh::getCurrentValue(unsigned int timestep)
     {
+    if (m_cv_last_updated == timestep && !m_is_first_step)
+        return m_cv;
+
     if (m_prof) m_prof->push("Mesh");
 
     if (m_is_first_step)
@@ -767,13 +771,13 @@ Scalar OrderParameterMesh::getCurrentValue(unsigned int timestep)
 
     updateMeshes();
 
-    Scalar val = computeCV();
+    m_cv = computeCV();
 
     m_cv_last_updated = timestep;
 
     if (m_prof) m_prof->pop();
 
-    return val;
+    return m_cv;
     }
 
 void OrderParameterMesh::computeVirial()
