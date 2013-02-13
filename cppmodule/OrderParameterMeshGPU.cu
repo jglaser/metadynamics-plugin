@@ -235,6 +235,7 @@ void gpu_bin_particles(const unsigned int N,
 
 
 texture<Scalar4, 1, cudaReadModeElementType> particle_bins_tex;
+texture<unsigned int, 1, cudaReadModeElementType> n_cell_tex;
 
 template<bool local_fft>
 __global__ void gpu_assign_binned_particles_to_mesh_kernel(const unsigned int inner_nx,
@@ -316,7 +317,7 @@ __global__ void gpu_assign_binned_particles_to_mesh_kernel(const unsigned int in
                                            (unsigned int)neighk - n_ghost_cells.z/2);
                 unsigned int neigh_bin = bin_idx.z + inner_nz * (bin_idx.y + inner_ny * bin_idx.x);
 
-                unsigned int n_bin = d_n_cell[neigh_bin];
+                unsigned int n_bin = tex1Dfetch(n_cell_tex,neigh_bin);
                 Scalar3 cell_shift = make_scalar3((Scalar)l,(Scalar)m,(Scalar)n);
 
                 // loop over particles in bin
@@ -357,6 +358,10 @@ void gpu_assign_binned_particles_to_mesh(const Index3D& mesh_idx,
     particle_bins_tex.normalized = false;
     particle_bins_tex.filterMode = cudaFilterModePoint;
     cudaBindTexture(0, particle_bins_tex, d_particle_bins, sizeof(Scalar4)*num_bins*maxn);
+
+    n_cell_tex.normalized = false;
+    n_cell_tex.filterMode = cudaFilterModePoint;
+    cudaBindTexture(0, n_cell_tex, d_n_cell, sizeof(unsigned int)*num_bins);
 
 
     dim3 blockDim(block_size,block_size,block_size);
