@@ -248,18 +248,24 @@ __global__ void gpu_assign_binned_particles_to_mesh_kernel(const unsigned int in
                                                            cufftComplex *d_mesh,
                                                            const BoxDim box)
     {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    int j = blockIdx.y * blockDim.y + threadIdx.y;
-    int k = blockIdx.z * blockDim.z + threadIdx.z;
+    unsigned int cell_idx = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (i>= (int)mesh_idx.getW() || j >= (int)mesh_idx.getH() || k >= (int)mesh_idx.getD()) return;
+    if (cell_idx >= mesh_idx.getNumElements()) return;
 
-    unsigned int cell_idx;
+    int i,j,k;
     if (local_fft)
-        // for local FFT, use cuFFT's memory layout
-        cell_idx = k + mesh_idx.getD() * (j + mesh_idx.getH() * i);
+        {
+        i = cell_idx / mesh_idx.getH() / mesh_idx.getD();
+        j = (cell_idx - i * mesh_idx.getH()*mesh_idx.getD())/mesh_idx.getD();
+        k = cell_idx % mesh_idx.getD();
+        }
     else
-        cell_idx = mesh_idx(i, j, k);
+        {
+        uint3 cell_coord = mesh_idx.getTriple(cell_idx);
+        i = cell_coord.x;
+        j = cell_coord.y;
+        k = cell_coord.z;
+        }
 
     Scalar V_cell = box.getVolume()/(Scalar)(inner_nx*inner_ny*inner_nz);
     Scalar grid_val(0.0);
@@ -335,7 +341,10 @@ __global__ void gpu_assign_binned_particles_to_mesh_kernel(const unsigned int in
                 } // end of loop over neighboring bins
 
     // write out mesh value
-    d_mesh[cell_idx].x = grid_val;
+    cufftComplex c;
+    c.x = grid_val;
+    c.y = Scalar(0.0);
+    d_mesh[cell_idx] = c;
     }
 
 void gpu_assign_binned_particles_to_mesh(const Index3D& mesh_idx,
@@ -347,8 +356,6 @@ void gpu_assign_binned_particles_to_mesh(const Index3D& mesh_idx,
                                          const BoxDim& box,
                                          const bool local_fft)
     {
-    unsigned int block_size = 8;
-   
     uint3 inner_dim = make_uint3(mesh_idx.getW() - n_ghost_cells.x,
                                  mesh_idx.getH() - n_ghost_cells.y,
                                  mesh_idx.getD() - n_ghost_cells.z);
@@ -364,14 +371,13 @@ void gpu_assign_binned_particles_to_mesh(const Index3D& mesh_idx,
     cudaBindTexture(0, n_cell_tex, d_n_cell, sizeof(unsigned int)*num_bins);
 
 
-    dim3 blockDim(block_size,block_size,block_size);
-    dim3 gridDim((mesh_idx.getW() % block_size == 0) ? mesh_idx.getW()/block_size : mesh_idx.getW()/block_size+1,
-                 (mesh_idx.getH() % block_size == 0) ? mesh_idx.getH()/block_size : mesh_idx.getH()/block_size+1,
-                 (mesh_idx.getD() % block_size == 0) ? mesh_idx.getD()/block_size : mesh_idx.getD()/block_size+1);
+    unsigned int block_size = 512;
+    unsigned int n_blocks = mesh_idx.getNumElements()/block_size;
+    if (mesh_idx.getNumElements()%block_size) n_blocks +=1;
 
    
     if (local_fft)
-        gpu_assign_binned_particles_to_mesh_kernel<true><<<gridDim,blockDim>>>(inner_dim.x,
+        gpu_assign_binned_particles_to_mesh_kernel<true><<<n_blocks,block_size>>>(inner_dim.x,
                                                                               inner_dim.y,
                                                                               inner_dim.z,
                                                                               mesh_idx,
@@ -381,7 +387,7 @@ void gpu_assign_binned_particles_to_mesh(const Index3D& mesh_idx,
                                                                               d_mesh,
                                                                               box);
     else
-        gpu_assign_binned_particles_to_mesh_kernel<false><<<gridDim,blockDim>>>(inner_dim.x,
+        gpu_assign_binned_particles_to_mesh_kernel<false><<<n_blocks,block_size>>>(inner_dim.x,
                                                                                inner_dim.y,
                                                                                inner_dim.z,
                                                                                mesh_idx,
