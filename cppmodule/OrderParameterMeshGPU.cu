@@ -397,6 +397,9 @@ void gpu_assign_binned_particles_to_mesh(const Index3D& mesh_idx,
                                                                                maxn,
                                                                                d_mesh,
                                                                                box);
+
+    cudaUnbindTexture(particle_bins_tex);
+    cudaUnbindTexture(n_cell_tex);
     }
 
 void gpu_assign_particles_30(const unsigned int N,
@@ -495,9 +498,7 @@ __global__ void gpu_update_meshes_kernel(const unsigned int n_wave_vectors,
                                          const Scalar3 *d_k,
                                          const Scalar V_cell,
                                          const unsigned int N_global,
-                                         cufftComplex *d_fourier_mesh_force_x,
-                                         cufftComplex *d_fourier_mesh_force_y,
-                                         cufftComplex *d_fourier_mesh_force_z)
+                                         cufftComplex *d_fourier_mesh_force_xyz)
     {
     unsigned int k = blockDim.x * blockIdx.x + threadIdx.x;
 
@@ -518,14 +519,14 @@ __global__ void gpu_update_meshes_kernel(const unsigned int n_wave_vectors,
     fourier_G.y =f.y * val * d_inf_f[k];
 
     Scalar3 kval = Scalar(2.0)*d_k[k]/(Scalar)N_global;
-    d_fourier_mesh_force_x[k].x = -fourier_G.y*kval.x;
-    d_fourier_mesh_force_x[k].y = fourier_G.x*kval.x;
+    d_fourier_mesh_force_xyz[k].x = -fourier_G.y*kval.x;
+    d_fourier_mesh_force_xyz[k].y = fourier_G.x*kval.x;
 
-    d_fourier_mesh_force_y[k].x = -fourier_G.y*kval.y;
-    d_fourier_mesh_force_y[k].y = fourier_G.x*kval.y;
+    d_fourier_mesh_force_xyz[k+n_wave_vectors].x = -fourier_G.y*kval.y;
+    d_fourier_mesh_force_xyz[k+n_wave_vectors].y = fourier_G.x*kval.y;
 
-    d_fourier_mesh_force_z[k].x = -fourier_G.y*kval.z;
-    d_fourier_mesh_force_z[k].y = fourier_G.x*kval.z;
+    d_fourier_mesh_force_xyz[k+2*n_wave_vectors].x = -fourier_G.y*kval.z;
+    d_fourier_mesh_force_xyz[k+2*n_wave_vectors].y = fourier_G.x*kval.z;
 
     d_fourier_mesh[k] = f;
     d_fourier_mesh_G[k] = fourier_G;
@@ -538,9 +539,7 @@ void gpu_update_meshes(const unsigned int n_wave_vectors,
                          const Scalar3 *d_k,
                          const Scalar V_cell,
                          const unsigned int N_global,
-                         cufftComplex *d_fourier_mesh_force_x,
-                         cufftComplex *d_fourier_mesh_force_y,
-                         cufftComplex *d_fourier_mesh_force_z)
+                         cufftComplex *d_fourier_mesh_force_xyz)
 
     {
     const unsigned int block_size = 512;
@@ -552,27 +551,26 @@ void gpu_update_meshes(const unsigned int n_wave_vectors,
                                                                           d_k,
                                                                           V_cell,
                                                                           N_global,
-                                                                          d_fourier_mesh_force_x,
-                                                                          d_fourier_mesh_force_y,
-                                                                          d_fourier_mesh_force_z);
+                                                                          d_fourier_mesh_force_xyz);
     }
 
 //! Texture for reading particle positions
 texture<Scalar4, 1, cudaReadModeElementType> force_mesh_tex;
 
 __global__ void gpu_coalesce_forces_kernel(const unsigned int n_force_cells,
-                                           const cufftComplex *d_force_mesh_x,
-                                           const cufftComplex *d_force_mesh_y,
-                                           const cufftComplex *d_force_mesh_z,
+                                           const cufftComplex *d_force_mesh_xyz,
                                            Scalar4 *d_force_mesh)
     {
     unsigned int k = blockIdx.x*blockDim.x+threadIdx.x;
 
     if (k >= n_force_cells) return;
 
-    d_force_mesh[k] = make_scalar4(d_force_mesh_x[k].x,
-                                   d_force_mesh_y[k].x,
-                                   d_force_mesh_z[k].x,
+    cufftComplex force_x = d_force_mesh_xyz[k];
+    cufftComplex force_y = d_force_mesh_xyz[k+n_force_cells];
+    cufftComplex force_z = d_force_mesh_xyz[k+2*n_force_cells];
+    d_force_mesh[k] = make_scalar4(force_x.x,
+                                   force_y.x,
+                                   force_z.x,
                                    0.0);
     }
 
@@ -670,18 +668,14 @@ __global__ void gpu_interpolate_forces_kernel(const unsigned int N,
     }
 
 void gpu_coalesce_forces(const unsigned int num_force_cells,
-                         const cufftComplex *d_force_mesh_x,
-                         const cufftComplex *d_force_mesh_y,
-                         const cufftComplex *d_force_mesh_z,
+                         const cufftComplex *d_force_mesh_xyz,
                          Scalar4 *d_force_mesh)
     {
     unsigned int block_size = 512;
     unsigned int n_blocks = num_force_cells/block_size;
     if (num_force_cells % block_size) n_blocks+=1;
     gpu_coalesce_forces_kernel<<<n_blocks, block_size>>>(num_force_cells,
-                                                         d_force_mesh_x,
-                                                         d_force_mesh_y,
-                                                         d_force_mesh_z,
+                                                         d_force_mesh_xyz,
                                                          d_force_mesh);
     }
 
@@ -725,6 +719,8 @@ void gpu_interpolate_forces(const unsigned int N,
                                                                      d_mode,
                                                                      box,
                                                                      global_box.getVolume());
+
+    cudaUnbindTexture(force_mesh_tex);
     }
 
 __global__ void kernel_calculate_cv_partial(

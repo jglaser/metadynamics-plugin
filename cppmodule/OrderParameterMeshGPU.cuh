@@ -53,14 +53,10 @@ void gpu_update_meshes(const unsigned int n_wave_vectors,
                          const Scalar3 *d_k,
                          const Scalar V_cell,
                          const unsigned int N_global,
-                         cufftComplex *d_fourier_mesh_force_x,
-                         cufftComplex *d_fourier_mesh_force_y,
-                         cufftComplex *d_fourier_mesh_force_z);
+                         cufftComplex *d_fourier_mesh_force_xyz);
 
 void gpu_coalesce_forces(const unsigned int num_force_cells,
-                         const cufftComplex *d_force_mesh_x,
-                         const cufftComplex *d_force_mesh_y,
-                         const cufftComplex *d_force_mesh_z,
+                         const cufftComplex *d_force_mesh_xyz,
                          Scalar4 *d_force_mesh);
 
 void gpu_interpolate_forces(const unsigned int N,

@@ -51,9 +51,7 @@ class OrderParameterMeshGPU : public OrderParameterMesh
         typedef CommunicatorMeshGPU<Scalar4, gpu_communicate_scalar4_mesh_map> CommunicatorMeshGPUScalar4;
 
         boost::shared_ptr<DistributedFFTGPU> m_gpu_dfft;  //!< Distributed FFT for forward transform
-        boost::shared_ptr<DistributedFFTGPU> m_gpu_dfft_x;//!< Distributed FFT for inverse transform, x direction
-        boost::shared_ptr<DistributedFFTGPU> m_gpu_dfft_y;//!< Distributed FFT for inverse transform, y direction
-        boost::shared_ptr<DistributedFFTGPU> m_gpu_dfft_z;//!< Distributed FFT for inverse transform, z direction
+        boost::shared_ptr<DistributedFFTGPU> m_gpu_idfft; //!< Distributed FFT for inverse transform
         boost::shared_ptr<CommunicatorMeshGPUComplex> m_gpu_mesh_comm_forward; //!< Communicator for density map
         boost::shared_ptr<CommunicatorMeshGPUScalar4> m_gpu_mesh_comm_inverse; //!< Communicator for force mesh
         #endif
@@ -61,12 +59,8 @@ class OrderParameterMeshGPU : public OrderParameterMesh
         GPUArray<cufftComplex> m_mesh;                 //!< The particle density mesh
         GPUArray<cufftComplex> m_fourier_mesh;         //!< The fourier transformed mesh
         GPUArray<cufftComplex> m_fourier_mesh_G;       //!< Fourier transformed mesh times the influence function
-        GPUArray<cufftComplex> m_fourier_mesh_force_x; //!< Force mesh in Fourier space, x component
-        GPUArray<cufftComplex> m_fourier_mesh_force_y; //!< Force mesh in Fourier space, y component
-        GPUArray<cufftComplex> m_fourier_mesh_force_z; //!< Force mesh in Fourier space, z component
-        GPUArray<cufftComplex> m_force_mesh_x;      //!< The inverse-fourier transformed force mesh, x component
-        GPUArray<cufftComplex> m_force_mesh_y;      //!< The inverse-fourier transformed force mesh, y component
-        GPUArray<cufftComplex> m_force_mesh_z;      //!< The inverse-fourier transformed force mesh, z component
+        GPUArray<cufftComplex> m_fourier_mesh_force_xyz; //!< Force mesh in Fourier space 
+        GPUArray<cufftComplex> m_force_mesh_xyz;      //!< The inverse-fourier transformed force mesh
         GPUArray<Scalar4> m_force_mesh;             //!< Storage for force vectors
 
         GPUArray<Scalar4> m_particle_bins;         //!< Cell list for particle positions and modes
