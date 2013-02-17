@@ -540,16 +540,17 @@ void OrderParameterMesh::updateMeshes()
 
             h_fourier_mesh.data[k] = f;
 
+            Scalar sq4 = (f.r*h_fourier_mesh_G.data[k].r)*(f.i*h_fourier_mesh_G.data[k].i);
             // factor of two to account for derivative of fourth power of a mode
             Scalar3 kval = Scalar(2.0)*h_k.data[k]/(Scalar)N_global;
-            h_fourier_mesh_x.data[k].r = -h_fourier_mesh_G.data[k].i*kval.x;
-            h_fourier_mesh_x.data[k].i = h_fourier_mesh_G.data[k].r*kval.x;
+            h_fourier_mesh_x.data[k].r = Scalar(0.0);
+            h_fourier_mesh_x.data[k].i = sq4*kval.x;
 
-            h_fourier_mesh_y.data[k].r = -h_fourier_mesh_G.data[k].i*kval.y;
-            h_fourier_mesh_y.data[k].i = h_fourier_mesh_G.data[k].r*kval.y;
+            h_fourier_mesh_y.data[k].r = Scalar(0.0);
+            h_fourier_mesh_y.data[k].i = sq4*kval.y;
 
-            h_fourier_mesh_z.data[k].r = -h_fourier_mesh_G.data[k].i*kval.z;
-            h_fourier_mesh_z.data[k].i = h_fourier_mesh_G.data[k].r*kval.z;
+            h_fourier_mesh_z.data[k].r = Scalar(0.0);
+            h_fourier_mesh_z.data[k].i = sq4*kval.z;
             }
         }
 
