@@ -518,15 +518,15 @@ __global__ void gpu_update_meshes_kernel(const unsigned int n_wave_vectors,
     fourier_G.x =f.x * val * d_inf_f[k];
     fourier_G.y =f.y * val * d_inf_f[k];
 
-    Scalar3 kval = Scalar(2.0)*d_k[k];
-    d_fourier_mesh_force_xyz[k].x = Scalar(0.0);
-    d_fourier_mesh_force_xyz[k].y = (fourier_G.x*f.x+fourier_G.y*f.y)*kval.x;
+    Scalar3 kval = Scalar(2.0)*d_k[k]/(Scalar)N_global;
+    d_fourier_mesh_force_xyz[k].x = -fourier_G.y*kval.x;
+    d_fourier_mesh_force_xyz[k].y = fourier_G.x*kval.x;
 
-    d_fourier_mesh_force_xyz[k+n_wave_vectors].x = Scalar(0.0);
-    d_fourier_mesh_force_xyz[k+n_wave_vectors].y = (fourier_G.x*f.x+fourier_G.y*f.y)*kval.y;
+    d_fourier_mesh_force_xyz[k+n_wave_vectors].x = -fourier_G.y*kval.y;
+    d_fourier_mesh_force_xyz[k+n_wave_vectors].y = fourier_G.x*kval.y;
 
-    d_fourier_mesh_force_xyz[k+2*n_wave_vectors].x = Scalar(0.0);
-    d_fourier_mesh_force_xyz[k+2*n_wave_vectors].y = (fourier_G.x*f.x+fourier_G.y*f.y)*kval.z;
+    d_fourier_mesh_force_xyz[k+2*n_wave_vectors].x = -fourier_G.y*kval.z;
+    d_fourier_mesh_force_xyz[k+2*n_wave_vectors].y = fourier_G.x*kval.z;
 
     d_fourier_mesh[k] = f;
     d_fourier_mesh_G[k] = fourier_G;

@@ -592,13 +592,12 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
 
     // update current bias potential derivative for every collective variable
     std::vector<CollectiveVariableItem>::iterator cv_item;
-    unsigned int cv = 0;
     for (cv_item = m_variables.begin(); cv_item != m_variables.end(); ++cv_item)
         {
         if (cv_item->m_umbrella) continue;
 
-        cv_item->m_cv->setBiasFactor(bias[cv]);
-        cv++;
+        unsigned int cv_index = cv_item - m_variables.begin();
+        cv_item->m_cv->setBiasFactor(bias[cv_index]);
         }
 
     if (m_prof)
@@ -659,18 +658,17 @@ Scalar IntegratorMetaDynamics::interpolateBiasPotential(const std::vector<Scalar
     std::vector<unsigned int> upper_idx(m_grid_index.getDimension());
     std::vector<Scalar> rel_delta(m_grid_index.getDimension());
 
-    unsigned int cv = 0;
     for (unsigned int cv_idx = 0; cv_idx < m_variables.size(); cv_idx++)
         {
         if (m_variables[cv_idx].m_umbrella) continue;
 
         Scalar delta = (m_variables[cv_idx].m_cv_max - m_variables[cv_idx].m_cv_min)/(m_variables[cv_idx].m_num_points - 1);
-        int lower = (int) ((val[cv] - m_variables[cv_idx].m_cv_min)/delta);
+        int lower = (int) ((val[cv_idx] - m_variables[cv_idx].m_cv_min)/delta);
         int upper = lower+1;
 
         if (lower < 0 || upper >= m_variables[cv_idx].m_num_points)
             {
-            m_exec_conf->msg->warning() << "integrate.mode_metadynamics: Value " << val[cv]
+            m_exec_conf->msg->warning() << "integrate.mode_metadynamics: Value " << val[cv_idx]
                                         << " of collective variable " << cv_idx << " out of bounds." << endl
                                         << "Assuming bias potential of zero." << endl;
             return Scalar(0.0);
@@ -680,9 +678,7 @@ Scalar IntegratorMetaDynamics::interpolateBiasPotential(const std::vector<Scalar
         Scalar upper_bound = m_variables[cv_idx].m_cv_min + delta * upper;
         lower_idx[cv_idx] = lower;
         upper_idx[cv_idx] = upper;
-        rel_delta[cv_idx] = (val[cv]-lower_bound)/(upper_bound-lower_bound);
-
-        cv++;
+        rel_delta[cv_idx] = (val[cv_idx]-lower_bound)/(upper_bound-lower_bound);
         }
 
     // construct multilinear interpolation
@@ -722,18 +718,10 @@ Scalar IntegratorMetaDynamics::biasPotentialDerivative(unsigned int cv, const st
     ArrayHandle<Scalar> h_cv_max(m_cv_max, access_location::host, access_mode::read);
     ArrayHandle<unsigned int> h_lengths(m_lengths, access_location::host, access_mode::read);
 
+    Scalar delta = (h_cv_max.data[cv] - h_cv_min.data[cv])/
+                   (Scalar)(h_lengths.data[cv] - 1);
 
-    unsigned int cv_idx = 0;
-    for (unsigned int i = 0; i < m_variables.size(); ++i)
-        {
-        if (m_variables[i].m_umbrella) continue;
-        if (cv_idx == cv) break;
-        cv_idx++;
-        }
-
-    Scalar delta = (h_cv_max.data[cv_idx] - h_cv_min.data[cv_idx])/
-                   (Scalar)(h_lengths.data[cv_idx] - 1);
-    if (val[cv] - delta < m_variables[cv_idx].m_cv_min) 
+    if (val[cv] - delta < m_variables[cv].m_cv_min) 
         {
         // forward difference
         std::vector<Scalar> val2 = val;
@@ -743,7 +731,7 @@ Scalar IntegratorMetaDynamics::biasPotentialDerivative(unsigned int cv, const st
         Scalar y1 = interpolateBiasPotential(val);
         return (y2-y1)/delta;
         }
-    else if (val[cv] + delta > m_variables[cv_idx].m_cv_max)
+    else if (val[cv] + delta > m_variables[cv].m_cv_max)
         {
         // backward difference
         std::vector<Scalar> val2 = val;
@@ -862,15 +850,15 @@ void IntegratorMetaDynamics::writeGrid(const std::string& filename)
 
     file << "#num_histogram_entries: " << m_num_histogram_entries << std::endl;
 
+    file << "grid_value";
+
     for (unsigned int i = 0; i < m_grid_index.getDimension(); i++)
         {
         if (m_variables[i].m_umbrella) continue;
 
-        file << m_variables[i].m_cv->getName() << m_delimiter;
+        file << m_delimiter << m_variables[i].m_cv->getName();
         }
 
-
-    file << "grid_value";
 
     file << m_delimiter << "reweight";
     file << m_delimiter << "det_sigma";
@@ -891,18 +879,16 @@ void IntegratorMetaDynamics::writeGrid(const std::string& filename)
         {
         // obtain d-dimensional coordinates
         m_grid_index.getCoordinates(grid_idx, coords);
-        
-        unsigned int cv = 0;
+
         for (unsigned int cv_idx = 0; cv_idx < m_variables.size(); ++cv_idx)
             {
             if (m_variables[cv_idx].m_umbrella) continue;
 
             Scalar delta = (m_variables[cv_idx].m_cv_max - m_variables[cv_idx].m_cv_min)/
                            (m_variables[cv_idx].m_num_points - 1);
-            Scalar val = m_variables[cv_idx].m_cv_min + coords[cv]*delta;
+            Scalar val = m_variables[cv_idx].m_cv_min + coords[cv_idx]*delta;
 
             file << setprecision(10) << val << m_delimiter;
-            cv++;
             }
 
         file << setprecision(10) << h_grid.data[grid_idx];
@@ -1184,17 +1170,15 @@ void IntegratorMetaDynamics::updateSigmaGrid(std::vector<Scalar>& current_val)
 
     // add current value of determinant of standard deviation matrix to grid
     bool on_grid = true;
-    unsigned int cv = 0;
     for (unsigned int cv_i = 0; cv_i < m_variables.size(); ++cv_i)
         {
         if (m_variables[cv_i].m_umbrella) continue;
 
         Scalar delta = (m_variables[cv_i].m_cv_max - m_variables[cv_i].m_cv_min)/
                        (m_variables[cv_i].m_num_points - 1);
-        grid_coord[cv_i] = (current_val[cv] - m_variables[cv_i].m_cv_min)/delta;
-        if (grid_coord[cv] >= m_variables[cv_i].m_num_points)
+        grid_coord[cv_i] = (current_val[cv_i] - m_variables[cv_i].m_cv_min)/delta;
+        if (grid_coord[cv_i] >= m_variables[cv_i].m_num_points)
             on_grid = false;
-        cv++;
         }
 
     // add Gaussian to grid
@@ -1219,8 +1203,13 @@ void IntegratorMetaDynamics::updateGridGPU(std::vector<Scalar>& current_val, Sca
         // copy current CV values into array
         ArrayHandle<Scalar> h_current_val(m_current_val, access_location::host, access_mode::overwrite);
 
-        for (unsigned int cv = 0; cv < current_val.size(); cv++)
-            h_current_val.data[cv] = current_val[cv];
+        unsigned int idx = 0;
+        for (unsigned int cv_idx = 0; cv_idx < m_variables.size(); cv_idx++)
+            {
+            if (! m_variables[cv_idx].m_umbrella)
+                h_current_val.data[idx] = current_val[cv_idx];
+            idx++;
+            }
         }
 
     ArrayHandle<Scalar> d_grid(m_grid, access_location::device, access_mode::readwrite);

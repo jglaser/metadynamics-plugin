@@ -145,6 +145,7 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
             cv_item.m_umbrella = umbrella;
 
             if (!umbrella) m_num_biased_variables++;
+
             m_variables.push_back(cv_item);
             }
 
