@@ -30,6 +30,14 @@
 class CollectiveVariable : public ForceCompute
     {
     public:
+        enum umbrella_Enum
+            {
+            no_umbrella = 0,        //!< no umbrella potential
+            harmonic,               //!< a harmonic umbrella potential
+            wall                    //!< soft wall umbrella potential
+            };
+
+ 
         /*! Constructs a collective variable
             \param sysdef The system definition
             \param name The name of this collective variable
@@ -56,9 +64,9 @@ class CollectiveVariable : public ForceCompute
         /*! Evaluate a harmonic potential function of the collective variable
          * \param harmonic True if harmonic potential should be active
          */
-        void setHarmonic(bool harmonic)
+        void setUmbrella(umbrella_Enum umbrella)
             {
-            m_harmonic = harmonic;
+            m_umbrella = umbrella;
             }
 
         /*! Set spring constant for harmonic potential
@@ -117,9 +125,9 @@ class CollectiveVariable : public ForceCompute
         std::string m_cv_name; //!< Name of the collective variable
 
     private:
-        bool m_harmonic;       //!< True if a harmonic potential of the collective variable is evaluated
-        Scalar m_cv0;          //!< Minimum position of harmonic potential
-        Scalar m_kappa;        //!< Stiffness of harmonic potential
+        umbrella_Enum m_umbrella;  //!< Type of umbrella potential to evalaute
+        Scalar m_cv0;              //!< Minimum position of umbrella tential
+        Scalar m_kappa;            //!< Stiffness of umbrellapotential
     };
 
 //! Export the CollectiveVariable class to python

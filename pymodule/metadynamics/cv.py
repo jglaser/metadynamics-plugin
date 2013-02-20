@@ -93,27 +93,37 @@ class _collective_variable(_force):
 
     ## Set parameters for this collective variable
     # \param sigma The standard deviation
-    # \param harmonic If True enable harmonic potential
-    # \param kappa Harmonic spring constant
-    # \param cv0 Harmonic potential minimum position
+    # \param umbrella The umbrella mode, if this is an umbrella potential
+    # \param kappa Umbrella potential stiffness
+    # \param cv0 Umbrella potential minimum position
     # \param umbrella If True, do not add Gaussians in this collective variable
-    def set_params(self, sigma=None, harmonic=None, kappa=None, cv0=None, umbrella=None):
+    def set_params(self, sigma=None, kappa=None, cv0=None, umbrella=None):
         util.print_status_line()
 
         if sigma is not None:
             self.sigma = sigma
 
-        if harmonic is not None:
-            self.cpp_force.setHarmonic(harmonic)
+        if umbrella is not None:
+            if umbrella=="no_umbrella":
+                cpp_umbrella = _metadynamics.umbrella.no_umbrella 
+                self.umbrella=False
+            elif umbrella=="harmonic":
+                cpp_umbrella = _metadynamics.umbrella.harmonic
+                self.umbrella=True 
+            elif umbrella=="wall":
+                cpp_umbrella = _metadynamics.umbrella.wall
+                self.umbrella=True
+            else:
+                globals.msg.error("cv: Invalid umbrella mode specified.")
+                raise RuntimeError("Error setting parameters of collective variable.");
+
+            self.cpp_force.setUmbrella(cpp_umbrella)
 
         if kappa is not None:
             self.cpp_force.setKappa(kappa)
 
         if cv0 is not None:
             self.cpp_force.setMinimum(cv0)
-
-        if umbrella is not None:
-            self.umbrella = umbrella
 
 ## \brief Lamellar order parameter as a collective variable to study phase transitions in block copolymer systems
 #

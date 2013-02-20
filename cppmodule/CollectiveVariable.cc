@@ -9,18 +9,30 @@ using namespace boost::python;
 
 CollectiveVariable::CollectiveVariable(boost::shared_ptr<SystemDefinition> sysdef,
                                        const std::string& name)
-    : ForceCompute(sysdef), m_bias(0.0), m_cv_name(name), m_harmonic(false), m_cv0(0.0), m_kappa(0.0)
+    : ForceCompute(sysdef),
+      m_bias(0.0),
+      m_cv_name(name),
+      m_umbrella(no_umbrella),
+      m_cv0(0.0),
+      m_kappa(0.0)
     {
     }
 
 void CollectiveVariable::computeForces(unsigned int timestep)
     {
-    if (m_harmonic)
+    if (m_umbrella == harmonic)
         {
         Scalar val = getCurrentValue(timestep);
         
         m_bias = (val-m_cv0)*m_kappa;
         }
+    else if (m_umbrella == wall)
+        {
+        Scalar val = getCurrentValue(timestep);
+
+        m_bias = Scalar(12.0)*m_kappa*pow(val-m_cv0,Scalar(11.0));
+        }
+
     computeBiasForces(timestep);
     }
 
@@ -28,8 +40,10 @@ Scalar CollectiveVariable::getUmbrellaPotential(unsigned int timestep)
     {
     Scalar val = getCurrentValue(timestep);
 
-    if (m_harmonic)
-        return Scalar(1.0/2.0)*(val-m_cv0)*(val-m_cv0);
+    if (m_umbrella == harmonic)
+        return Scalar(1.0/2.0)*m_kappa*(val-m_cv0)*(val-m_cv0);
+    else if (m_umbrella == wall)
+        return m_kappa*pow(val-m_cv0,Scalar(12.0));
 
     return Scalar(0.0);
     }
@@ -69,8 +83,14 @@ void export_CollectiveVariable()
     class_<CollectiveVariableWrap, boost::shared_ptr<CollectiveVariableWrap>, bases<ForceCompute>, boost::noncopyable>
         ("CollectiveVariable", init< boost::shared_ptr<SystemDefinition>, const std::string& > ())
         .def("getCurrentValue", pure_virtual(&CollectiveVariable::getCurrentValue))
-        .def("setHarmonic", &CollectiveVariable::setHarmonic)
+        .def("setUmbrella", &CollectiveVariable::setUmbrella)
         .def("setKappa", &CollectiveVariable::setKappa)
         .def("setMinimum", &CollectiveVariable::setMinimum)
         ;
+
+    enum_<CollectiveVariableWrap::umbrella_Enum>("umbrella")
+    .value("no_umbrella", CollectiveVariableWrap::no_umbrella)
+    .value("harmonic", CollectiveVariableWrap::harmonic)
+    .value("wall", CollectiveVariableWrap::wall)
+    ;
     }
