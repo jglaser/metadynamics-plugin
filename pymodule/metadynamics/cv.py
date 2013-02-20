@@ -97,7 +97,8 @@ class _collective_variable(_force):
     # \param kappa Umbrella potential stiffness
     # \param cv0 Umbrella potential minimum position
     # \param umbrella If True, do not add Gaussians in this collective variable
-    def set_params(self, sigma=None, kappa=None, cv0=None, umbrella=None):
+    # \param width_flat Width of flat region of umbrella potential
+    def set_params(self, sigma=None, kappa=None, cv0=None, umbrella=None, width_flat=None):
         util.print_status_line()
 
         if sigma is not None:
@@ -121,6 +122,9 @@ class _collective_variable(_force):
 
         if kappa is not None:
             self.cpp_force.setKappa(kappa)
+
+        if width_flat is not None:
+            self.cpp_force.setWidthFlat(width_flat)
 
         if cv0 is not None:
             self.cpp_force.setMinimum(cv0)

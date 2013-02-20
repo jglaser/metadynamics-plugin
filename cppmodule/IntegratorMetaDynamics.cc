@@ -60,13 +60,15 @@ IntegratorMetaDynamics::IntegratorMetaDynamics(boost::shared_ptr<SystemDefinitio
       m_mode(mode),
       m_stride_multiply(1),
       m_num_label_change(0),
-      m_min_label_change(0)
+      m_min_label_change(0),
+      m_umbrella_energy(0.0)
     {
     assert(m_T_shift>0);
     assert(m_W > 0);
 
     m_log_names.push_back("bias_potential");
     m_log_names.push_back("det_sigma");
+    m_log_names.push_back("umbrella_energy");
 
     // Initial state for flux-tempered MetaD
     m_compute_histograms = false;
@@ -416,18 +418,18 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
                     scal = exp(-V/m_T_shift);
 
                 // add up umbrella potentials for reweighting
-                Scalar umbrella_energy = Scalar(0.0);
+                m_umbrella_energy = Scalar(0.0);
                 for (unsigned int i = 0; i < m_variables.size(); ++i)
                     {
                     if (m_variables[i].m_umbrella)
                         {
                         Scalar val = m_variables[i].m_cv->getUmbrellaPotential(timestep);
-                        umbrella_energy += val;
+                        m_umbrella_energy += val;
                         }
                     }
 
                 // reweight by Boltzmann factor
-                Scalar reweight = exp(umbrella_energy/m_temp);
+                Scalar reweight = exp(m_umbrella_energy/m_temp);
 
 #ifdef ENABLE_CUDA
                 if (m_exec_conf->isCUDAEnabled())

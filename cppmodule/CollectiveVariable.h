@@ -70,11 +70,19 @@ class CollectiveVariable : public ForceCompute
             }
 
         /*! Set spring constant for harmonic potential
-         * \param kappa Spring constant (in units energy/c.v.^2)
+         * \param kappa Spring constant (in units of the collective variable)
          */
         void setKappa(Scalar kappa)
             {
             m_kappa = kappa;
+            }
+
+        /*! Set width of flat region of umbrella potential
+         * \param width Width of flat region (in units of collective variable)
+         */
+        void setWidthFlat(Scalar width)
+            {
+            m_width_flat= width;
             }
 
         /*! Set minimum position of harmonic potential
@@ -127,7 +135,8 @@ class CollectiveVariable : public ForceCompute
     private:
         umbrella_Enum m_umbrella;  //!< Type of umbrella potential to evalaute
         Scalar m_cv0;              //!< Minimum position of umbrella tential
-        Scalar m_kappa;            //!< Stiffness of umbrellapotential
+        Scalar m_kappa;            //!< Stiffness of umbrella potential
+        Scalar m_width_flat;       //!< Region where the umbrella potential is flat
     };
 
 //! Export the CollectiveVariable class to python

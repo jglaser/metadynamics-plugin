@@ -189,6 +189,10 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
                 {
                 return sigmaDeterminant();
                 }
+            else if (quantity == m_log_names[2])
+                {
+                return m_umbrella_energy;
+                }
             else
                 { 
                 // default: throw exception
@@ -350,6 +354,7 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         unsigned int m_stride_multiply;                   //!< Multiplication factor for m_stride applied after every grid update
         unsigned int m_num_label_change;                  //!< Number of walker label changes since last bias potential update
         unsigned int m_min_label_change;                  //!< Minimum number of walker label changes between bias potential updates
+        Scalar m_umbrella_energy;                         //!< Energy of umbrella potential
 
         //! Internal helper function to update the bias potential
         void updateBiasPotential(unsigned int timestep);
