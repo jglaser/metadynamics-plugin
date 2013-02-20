@@ -335,7 +335,6 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         GPUArray<Scalar> m_cv_max;                        //!< Maximum grid values per CV
         GPUArray<Scalar> m_sigma;                         //!< Square Matrix of Gaussian standard deviations
         GPUArray<Scalar> m_sigma_grid;                    //!< Gaussian volume as function of the collective ariables
-        GPUArray<Scalar> m_sigma_reweight_grid;           //!< Reweighted Gaussian volume grid
         GPUArray<unsigned int> m_grid_hist;               //!< Number of times a state has been visited
         GPUArray<Scalar> m_current_val;                   //!< Current CV values array
         Scalar m_sigma_g;                                 //!< Estimated standard deviation of particle displacements
@@ -351,8 +350,6 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         unsigned int m_stride_multiply;                   //!< Multiplication factor for m_stride applied after every grid update
         unsigned int m_num_label_change;                  //!< Number of walker label changes since last bias potential update
         unsigned int m_min_label_change;                  //!< Minimum number of walker label changes between bias potential updates
-
-        Scalar m_umbrella_factor;                         //!< Histogram reweighting factor
 
         //! Internal helper function to update the bias potential
         void updateBiasPotential(unsigned int timestep);
@@ -409,7 +406,7 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         Scalar sigmaDeterminant();
 
         //! Update the grid of sigma values
-        void updateSigmaGrid(std::vector<Scalar>& current_val, Scalar reweight);
+        void updateSigmaGrid(std::vector<Scalar>& current_val);
     };
 
 //! Export to python

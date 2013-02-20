@@ -60,8 +60,7 @@ IntegratorMetaDynamics::IntegratorMetaDynamics(boost::shared_ptr<SystemDefinitio
       m_mode(mode),
       m_stride_multiply(1),
       m_num_label_change(0),
-      m_min_label_change(0),
-      m_umbrella_factor(Scalar(1.0))
+      m_min_label_change(0)
     {
     assert(m_T_shift>0);
     assert(m_W > 0);
@@ -428,15 +427,15 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
                     }
 
                 // reweight by Boltzmann factor
-                m_umbrella_factor = exp(umbrella_energy/m_temp);
+                Scalar reweight = exp(umbrella_energy/m_temp);
 
 #ifdef ENABLE_CUDA
                 if (m_exec_conf->isCUDAEnabled())
-                    updateGridGPU(current_val, scal, m_umbrella_factor);
+                    updateGridGPU(current_val, scal, reweight);
                 else
-                    updateGrid(current_val, scal,m_umbrella_factor);
+                    updateGrid(current_val, scal,reweight);
 #else
-                updateGrid(current_val, scal, m_umbrella_factor);
+                updateGrid(current_val, scal, reweight);
 #endif
 
                 // reset statistics
@@ -563,7 +562,7 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
         if (m_adaptive && m_use_grid)
             {
             // update sigma grid and histogram
-            updateSigmaGrid(current_val,m_umbrella_factor);
+            updateSigmaGrid(current_val);
             }
 
         // dump grid information if required using alternating scheme
@@ -641,17 +640,11 @@ void IntegratorMetaDynamics::setupGrid()
     GPUArray<Scalar> sigma_grid(m_grid_index.getNumElements(),m_exec_conf);
     m_sigma_grid.swap(sigma_grid);
 
-    GPUArray<Scalar> sigma_reweight_grid(m_grid_index.getNumElements(),m_exec_conf);
-    m_sigma_reweight_grid.swap(sigma_reweight_grid);
-
     GPUArray<unsigned int> grid_hist(m_grid_index.getNumElements(),m_exec_conf);
     m_grid_hist.swap(grid_hist);
 
     ArrayHandle<Scalar> h_sigma_grid(m_sigma_grid, access_location::host, access_mode::overwrite);
     memset(h_sigma_grid.data, 0, sizeof(Scalar)*m_sigma_grid.getNumElements());
-
-    ArrayHandle<Scalar> h_sigma_reweight_grid(m_sigma_reweight_grid, access_location::host, access_mode::overwrite);
-    memset(h_sigma_reweight_grid.data, 0, sizeof(Scalar)*m_sigma_reweight_grid.getNumElements());
 
     ArrayHandle<unsigned int> h_grid_hist(m_grid_hist, access_location::host, access_mode::overwrite);
     memset(h_grid_hist.data, 0, sizeof(Scalar)*m_grid_hist.getNumElements());
@@ -877,11 +870,10 @@ void IntegratorMetaDynamics::writeGrid(const std::string& filename)
         }
 
 
-    file << "grid";
+    file << "grid_value";
 
-    file << m_delimiter << "grid_reweight";
+    file << m_delimiter << "reweight";
     file << m_delimiter << "det_sigma";
-    file << m_delimiter << "det_sigma_reweight";
     file << m_delimiter << "hist";
 
     file << std::endl;
@@ -892,7 +884,6 @@ void IntegratorMetaDynamics::writeGrid(const std::string& filename)
     std::vector<unsigned int> coords(m_grid_index.getDimension()); 
 
     ArrayHandle<Scalar> h_sigma_grid(m_sigma_grid, access_location::host, access_mode::read);
-    ArrayHandle<Scalar> h_sigma_reweight_grid(m_sigma_reweight_grid, access_location::host, access_mode::read);
     ArrayHandle<unsigned int> h_grid_hist(m_grid_hist, access_location::host, access_mode::read);
     ArrayHandle<Scalar> h_reweighted_grid(m_reweighted_grid, access_location::host, access_mode::read);
 
@@ -918,20 +909,15 @@ void IntegratorMetaDynamics::writeGrid(const std::string& filename)
         file << m_delimiter << setprecision(10) << h_reweighted_grid.data[grid_idx];
 
         // write average of Gaussian volume
-        Scalar val,val_reweight;
+        Scalar val;
         if (h_grid_hist.data[grid_idx] > 0)
             {
             val = h_sigma_grid.data[grid_idx]/(Scalar)h_grid_hist.data[grid_idx];
-            val_reweight = h_sigma_reweight_grid.data[grid_idx]/(Scalar)h_grid_hist.data[grid_idx];
             }
         else
-            {
             val = Scalar(0.0);
-            val_reweight = Scalar(0.0);
-            }
 
         file << m_delimiter << setprecision(10) << val;
-        file << m_delimiter << setprecision(10) << val_reweight;
         file << m_delimiter << h_grid_hist.data[grid_idx];
 
         file << std::endl;
@@ -1018,7 +1004,6 @@ void IntegratorMetaDynamics::readGrid(const std::string& filename)
     ArrayHandle<Scalar> h_grid(m_grid, access_location::host, access_mode::overwrite);
 
     ArrayHandle<Scalar> h_sigma_grid(m_sigma_grid, access_location::host, access_mode::overwrite);
-    ArrayHandle<Scalar> h_sigma_reweight_grid(m_sigma_reweight_grid, access_location::host, access_mode::overwrite);
     ArrayHandle<unsigned int> h_grid_hist(m_grid_hist, access_location::host, access_mode::overwrite);
     ArrayHandle<Scalar> h_reweighted_grid(m_reweighted_grid, access_location::host, access_mode::overwrite);
 
@@ -1041,11 +1026,9 @@ void IntegratorMetaDynamics::readGrid(const std::string& filename)
 
         iss >> h_reweighted_grid.data[grid_idx];
         iss >> h_sigma_grid.data[grid_idx];
-        iss >> h_sigma_reweight_grid.data[grid_idx];
         iss >> h_grid_hist.data[grid_idx];
 
         h_sigma_grid.data[grid_idx] *= h_grid_hist.data[grid_idx];
-        h_sigma_reweight_grid.data[grid_idx] *= h_grid_hist.data[grid_idx];
         }
     
     if (m_compute_histograms)
@@ -1188,16 +1171,14 @@ void IntegratorMetaDynamics::updateGrid(std::vector<Scalar>& current_val, Scalar
     if (m_prof) m_prof->pop();
     }
 
-void IntegratorMetaDynamics::updateSigmaGrid(std::vector<Scalar>& current_val, Scalar reweight)
+void IntegratorMetaDynamics::updateSigmaGrid(std::vector<Scalar>& current_val)
     {
     if (m_prof) m_prof->push("update sigma grid");
 
     ArrayHandle<Scalar> h_sigma_grid(m_sigma_grid, access_location::host, access_mode::readwrite);
-    ArrayHandle<Scalar> h_sigma_reweight_grid(m_sigma_reweight_grid, access_location::host, access_mode::readwrite);
     ArrayHandle<unsigned int> h_grid_hist(m_grid_hist, access_location::host, access_mode::readwrite);
 
     assert(h_sigma_grid.data);
-    assert(h_sigma_reweight_grid.data);
 
     std::vector<unsigned int> grid_coord(m_variables.size());
 
@@ -1216,12 +1197,11 @@ void IntegratorMetaDynamics::updateSigmaGrid(std::vector<Scalar>& current_val, S
         cv++;
         }
 
-    // add Gaussian volume to grid
+    // add Gaussian to grid
     if (on_grid)
         {
         unsigned int grid_idx = m_grid_index.getIndex(grid_coord);
         h_sigma_grid.data[grid_idx] += sigmaDeterminant();
-        h_sigma_reweight_grid.data[grid_idx] += reweight*sigmaDeterminant();
         h_grid_hist.data[grid_idx]++;
         }
 
