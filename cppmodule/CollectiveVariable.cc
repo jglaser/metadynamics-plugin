@@ -41,7 +41,7 @@ void CollectiveVariable::computeForces(unsigned int timestep)
                 }
             else if (m_umbrella == wall)
                 {
-                m_bias = Scalar(12.0)*pow(delta/m_kappa,Scalar(11.0));
+                m_bias = Scalar(12.0)*pow(delta/m_kappa,Scalar(11.0))/m_kappa;
                 }
             }
         }
