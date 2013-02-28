@@ -431,6 +431,8 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
                 // reweight by Boltzmann factor
                 Scalar reweight = exp(m_umbrella_energy/m_temp);
 
+                m_exec_conf->msg->notice(3) << "integrate.mode_metadynamics: Updating grid." << std::endl;
+
 #ifdef ENABLE_CUDA
                 if (m_exec_conf->isCUDAEnabled())
                     updateGridGPU(current_val, scal, reweight);
