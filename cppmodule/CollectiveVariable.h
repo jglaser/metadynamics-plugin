@@ -110,6 +110,14 @@ class CollectiveVariable : public ForceCompute
             computeBiasForces(timestep);
             }
 
+        /*! Returns true if the collective variable can compute derivatives
+         *  w.r.t. particle coordinates
+         */
+        virtual bool canComputeDerivatives()
+            {
+            return true;
+            }
+
         /*! Returns the value of the harmonic umbrella potential
          * \param timestep
          */

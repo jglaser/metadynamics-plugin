@@ -248,8 +248,8 @@ class mode_metadynamics(_integrator):
                         if use_grid is False:
                             globals.msg.error("integrate.mode_metadynamics: Not all collective variables have been set up for grid mode.\n")
                             raise RuntimeError('Error setting up Metadynamics.');
-                            
-                self.cv_names.append(f.name)
+                if not f.umbrella: 
+                    self.cv_names.append(f.name)
 
         if len(self.cv_names) == 0:
             globals.msg.warning("integrate.mode_metadynamics: No collective variables defined. Continuing with simulation anyway.\n")

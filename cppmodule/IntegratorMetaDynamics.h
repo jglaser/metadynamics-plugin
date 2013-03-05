@@ -337,7 +337,7 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         GPUArray<unsigned int> m_lengths;                 //!< Grid dimensions in every direction
         GPUArray<Scalar> m_cv_min;                        //!< Minimum grid values per CV
         GPUArray<Scalar> m_cv_max;                        //!< Maximum grid values per CV
-        GPUArray<Scalar> m_sigma;                         //!< Square Matrix of Gaussian standard deviations
+        GPUArray<Scalar> m_sigma_inv;                     //!< Square matrix of Gaussian standard deviations (inverse)
         GPUArray<Scalar> m_sigma_grid;                    //!< Gaussian volume as function of the collective ariables
         GPUArray<unsigned int> m_grid_hist;               //!< Number of times a state has been visited
         GPUArray<Scalar> m_current_val;                   //!< Current CV values array

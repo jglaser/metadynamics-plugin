@@ -100,7 +100,7 @@ __global__ void gpu_update_grid_kernel(unsigned int num_elements,
                                        Scalar *reweighted_grid,
                                        Scalar *cv_min,
                                        Scalar *cv_max,
-                                       Scalar *cv_sigma,
+                                       Scalar *cv_sigma_inv,
                                        Scalar scal,
                                        Scalar reweight,
                                        Scalar W,
@@ -151,9 +151,9 @@ __global__ void gpu_update_grid_kernel(unsigned int num_elements,
                 Scalar val_j = min_j + (Scalar)coords[cv_j+dim*threadIdx.x]*delta_j;
                 Scalar d_j = val_j - current_val[cv_j];
 
-                Scalar sigma_ij = cv_sigma[cv_i*dim+cv_j];
+                Scalar sigma_inv_ij = cv_sigma_inv[cv_i*dim+cv_j];
 
-                gauss_exp -= d_i*d_j*Scalar(1.0/2.0)/(sigma_ij*sigma_ij);
+                gauss_exp -= d_i*d_j*Scalar(1.0/2.0)*(sigma_inv_ij*sigma_inv_ij);
                 }
             }
 
@@ -198,7 +198,7 @@ cudaError_t gpu_update_grid(unsigned int num_elements,
                      Scalar *d_reweighted_grid,
                      Scalar *d_cv_min,
                      Scalar *d_cv_max,
-                     Scalar *d_cv_sigma,
+                     Scalar *d_cv_sigma_inv,
                      Scalar scal,
                      Scalar reweight,
                      Scalar W,
@@ -220,7 +220,7 @@ cudaError_t gpu_update_grid(unsigned int num_elements,
                                                                                  d_reweighted_grid,
                                                                                  d_cv_min,
                                                                                  d_cv_max,
-                                                                                 d_cv_sigma,
+                                                                                 d_cv_sigma_inv,
                                                                                  scal,
                                                                                  reweight,
                                                                                  W,

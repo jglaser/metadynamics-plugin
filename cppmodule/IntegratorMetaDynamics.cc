@@ -164,15 +164,15 @@ void IntegratorMetaDynamics::prepRun(unsigned int timestep)
             GPUArray<unsigned int> lengths(m_num_biased_variables, m_exec_conf);
             m_lengths.swap(lengths);
 
-            GPUArray<Scalar> sigma(m_num_biased_variables*m_num_biased_variables, m_exec_conf);
-            m_sigma.swap(sigma);
+            GPUArray<Scalar> sigma_inv(m_num_biased_variables*m_num_biased_variables, m_exec_conf);
+            m_sigma_inv.swap(sigma_inv);
 
             ArrayHandle<Scalar> h_cv_min(m_cv_min, access_location::host, access_mode::overwrite);
             ArrayHandle<Scalar> h_cv_max(m_cv_max, access_location::host, access_mode::overwrite);
             ArrayHandle<unsigned int> h_lengths(m_lengths, access_location::host, access_mode::overwrite);
-            ArrayHandle<Scalar> h_sigma(m_sigma, access_location::host, access_mode::overwrite);
+            ArrayHandle<Scalar> h_sigma_inv(m_sigma_inv, access_location::host, access_mode::overwrite);
            
-            memset(h_sigma.data, 0, sizeof(Scalar)*m_num_biased_variables*m_num_biased_variables);
+            memset(h_sigma_inv.data, 0, sizeof(Scalar)*m_num_biased_variables*m_num_biased_variables);
 
             unsigned int idx = 0;
             for (unsigned int cv_idx = 0; cv_idx < m_variables.size(); cv_idx++)
@@ -181,7 +181,7 @@ void IntegratorMetaDynamics::prepRun(unsigned int timestep)
 
                 h_cv_min.data[idx] = m_variables[cv_idx].m_cv_min;
                 h_cv_max.data[idx] = m_variables[cv_idx].m_cv_max;
-                h_sigma.data[idx*m_variables.size()+idx] = m_variables[cv_idx].m_sigma;
+                h_sigma_inv.data[idx*m_variables.size()+idx] = Scalar(1.0)/m_variables[cv_idx].m_sigma;
                 h_lengths.data[idx] = m_variables[cv_idx].m_num_points;
                 idx++;
                 }
@@ -477,7 +477,7 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
 
 
 
-            ArrayHandle<Scalar> h_sigma(m_sigma, access_location::host, access_mode::read);
+            ArrayHandle<Scalar> h_sigma_inv(m_sigma_inv, access_location::host, access_mode::read);
 
             // sum up all Gaussians accumulated until now
             for (unsigned int gauss_idx = 0; gauss_idx < m_bias_potential.size(); ++gauss_idx)
@@ -494,9 +494,9 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
                         Scalar valj = current_val[j];
                         Scalar delta_j = valj - m_cv_values[j][gauss_idx];
 
-                        Scalar sigmaij = h_sigma.data[i*m_num_biased_variables+j];
+                        Scalar sigma_inv_ij = h_sigma_inv.data[i*m_num_biased_variables+j];
 
-                        gauss_exp += delta_i*delta_j*Scalar(1.0/2.0)/(sigmaij*sigmaij);
+                        gauss_exp += delta_i*delta_j*Scalar(1.0/2.0)*(sigma_inv_ij*sigma_inv_ij);
                         }
                     }
                 Scalar gauss = exp(-gauss_exp);
@@ -516,10 +516,10 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
                         {
                         Scalar val_j = current_val[j];
 
-                        Scalar sigmaij = h_sigma.data[i*m_num_biased_variables+j];
+                        Scalar sigma_inv_ij = h_sigma_inv.data[i*m_num_biased_variables+j];
                         
-                        bias[i] -= Scalar(1.0/2.0)*m_W*scal/(sigmaij*sigmaij)*(val_j - m_cv_values[j][gauss_idx])*gauss;
-                        bias[j] -= Scalar(1.0/2.0)*m_W*scal/(sigmaij*sigmaij)*(val_i - m_cv_values[i][gauss_idx])*gauss;
+                        bias[i] -= Scalar(1.0/2.0)*m_W*scal*(sigma_inv_ij*sigma_inv_ij)*(val_j - m_cv_values[j][gauss_idx])*gauss;
+                        bias[j] -= Scalar(1.0/2.0)*m_W*scal*(sigma_inv_ij*sigma_inv_ij)*(val_i - m_cv_values[i][gauss_idx])*gauss;
                         }
                     }
 
@@ -530,7 +530,7 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
         // write hills information
         if (m_is_initialized && (m_num_update_steps % m_stride == 0) && m_add_bias && m_file.is_open())
             {
-            ArrayHandle<Scalar> h_sigma(m_sigma, access_location::host, access_mode::read);
+            ArrayHandle<Scalar> h_sigma_inv(m_sigma_inv, access_location::host, access_mode::read);
 
             Scalar W = m_W*exp(-m_curr_bias_potential/m_T_shift);
             m_file << setprecision(10) << timestep << m_delimiter;
@@ -542,12 +542,12 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
                 unsigned int cv_index = cv - current_val.begin();
                 m_file << setprecision(10) << *cv << m_delimiter;
 
-                // Write row of sigma matrix
+                // Write row of inverse sigma matrix
                 for (cvj = current_val.begin(); cvj != current_val.end(); ++cvj)
                     {
                     unsigned int cv_index_j = cvj - current_val.begin();
-                    Scalar sigmaij = h_sigma.data[cv_index*m_num_biased_variables+cv_index_j];
-                    m_file << setprecision(10) << sigmaij;
+                    Scalar sigma_inv_ij = h_sigma_inv.data[cv_index*m_num_biased_variables+cv_index_j];
+                    m_file << setprecision(10) << sigma_inv_ij;
                     }
 
                 if (cv != current_val.end() -1) m_file << m_delimiter;
@@ -1106,7 +1106,7 @@ void IntegratorMetaDynamics::updateGrid(std::vector<Scalar>& current_val, Scalar
     unsigned int len = m_grid_index.getNumElements();
     std::vector<unsigned int> coords(m_grid_index.getDimension()); 
 
-    ArrayHandle<Scalar> h_sigma(m_sigma, access_location::host, access_mode::read);
+    ArrayHandle<Scalar> h_sigma_inv(m_sigma_inv, access_location::host, access_mode::read);
 
     unsigned int idx = 0;
     if (m_mode == mode_flux_tempered)
@@ -1141,9 +1141,9 @@ void IntegratorMetaDynamics::updateGrid(std::vector<Scalar>& current_val, Scalar
                     Scalar val_j = m_variables[cv_j].m_cv_min + coords[cv_j]*delta_j;
                     double d_j = val_j - current_val[cv_j];
 
-                    Scalar sigma_ij = h_sigma.data[cv_i*m_variables.size()+cv_j];
+                    Scalar sigma_inv_ij = h_sigma_inv.data[cv_i*m_variables.size()+cv_j];
 
-                    gauss_exp += d_i*d_j*Scalar(1.0/2.0)/(sigma_ij*sigma_ij);
+                    gauss_exp += d_i*d_j*Scalar(1.0/2.0)*(sigma_inv_ij*sigma_inv_ij);
                     }
                 }
             double gauss = exp(-gauss_exp);
@@ -1232,7 +1232,7 @@ void IntegratorMetaDynamics::updateGridGPU(std::vector<Scalar>& current_val, Sca
     ArrayHandle<unsigned int> d_lengths(m_lengths, access_location::device, access_mode::read);
     ArrayHandle<Scalar> d_cv_min(m_cv_min, access_location::device, access_mode::read);
     ArrayHandle<Scalar> d_cv_max(m_cv_max, access_location::device, access_mode::read);
-    ArrayHandle<Scalar> d_sigma(m_sigma, access_location::device, access_mode::read);
+    ArrayHandle<Scalar> d_sigma_inv(m_sigma_inv, access_location::device, access_mode::read);
     ArrayHandle<Scalar> d_current_val(m_current_val, access_location::device, access_mode::read);
 
     ArrayHandle<Scalar> d_histogram(m_ftm_histogram, access_location::device, access_mode::readwrite);
@@ -1250,7 +1250,7 @@ void IntegratorMetaDynamics::updateGridGPU(std::vector<Scalar>& current_val, Sca
                     d_reweighted_grid.data,
                     d_cv_min.data,
                     d_cv_max.data,
-                    d_sigma.data,
+                    d_sigma_inv.data,
                     scal,
                     reweight,
                     m_W,
@@ -1458,32 +1458,39 @@ void IntegratorMetaDynamics::computeSigma()
 
     Scalar *sigma = new Scalar[ncv*ncv];
 
+    unsigned int i = 0;
+    unsigned int j = 0;
     for (iti = m_variables.begin(); iti != m_variables.end(); ++iti)
         {
         if (iti->m_umbrella) continue;
 
         ArrayHandle<Scalar4> handle_i = ArrayHandle<Scalar4>(iti->m_cv->getForceArray(), access_location::host, access_mode::read);
-        unsigned int i = iti - m_variables.begin();
 
+        j = 0;
         for (itj = m_variables.begin(); itj != m_variables.end(); ++itj)
             {
             if (itj->m_umbrella) continue;
 
-            unsigned int j = itj - m_variables.begin();
-
-            // this releases an array twice, so may create problems in debug mode
-            ArrayHandle<Scalar4> handle_j = (i != j) ?
-            ArrayHandle<Scalar4>(itj->m_cv->getForceArray(), access_location::host, access_mode::read) : handle_i;
-
             Scalar sigmasq(0.0);
-            // sum up products of derviatives
-            for (unsigned int n = 0; n < m_pdata->getN(); ++n)
+            if (iti->m_cv->canComputeDerivatives() && itj->m_cv->canComputeDerivatives())
                 {
-                Scalar4 f_i = handle_i.data[n];
-                Scalar4 f_j = handle_j.data[n];
-                Scalar3 force_i = make_scalar3(f_i.x,f_i.y,f_i.z);
-                Scalar3 force_j = make_scalar3(f_j.x,f_j.y,f_j.z);
-                sigmasq += m_sigma_g*m_sigma_g*dot(force_i,force_j);
+                // this releases an array twice, so may create problems in debug mode
+                ArrayHandle<Scalar4> handle_j = (i != j) ?
+                ArrayHandle<Scalar4>(itj->m_cv->getForceArray(), access_location::host, access_mode::read) : handle_i;
+
+                // sum up products of derviatives
+                for (unsigned int n = 0; n < m_pdata->getN(); ++n)
+                    {
+                    Scalar4 f_i = handle_i.data[n];
+                    Scalar4 f_j = handle_j.data[n];
+                    Scalar3 force_i = make_scalar3(f_i.x,f_i.y,f_i.z);
+                    Scalar3 force_j = make_scalar3(f_j.x,f_j.y,f_j.z);
+                    sigmasq += m_sigma_g*m_sigma_g*dot(force_i,force_j);
+                    }
+                }
+            else if (i==j)
+                {
+                sigmasq = iti->m_sigma*iti->m_sigma;
                 }
 
             sigma[i*ncv+j] = sqrt(sigmasq);
@@ -1508,10 +1515,24 @@ void IntegratorMetaDynamics::computeSigma()
 
     if (is_root)
         {
-        // write out result
-        ArrayHandle<Scalar> h_sigma(m_sigma, access_location::host, access_mode::overwrite);
-        for (unsigned int i = 0; i < ncv*ncv; ++i)
-            h_sigma.data[i] = sigma[i];
+        // invert sigma matrix
+        ArrayHandle<Scalar> h_sigma_inv(m_sigma_inv, access_location::host, access_mode::overwrite);
+
+        bnu::matrix<Scalar> m(ncv,ncv);
+        for (unsigned int i = 0; i < ncv; ++i)
+            for (unsigned int j = 0 ; j < ncv; ++j)
+                m(i,j) = sigma[i*ncv+j];
+
+        bnu::permutation_matrix<std::size_t> pm(m.size1());
+        bnu::lu_factorize(m,pm);
+        bnu::matrix<Scalar> inv(ncv,ncv);
+        inv.assign(bnu::identity_matrix<Scalar>(m.size1()));
+        bnu::lu_substitute(m,pm, inv);
+
+        for (unsigned int i = 0; i < ncv; ++i)
+            for (unsigned int j = 0 ; j < ncv; ++j)
+                h_sigma_inv.data[i*ncv+j] = inv(i,j);
+
         }
 
     delete[] sigma;
@@ -1529,7 +1550,7 @@ int determinant_sign(const bnu::permutation_matrix<std ::size_t>& pm)
  
 Scalar IntegratorMetaDynamics::sigmaDeterminant()
     {
-    ArrayHandle<Scalar> h_sigma(m_sigma, access_location::host, access_mode::read);
+    ArrayHandle<Scalar> h_sigma_inv(m_sigma_inv, access_location::host, access_mode::read);
 
     unsigned int n_cv =m_num_biased_variables;
 
@@ -1537,7 +1558,7 @@ Scalar IntegratorMetaDynamics::sigmaDeterminant()
     for (unsigned int i = 0; i < n_cv; ++i)
         for (unsigned int j = 0 ; j < n_cv; ++j)
             {
-            m(i,j) = h_sigma.data[i*n_cv+j];
+            m(i,j) = h_sigma_inv.data[i*n_cv+j];
             }
 
     bnu::permutation_matrix<size_t> pm(m.size1());
@@ -1553,7 +1574,7 @@ Scalar IntegratorMetaDynamics::sigmaDeterminant()
         det = det * determinant_sign( pm );
         }
 
-    return det;
+    return Scalar(1.0)/det;
     }
 
 void export_IntegratorMetaDynamics()

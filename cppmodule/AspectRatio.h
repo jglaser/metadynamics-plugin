@@ -34,6 +34,14 @@ class AspectRatio :  public CollectiveVariable
                 }
             }
 
+        /*! Returns true if the collective variable can compute derivatives
+         *  w.r.t. particle coordinates
+         */
+        virtual bool canComputeDerivatives()
+            {
+            return false;
+            }
+
     private:
         /*! Compute the biased forces for this collective variable.
             The force that is written to the force arrays must be
