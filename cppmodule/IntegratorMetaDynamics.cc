@@ -682,9 +682,9 @@ Scalar IntegratorMetaDynamics::interpolateBiasPotential(const std::vector<Scalar
 
         Scalar lower_bound = m_variables[cv_idx].m_cv_min + delta * lower;
         Scalar upper_bound = m_variables[cv_idx].m_cv_min + delta * upper;
-        lower_idx[cv_idx] = lower;
-        upper_idx[cv_idx] = upper;
-        rel_delta[cv_idx] = (val[cv]-lower_bound)/(upper_bound-lower_bound);
+        lower_idx[cv] = lower;
+        upper_idx[cv] = upper;
+        rel_delta[cv] = (val[cv]-lower_bound)/(upper_bound-lower_bound);
 
         cv++;
         }
@@ -866,7 +866,7 @@ void IntegratorMetaDynamics::writeGrid(const std::string& filename)
 
     file << "#num_histogram_entries: " << m_num_histogram_entries << std::endl;
 
-    for (unsigned int i = 0; i < m_grid_index.getDimension(); i++)
+    for (unsigned int i = 0; i < m_variables.size(); i++)
         {
         if (m_variables[i].m_umbrella) continue;
 
@@ -1195,7 +1195,7 @@ void IntegratorMetaDynamics::updateSigmaGrid(std::vector<Scalar>& current_val)
 
         Scalar delta = (m_variables[cv_i].m_cv_max - m_variables[cv_i].m_cv_min)/
                        (m_variables[cv_i].m_num_points - 1);
-        grid_coord[cv_i] = (current_val[cv] - m_variables[cv_i].m_cv_min)/delta;
+        grid_coord[cv] = (current_val[cv] - m_variables[cv_i].m_cv_min)/delta;
         if (grid_coord[cv] >= m_variables[cv_i].m_num_points)
             on_grid = false;
         cv++;
@@ -1456,7 +1456,9 @@ void IntegratorMetaDynamics::computeSigma()
 
     unsigned int ncv = m_num_biased_variables;
 
-    Scalar *sigma = new Scalar[ncv*ncv];
+    Scalar *sigmasq = new Scalar[ncv*ncv];
+
+    bool is_root = m_exec_conf->getRank() == 0;
 
     unsigned int i = 0;
     unsigned int j = 0;
@@ -1471,7 +1473,7 @@ void IntegratorMetaDynamics::computeSigma()
             {
             if (itj->m_umbrella) continue;
 
-            Scalar sigmasq(0.0);
+            sigmasq[i*ncv+j] = Scalar(0.0);
             if (iti->m_cv->canComputeDerivatives() && itj->m_cv->canComputeDerivatives())
                 {
                 // this releases an array twice, so may create problems in debug mode
@@ -1485,15 +1487,12 @@ void IntegratorMetaDynamics::computeSigma()
                     Scalar4 f_j = handle_j.data[n];
                     Scalar3 force_i = make_scalar3(f_i.x,f_i.y,f_i.z);
                     Scalar3 force_j = make_scalar3(f_j.x,f_j.y,f_j.z);
-                    sigmasq += m_sigma_g*m_sigma_g*dot(force_i,force_j);
+                    sigmasq[i*ncv+j] += m_sigma_g*m_sigma_g*dot(force_i,force_j);
                     }
                 }
-            else if (i==j)
-                {
-                sigmasq = iti->m_sigma*iti->m_sigma;
-                }
+            else
+                if (i==j && is_root) sigmasq[i*ncv+j] = iti->m_sigma*iti->m_sigma;
 
-            sigma[i*ncv+j] = sqrt(sigmasq);
             j++;
             } 
         i++;
@@ -1503,15 +1502,13 @@ void IntegratorMetaDynamics::computeSigma()
     if (m_pdata->getDomainDecomposition())
         {
         MPI_Allreduce(MPI_IN_PLACE,
-                   &sigma[0],
+                   &sigmasq[0],
                    ncv*ncv,
                    MPI_HOOMD_SCALAR,
                    MPI_SUM,
                    m_exec_conf->getMPICommunicator()); 
     }
     #endif
-
-    bool is_root = m_exec_conf->getRank() == 0;
 
     if (is_root)
         {
@@ -1521,7 +1518,7 @@ void IntegratorMetaDynamics::computeSigma()
         bnu::matrix<Scalar> m(ncv,ncv);
         for (unsigned int i = 0; i < ncv; ++i)
             for (unsigned int j = 0 ; j < ncv; ++j)
-                m(i,j) = sigma[i*ncv+j];
+                m(i,j) = sqrt(sigmasq[i*ncv+j]);
 
         bnu::permutation_matrix<std::size_t> pm(m.size1());
         bnu::lu_factorize(m,pm);
@@ -1535,7 +1532,7 @@ void IntegratorMetaDynamics::computeSigma()
 
         }
 
-    delete[] sigma;
+    delete[] sigmasq;
     }
 
 int determinant_sign(const bnu::permutation_matrix<std ::size_t>& pm)
