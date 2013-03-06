@@ -42,6 +42,9 @@ class OrderParameterMeshGPU : public OrderParameterMesh
         //! Helper function to compute the virial
         virtual void computeVirial();
 
+        //! Compute maximum q vector
+        virtual void computeQmax(unsigned int timestep);
+
     private:
         cufftHandle m_cufft_plan;          //!< The FFT plan
         bool m_local_fft;                  //!< True if we are only doing local FFTs (not distributed)
@@ -73,6 +76,9 @@ class OrderParameterMeshGPU : public OrderParameterMesh
         GPUArray<Scalar> m_sum_virial_partial;     //!< Partial sums over virial mesh values
         GPUArray<Scalar> m_sum_virial;             //!< Final sum over virial mesh values
         unsigned int m_block_size;                 //!< Block size for fourier mesh reduction
+
+        GPUFlags<Scalar4> m_gpu_q_max;             //!< Return value for maximum Fourier mode reduction
+        GPUArray<Scalar4> m_max_partial;           //!< Scratch space for reduction of maximum Fourier amplitude
     };
 
 //! Define plus operator for complex data type (only need to compile by CommunicatorMesh base class)

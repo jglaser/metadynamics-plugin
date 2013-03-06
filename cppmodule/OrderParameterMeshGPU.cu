@@ -1114,3 +1114,108 @@ void gpu_compute_influence_function(const Index3D& mesh_idx,
                                                                              dffti);
 #endif 
     } 
+
+__global__ void gpu_compute_qmax_partial_kernel(
+            int n_wave_vectors,
+            Scalar4 *max_partial,
+            const Scalar3 *d_k,
+            const cufftComplex *d_fourier_mesh)
+    {
+    extern __shared__ Scalar4 sdata_max[];
+
+    unsigned int tidx = threadIdx.x;
+
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
+
+    Scalar4 max_q = make_scalar4(0.0,0.0,0.0,0.0);
+
+    if (j < n_wave_vectors) {
+        Scalar a = d_fourier_mesh[j].x * d_fourier_mesh[j].x + d_fourier_mesh[j].y * d_fourier_mesh[j].y;
+        Scalar3 k = d_k[j];
+        max_q = make_scalar4(k.x,k.y,k.z,a);
+        }
+
+    sdata_max[tidx] = max_q;
+
+   __syncthreads();
+
+    // reduce the sum
+    int offs = blockDim.x >> 1;
+    while (offs > 0)
+        {
+        if (tidx < offs)
+            {
+            sdata_max[tidx] = (sdata_max[tidx].w > sdata_max[tidx + offs].w) ? sdata_max[tidx] : sdata_max[tidx + offs];
+            }
+        offs >>= 1;
+        __syncthreads();
+        }
+
+    // write result to global memeory
+    if (tidx == 0)
+       max_partial[blockIdx.x] = sdata_max[0];
+    }
+
+__global__ void gpu_compute_qmax_final_kernel(Scalar4* max_partial,
+                                       unsigned int nblocks,
+                                       Scalar4 *q_max)
+    {
+    extern __shared__ Scalar4 sdata_max[];
+
+    if (threadIdx.x == 0)
+       *q_max = make_scalar4(0.0,0.0,0.0,0.0);
+
+    for (int start = 0; start< nblocks; start += blockDim.x)
+        {
+        __syncthreads();
+        if (start + threadIdx.x < nblocks)
+            sdata_max[threadIdx.x] = max_partial[start + threadIdx.x];
+        else
+            sdata_max[threadIdx.x] = make_scalar4(0.0,0.0,0.0,0.0);
+
+        __syncthreads();
+
+        // reduce the sum
+        int offs = blockDim.x >> 1;
+        while (offs > 0)
+            {
+            if (threadIdx.x < offs)
+                sdata_max[threadIdx.x] = (sdata_max[threadIdx.x].w > sdata_max[threadIdx.x + offs].w) ?
+                                         sdata_max[threadIdx.x] : sdata_max[threadIdx.x + offs];
+            offs >>= 1;
+            __syncthreads();
+            }
+
+         if (threadIdx.x == 0)
+            {
+            Scalar4 old_qmax = *q_max;
+            *q_max = (old_qmax.w > sdata_max[0].w) ? old_qmax : sdata_max[0];
+            }
+        }
+    }
+
+void gpu_compute_q_max(unsigned int n_wave_vectors,
+                   Scalar4 *d_max_partial,
+                   Scalar4 *d_q_max,
+                   const Scalar3 *d_k,
+                   const cufftComplex *d_fourier_mesh,
+                   const unsigned int block_size)
+    {
+    unsigned int n_blocks = n_wave_vectors/block_size + 1;
+
+    unsigned int shared_size = block_size * sizeof(Scalar4);
+    gpu_compute_qmax_partial_kernel<<<n_blocks, block_size, shared_size>>>(
+               n_wave_vectors,
+               d_max_partial,
+               d_k,
+               d_fourier_mesh);
+
+    // calculate final sum of mesh values
+    const unsigned int final_block_size = 512;
+    shared_size = final_block_size*sizeof(Scalar4);
+    gpu_compute_qmax_final_kernel<<<1, final_block_size,shared_size>>>(d_max_partial,
+                                                                n_blocks,
+                                                                d_q_max);
+    }
+
+

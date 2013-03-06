@@ -25,9 +25,7 @@ class OrderParameterMesh : public CollectiveVariable
          */
         std::vector<std::string> getProvidedLogQuantities()
             {
-            std::vector<std::string> list;
-            list.push_back(m_log_name);
-            return list;
+            return m_log_names;
             }
 
         /*! Returns the value of a specific log quantity.
@@ -63,6 +61,9 @@ class OrderParameterMesh : public CollectiveVariable
 	    Scalar m_cv;			            //!< Current value of collective variable
 
         GPUArray<Scalar> m_virial_mesh;     //!< k-space mesh of virial tensor values
+
+        unsigned int m_q_max_last_computed;        //!< Last time step at which q max was computed
+        Scalar3 m_q_max;                           //!< Current wave vector with maximum amplitude
 
         //! Helper function to be called when box changes
         void setBoxChange()
@@ -100,6 +101,9 @@ class OrderParameterMesh : public CollectiveVariable
         //! Helper function to compute the virial
         virtual void computeVirial();
 
+        //! Helper function to compute q vector with maximum amplitude
+        virtual void computeQmax(unsigned int timestep);
+
     private:
         kiss_fftnd_cfg m_kiss_fft;         //!< The FFT configuration
         kiss_fftnd_cfg m_kiss_ifft_x;      //!< Inverse FFT configuration, x component of force
@@ -126,7 +130,7 @@ class OrderParameterMesh : public CollectiveVariable
 
         boost::signals::connection m_boxchange_connection; //!< Connection to ParticleData box change signal
 
-        std::string m_log_name;                    //!< Name of the log quantity
+        std::vector<string> m_log_names;           //!< Name of the log quantity
 
         //!< Compute virial on mesh
         void computeVirialMesh();

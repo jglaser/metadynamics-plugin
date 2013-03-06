@@ -97,3 +97,10 @@ void gpu_compute_influence_function(const Index3D& mesh_idx,
                                     const DFFTIndex dffti,
 #endif
                                     const bool local_fft);
+
+void gpu_compute_q_max(unsigned int n_wave_vectors,
+                   Scalar4 *d_max_partial,
+                   Scalar4 *d_q_max,
+                   const Scalar3 *d_k,
+                   const cufftComplex *d_fourier_mesh,
+                   const unsigned int block_size);

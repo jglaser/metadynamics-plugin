@@ -17,7 +17,11 @@ OrderParameterMeshGPU::OrderParameterMeshGPU(boost::shared_ptr<SystemDefinition>
                                             const unsigned int nz,
                                             const Scalar qstar,
                                             std::vector<Scalar> mode)
-    : OrderParameterMesh(sysdef, nx, ny, nz, qstar, mode), m_local_fft(true), m_sum(m_exec_conf), m_block_size(256)
+    : OrderParameterMesh(sysdef, nx, ny, nz, qstar, mode),
+      m_local_fft(true),
+      m_sum(m_exec_conf),
+      m_block_size(256),
+      m_gpu_q_max(m_exec_conf)
     {
     unsigned int n_blocks = m_mesh_points.x*m_mesh_points.y*m_mesh_points.z/m_block_size+1;
     GPUArray<Scalar> sum_partial(n_blocks,m_exec_conf);
@@ -28,6 +32,9 @@ OrderParameterMeshGPU::OrderParameterMeshGPU(boost::shared_ptr<SystemDefinition>
 
     GPUArray<Scalar> sum_virial(6,m_exec_conf);
     m_sum_virial.swap(sum_virial);
+
+    GPUArray<Scalar4> max_partial(n_blocks, m_exec_conf);
+    m_max_partial.swap(max_partial);
 
     // initial value of number of particles per bin
     m_cell_size = 2;
@@ -460,6 +467,62 @@ void OrderParameterMeshGPU::computeInfluenceFunction()
 
     if (m_prof) m_prof->pop(m_exec_conf);
     }
+
+void OrderParameterMeshGPU::computeQmax(unsigned int timestep)
+    {
+    if (m_prof) m_prof->push("max q");
+
+    if (m_q_max_last_computed == timestep) return;
+    m_q_max_last_computed = timestep;
+
+    ArrayHandle<cufftComplex> d_fourier_mesh(m_fourier_mesh, access_location::device, access_mode::read);
+    ArrayHandle<Scalar3> d_k(m_k, access_location::device, access_mode::read);
+
+    ArrayHandle<Scalar4> d_max_partial(m_max_partial, access_location::device, access_mode::overwrite);
+
+    gpu_compute_q_max(m_n_inner_cells,
+                     d_max_partial.data,
+                     m_gpu_q_max.getDeviceFlags(),
+                     d_k.data,
+                     d_fourier_mesh.data,
+                     m_block_size);
+
+    if (m_exec_conf->isCUDAErrorCheckingEnabled())
+        CHECK_CUDA_ERROR();
+
+    Scalar4 q_max = m_gpu_q_max.readFlags();
+
+    #ifdef ENABLE_MPI
+    if (m_pdata->getDomainDecomposition())
+        {
+        // all processes send their results to all other processes
+        // and then they determine the maximum wave vector
+        Scalar4 *all_q_max = new Scalar4[m_exec_conf->getNRanks()];
+        MPI_Alltoall(&q_max,
+                     sizeof(Scalar4),
+                     MPI_BYTE,
+                     all_q_max, 
+                     sizeof(Scalar4),
+                     MPI_BYTE,
+                     m_exec_conf->getMPICommunicator());
+
+        for (unsigned int i = 0; i < m_exec_conf->getNRanks(); ++i)
+            {
+            if (all_q_max[i].w > q_max.w)
+                {
+                q_max = all_q_max[i];
+                }
+            }
+        
+        delete[] all_q_max;
+        }
+    #endif
+
+    if (m_prof) m_prof->pop();
+
+    m_q_max = make_scalar3(q_max.x,q_max.y,q_max.z);
+    }
+
 
 void export_OrderParameterMeshGPU()
     {

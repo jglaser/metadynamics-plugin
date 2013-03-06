@@ -26,8 +26,8 @@ OrderParameterMesh::OrderParameterMesh(boost::shared_ptr<SystemDefinition> sysde
       m_cv_last_updated(0),
       m_box_changed(false),
       m_cv(Scalar(0.0)),
-      m_kiss_fft_initialized(false),
-      m_log_name("mesh_energy")
+      m_q_max_last_computed(0),
+      m_kiss_fft_initialized(false)
     {
 
     if (mode.size() != m_pdata->getNTypes())
@@ -89,6 +89,11 @@ OrderParameterMesh::OrderParameterMesh(boost::shared_ptr<SystemDefinition> sysde
     memset(h_virial.data, 0, sizeof(Scalar)*m_virial.getNumElements());
 
     m_bias = Scalar(1.0);
+
+    m_log_names.push_back("cv_mesh");
+    m_log_names.push_back("qx_max");
+    m_log_names.push_back("qy_max");
+    m_log_names.push_back("qz_max");
     }
 
 OrderParameterMesh::~OrderParameterMesh()
@@ -866,9 +871,24 @@ void OrderParameterMesh::computeBiasForces(unsigned int timestep)
 
 Scalar OrderParameterMesh::getLogValue(const std::string& quantity, unsigned int timestep)
     {
-    if (quantity == m_log_name)
+    if (quantity == m_log_names[0])
         {
         return getCurrentValue(timestep);
+        }
+    else if (quantity == m_log_names[1])
+        {
+        computeQmax(timestep);
+        return m_q_max.x;
+        }
+    else if (quantity == m_log_names[2])
+        {
+        computeQmax(timestep);
+        return m_q_max.y;
+        }
+    else if (quantity == m_log_names[3])
+        {
+        computeQmax(timestep);
+        return m_q_max.z;
         }
     else
         {
@@ -876,6 +896,71 @@ Scalar OrderParameterMesh::getLogValue(const std::string& quantity, unsigned int
                   << std::endl;
         throw std::runtime_error("Error getting log value");
         }
+    }
+
+void OrderParameterMesh::computeQmax(unsigned int timestep)
+    {
+    if (m_q_max_last_computed == timestep) return;
+    m_q_max_last_computed = timestep;
+
+    if (m_prof) m_prof->push("max q");
+
+    ArrayHandle<kiss_fft_cpx> h_fourier_mesh(m_fourier_mesh, access_location::host, access_mode::read);
+    ArrayHandle<Scalar3> h_k(m_k, access_location::host, access_mode::read);
+
+    Scalar max_amplitude(0.0);
+    Scalar3 q_max(make_scalar3(0.0,0.0,0.0));
+    for (unsigned int kidx = 0; kidx < m_n_inner_cells; ++kidx)
+        {
+        Scalar a = h_fourier_mesh.data[kidx].r*h_fourier_mesh.data[kidx].r
+                   + h_fourier_mesh.data[kidx].i*h_fourier_mesh.data[kidx].i;
+
+        if (a > max_amplitude)
+            {
+            q_max = h_k.data[kidx];
+            max_amplitude = a;
+            }
+        }
+    
+    #ifdef ENABLE_MPI
+    if (m_pdata->getDomainDecomposition())
+        {
+        // all processes send their results to all other processes
+        // and then they determine the maximum wave vector
+        Scalar *all_amplitudes = new Scalar[m_exec_conf->getNRanks()];
+        Scalar3 *all_q_max = new Scalar3[m_exec_conf->getNRanks()];
+        MPI_Alltoall(&max_amplitude,
+                       1,
+                       MPI_HOOMD_SCALAR,
+                       all_amplitudes,
+                       1,
+                       MPI_HOOMD_SCALAR,
+                       m_exec_conf->getMPICommunicator());
+        MPI_Alltoall(&q_max,
+                       sizeof(Scalar3),
+                       MPI_BYTE,
+                       all_q_max, 
+                       sizeof(Scalar3),
+                       MPI_BYTE,
+                       m_exec_conf->getMPICommunicator());
+
+        for (unsigned int i = 0; i < m_exec_conf->getNRanks();++i)
+            {
+            if (all_amplitudes[i] > max_amplitude)
+                {
+                max_amplitude = all_amplitudes[i];
+                q_max = all_q_max[i];
+                }
+            }
+        
+        delete [] all_amplitudes;
+        delete [] all_q_max;
+        }
+    #endif
+
+    if (m_prof) m_prof->pop();
+
+    m_q_max = q_max;
     }
 
 void export_OrderParameterMesh()
