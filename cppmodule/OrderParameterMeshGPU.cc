@@ -472,9 +472,10 @@ void OrderParameterMeshGPU::computeQmax(unsigned int timestep)
     {
     if (m_prof) m_prof->push("max q");
 
-    if (m_q_max_last_computed == timestep && !m_is_first_step) return;
     // compute Fourier grid
-    getCurrentValue();
+    getCurrentValue(timestep);
+
+    if (timestep && m_q_max_last_computed == timestep) return;
     m_q_max_last_computed = timestep;
 
     ArrayHandle<cufftComplex> d_fourier_mesh(m_fourier_mesh, access_location::device, access_mode::read);
