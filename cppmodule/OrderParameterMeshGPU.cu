@@ -453,13 +453,13 @@ __global__ void gpu_compute_mesh_virial_kernel(const unsigned int n_wave_vectors
 
         Scalar rhog = f_g.x * f.x + f_g.y * f.y;
         Scalar3 k = d_k[idx];
-        Scalar kfac = Scalar(1.0)/qstarsq;
-        d_virial_mesh[0*n_wave_vectors+idx] = rhog*(Scalar(1.0) - kfac*k.x*k.x); // xx
-        d_virial_mesh[1*n_wave_vectors+idx] = rhog*(            - kfac*k.x*k.y); // xy
-        d_virial_mesh[2*n_wave_vectors+idx] = rhog*(            - kfac*k.x*k.z); // xz
-        d_virial_mesh[3*n_wave_vectors+idx] = rhog*(Scalar(1.0) - kfac*k.y*k.y); // yy
-        d_virial_mesh[4*n_wave_vectors+idx] = rhog*(            - kfac*k.y*k.z); // yz
-        d_virial_mesh[5*n_wave_vectors+idx] = rhog*(Scalar(1.0) - kfac*k.z*k.z); // zz
+        Scalar kfac = -Scalar(1.0)/qstarsq;
+        d_virial_mesh[0*n_wave_vectors+idx] = rhog*kfac*k.x*k.x; // xx
+        d_virial_mesh[1*n_wave_vectors+idx] = rhog*kfac*k.x*k.y; // xy
+        d_virial_mesh[2*n_wave_vectors+idx] = rhog*kfac*k.x*k.z; // xz
+        d_virial_mesh[3*n_wave_vectors+idx] = rhog*kfac*k.y*k.y; // yy
+        d_virial_mesh[4*n_wave_vectors+idx] = rhog*kfac*k.y*k.z; // yz
+        d_virial_mesh[5*n_wave_vectors+idx] = rhog*kfac*k.z*k.z; // zz
         }
     else
         {
