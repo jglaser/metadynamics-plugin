@@ -68,7 +68,7 @@ void LamellarOrderParameter::computeCV(unsigned int timestep)
         Scalar norm_sq = fourier_mode.x*fourier_mode.x+fourier_mode.y*fourier_mode.y;
         sum += norm_sq*norm_sq;
         }
-    sum /= Scalar(2.0)*(Scalar) N*(Scalar)N*(Scalar)N*(Scalar)N;
+    sum /= (Scalar) N*(Scalar)N*(Scalar)N*(Scalar)N;
 
     m_cv = sum;
 
