@@ -84,7 +84,7 @@ void LamellarOrderParameter::computeBiasForces(unsigned int timestep)
     if (m_prof)
         m_prof->push("Lamellar");
 
-    if (m_cv_last_updated < timestep)
+    if (m_cv_last_updated < timestep || timestep == 0)
         computeCV(timestep);
 
     ArrayHandle<Scalar4> h_postype(m_pdata->getPositions(), access_location::host, access_mode::read);

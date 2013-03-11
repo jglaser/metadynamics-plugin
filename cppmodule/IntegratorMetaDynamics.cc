@@ -332,8 +332,8 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
    if (m_adaptive && (m_num_update_steps % m_stride == 0))
         {
         // compute derivatives of collective variables
-        for (unsigned int i = 0; i < m_num_biased_variables; ++i)
-            m_variables[i].m_cv->computeDerivatives(timestep);
+        for (unsigned int i = 0; i < m_variables.size(); ++i)
+            if (! m_variables[i].m_umbrella) m_variables[i].m_cv->computeDerivatives(timestep);
 
         // compute instantaneous estimate of standard deviation matrix
         computeSigma();
@@ -1490,8 +1490,7 @@ void IntegratorMetaDynamics::computeSigma()
                     sigmasq[i*ncv+j] += m_sigma_g*m_sigma_g*dot(force_i,force_j);
                     }
                 }
-            else
-                if (i==j && is_root) sigmasq[i*ncv+j] = iti->m_sigma*iti->m_sigma;
+            else if (i==j && is_root) sigmasq[i*ncv+j] = iti->m_sigma*iti->m_sigma;
 
             j++;
             } 
