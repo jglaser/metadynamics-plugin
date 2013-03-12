@@ -81,10 +81,10 @@ void LamellarOrderParameterGPU::computeCV(unsigned int timestep)
         {
         Scalar2 fmode = h_fourier_modes.data[k];
         Scalar norm_sq = fmode.x*fmode.x+fmode.y*fmode.y;
-        sum += norm_sq*norm_sq;
+        sum += norm_sq;
         }
 
-    sum /= Scalar(2.0)*(Scalar) N*(Scalar)N*(Scalar)N*(Scalar)N;
+    sum /= Scalar(2.0)*(Scalar) N*(Scalar)N;
 
     m_cv = sum;
 
