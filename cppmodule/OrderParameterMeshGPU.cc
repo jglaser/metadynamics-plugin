@@ -38,6 +38,14 @@ OrderParameterMeshGPU::OrderParameterMeshGPU(boost::shared_ptr<SystemDefinition>
 
     // initial value of number of particles per bin
     m_cell_size = 2;
+
+    uchar3 periodic = m_pdata->getBox().getPeriodic();
+    m_n_ghost_bins = make_uint3(periodic.x ? 0 : 2*m_radius,
+                                periodic.y ? 0 : 2*m_radius,
+                                periodic.z ? 0 : 2*m_radius);
+    m_n_particle_bins = (m_mesh_points.x+m_n_ghost_bins.x)
+                        *(m_mesh_points.y+m_n_ghost_bins.y)
+                        *(m_mesh_points.z+m_n_ghost_bins.z);
     }
 
 OrderParameterMeshGPU::~OrderParameterMeshGPU()
@@ -52,22 +60,18 @@ void OrderParameterMeshGPU::initializeFFT()
 
     if (! m_local_fft)
         {
-        // ghost cell exchanger for forward direction
-        m_gpu_mesh_comm_forward = boost::shared_ptr<CommunicatorMeshGPUComplex >(
-            new CommunicatorMeshGPUComplex(m_sysdef, m_comm, m_n_ghost_cells, m_mesh_index, false));
-
-        // ghost cell exchanger for reverse direction
-        m_gpu_mesh_comm_inverse = boost::shared_ptr<CommunicatorMeshGPUScalar4 >(
-            new CommunicatorMeshGPUScalar4(m_sysdef, m_comm, m_n_ghost_cells, m_mesh_index, true));
+        // ghost cell exchanger 
+        m_gpu_mesh_comm = boost::shared_ptr<CommunicatorMeshGPUScalar4 >(
+            new CommunicatorMeshGPUScalar4(m_sysdef, m_comm, m_n_ghost_cells, m_force_mesh_index, true));
 
         // set up distributed FFT 
         m_gpu_dfft = boost::shared_ptr<DistributedFFTGPU>(
-            new DistributedFFTGPU(m_exec_conf, m_pdata->getDomainDecomposition(), m_mesh_index, m_n_ghost_cells));
+            new DistributedFFTGPU(m_exec_conf, m_pdata->getDomainDecomposition(), m_mesh_index, make_uint3(0,0,0)));
         m_gpu_dfft->setProfiler(m_prof);
 
         // set up inverse distributed FFT (batched)
         m_gpu_idfft = boost::shared_ptr<DistributedFFTGPU>(
-            new DistributedFFTGPU(m_exec_conf, m_pdata->getDomainDecomposition(), m_mesh_index, m_n_ghost_cells,3));
+            new DistributedFFTGPU(m_exec_conf, m_pdata->getDomainDecomposition(), m_force_mesh_index, m_n_ghost_cells,3));
         m_gpu_idfft->setProfiler(m_prof);
 
         }
@@ -77,10 +81,9 @@ void OrderParameterMeshGPU::initializeFFT()
         {
         cufftPlan3d(&m_cufft_plan, m_mesh_points.x, m_mesh_points.y, m_mesh_points.z, CUFFT_C2C);
         }
-    unsigned int num_cells = m_mesh_index.getNumElements();
 
     // allocate mesh and transformed mesh
-    GPUArray<cufftComplex> mesh(num_cells,m_exec_conf);
+    GPUArray<cufftComplex> mesh(m_n_inner_cells,m_exec_conf);
     m_mesh.swap(mesh);
 
     GPUArray<cufftComplex> fourier_mesh(m_n_inner_cells, m_exec_conf);
@@ -92,6 +95,8 @@ void OrderParameterMeshGPU::initializeFFT()
     GPUArray<cufftComplex> fourier_mesh_force_xyz(m_n_inner_cells*3, m_exec_conf);
     m_fourier_mesh_force_xyz.swap(fourier_mesh_force_xyz);
 
+    unsigned int num_cells = m_force_mesh_index.getNumElements();
+
     GPUArray<cufftComplex> force_mesh_xyz(num_cells*3, m_exec_conf);
     m_force_mesh_xyz.swap(force_mesh_xyz);
 
@@ -100,10 +105,10 @@ void OrderParameterMeshGPU::initializeFFT()
 
     if (exec_conf->getComputeCapability() < 300)
         {
-        GPUArray<Scalar4> particle_bins(m_n_inner_cells*m_cell_size, m_exec_conf);
+        GPUArray<Scalar4> particle_bins(m_n_particle_bins*m_cell_size, m_exec_conf);
         m_particle_bins.swap(particle_bins);
 
-        GPUArray<unsigned int> n_cell(m_n_inner_cells, m_exec_conf);
+        GPUArray<unsigned int> n_cell(m_n_particle_bins, m_exec_conf);
         m_n_cell.swap(n_cell);
 
         GPUFlags<unsigned int> cell_overflowed(m_exec_conf);
@@ -130,7 +135,7 @@ void OrderParameterMeshGPU::assignParticles()
     if (exec_conf->getComputeCapability() >= 300)
         {
         // optimized for Kepler
-        gpu_assign_particles_30(m_pdata->getN(),
+        gpu_assign_particles_30(m_pdata->getN()+m_pdata->getNGhosts(),
                              d_postype.data,
                              d_mesh.data,
                              m_mesh_index,
@@ -154,14 +159,14 @@ void OrderParameterMeshGPU::assignParticles()
 
                 {
                 ArrayHandle<Scalar4> d_particle_bins(m_particle_bins, access_location::device, access_mode::overwrite);
-                gpu_bin_particles(m_pdata->getN(),
+                gpu_bin_particles(m_pdata->getN()+m_pdata->getNGhosts(),
                                   d_postype.data,
                                   d_particle_bins.data,
                                   d_n_cell.data,
                                   m_cell_overflowed.getDeviceFlags(),
                                   m_cell_size,
                                   m_mesh_index,
-                                  m_n_ghost_cells,
+                                  m_n_ghost_bins,
                                   d_mode.data,
                                   m_pdata->getBox());
 
@@ -176,7 +181,7 @@ void OrderParameterMeshGPU::assignParticles()
                 // reallocate particle bins array
                 m_cell_size = flags;
 
-                GPUArray<Scalar4> particle_bins(m_n_inner_cells*m_cell_size,m_exec_conf);
+                GPUArray<Scalar4> particle_bins(m_n_particle_bins*m_cell_size,m_exec_conf);
                 m_particle_bins.swap(particle_bins);
                 m_cell_overflowed.resetFlags(0);
                 }
@@ -190,8 +195,9 @@ void OrderParameterMeshGPU::assignParticles()
         ArrayHandle<Scalar4> d_particle_bins(m_particle_bins, access_location::device, access_mode::read);
         
         gpu_assign_binned_particles_to_mesh(m_mesh_index,
-                                            m_n_ghost_cells,
-                                            d_particle_bins.data,     
+                                            m_n_ghost_bins,
+                                            d_particle_bins.data,
+                                            m_n_particle_bins,
                                             d_n_cell.data,
                                             m_cell_size,
                                             d_mesh.data,
@@ -208,16 +214,6 @@ void OrderParameterMeshGPU::assignParticles()
 void OrderParameterMeshGPU::updateMeshes()
     {
 
-    #ifdef ENABLE_MPI
-    if (m_pdata->getDomainDecomposition())
-        {
-        // update inner cells of mesh using ghost cells from neighboring processors
-        if (m_prof) m_prof->push("ghost exchange");
-        m_gpu_mesh_comm_forward->updateGhostCells(m_mesh);
-        if (m_prof) m_prof->pop();
-        }
-    #endif
-
     if (m_prof) m_prof->push(m_exec_conf,"FFT");
 
     if (m_local_fft)
@@ -232,6 +228,7 @@ void OrderParameterMeshGPU::updateMeshes()
     else
         {
         // perform a distributed FFT
+        m_exec_conf->msg->notice(8) << "cv.mesh: Distributed FFT mesh" << std::endl;
         m_gpu_dfft->FFT3D(m_mesh, m_fourier_mesh, false);
         }
     #endif
@@ -286,6 +283,7 @@ void OrderParameterMeshGPU::updateMeshes()
     else
         {
         // Distributed inverse transform of force mesh
+        m_exec_conf->msg->notice(8) << "cv.mesh: Distributed iFFT force mesh" << std::endl;
         m_gpu_idfft->FFT3D(m_fourier_mesh_force_xyz, m_force_mesh_xyz, true);
         }
     #endif
@@ -295,7 +293,7 @@ void OrderParameterMeshGPU::updateMeshes()
         ArrayHandle<cufftComplex> d_force_mesh_xyz(m_force_mesh_xyz, access_location::device, access_mode::read);
         ArrayHandle<Scalar4> d_force_mesh(m_force_mesh, access_location::device, access_mode::overwrite);
         
-        gpu_coalesce_forces(m_mesh_index.getNumElements(),
+        gpu_coalesce_forces(m_force_mesh_index.getNumElements(),
                             d_force_mesh_xyz.data,
                             d_force_mesh.data);
 
@@ -310,7 +308,8 @@ void OrderParameterMeshGPU::updateMeshes()
         {
         // update outer cells of force mesh using ghost cells from neighboring processors
         if (m_prof) m_prof->push("ghost exchange");
-        m_gpu_mesh_comm_inverse->updateGhostCells(m_force_mesh);
+        m_exec_conf->msg->notice(8) << "cv.mesh: Ghost cell update" << std::endl;
+        m_gpu_mesh_comm->updateGhostCells(m_force_mesh);
         if (m_prof) m_prof->pop();
         }
     #endif
@@ -332,7 +331,7 @@ void OrderParameterMeshGPU::interpolateForces()
                            d_force.data,
                            m_bias,
                            d_force_mesh.data,
-                           m_mesh_index,
+                           m_force_mesh_index,
                            m_n_ghost_cells,
                            d_mode.data,
                            m_pdata->getBox(),
@@ -451,7 +450,6 @@ void OrderParameterMeshGPU::computeInfluenceFunction()
     #endif
 
     gpu_compute_influence_function(m_mesh_index,
-                                   m_n_ghost_cells,
                                    global_dim,
                                    d_inf_f.data,
                                    d_k.data,

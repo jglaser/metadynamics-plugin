@@ -55,8 +55,7 @@ class OrderParameterMeshGPU : public OrderParameterMesh
 
         boost::shared_ptr<DistributedFFTGPU> m_gpu_dfft;  //!< Distributed FFT for forward transform
         boost::shared_ptr<DistributedFFTGPU> m_gpu_idfft; //!< Distributed FFT for inverse transform
-        boost::shared_ptr<CommunicatorMeshGPUComplex> m_gpu_mesh_comm_forward; //!< Communicator for density map
-        boost::shared_ptr<CommunicatorMeshGPUScalar4> m_gpu_mesh_comm_inverse; //!< Communicator for force mesh
+        boost::shared_ptr<CommunicatorMeshGPUScalar4> m_gpu_mesh_comm; //!< Communicator for force mesh
         #endif
 
         GPUArray<cufftComplex> m_mesh;                 //!< The particle density mesh
@@ -66,6 +65,8 @@ class OrderParameterMeshGPU : public OrderParameterMesh
         GPUArray<cufftComplex> m_force_mesh_xyz;      //!< The inverse-fourier transformed force mesh
         GPUArray<Scalar4> m_force_mesh;             //!< Storage for force vectors
 
+        uint3 m_n_ghost_bins;                      //!< Number of ghost bins in every direction
+        unsigned int m_n_particle_bins;            //!< Total number of bins
         GPUArray<Scalar4> m_particle_bins;         //!< Cell list for particle positions and modes
         GPUArray<unsigned int> m_n_cell;           //!< Number of particles per cell
         unsigned int m_cell_size;                  //!< Current max. number of particles per cell
