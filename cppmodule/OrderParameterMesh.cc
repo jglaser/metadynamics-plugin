@@ -403,9 +403,9 @@ void OrderParameterMesh::assignParticles()
                                            f.z * (Scalar) m_mesh_points.z);
 
         // find cell the particle is in
-        int ix = reduced_pos.x;
-        int iy = reduced_pos.y;
-        int iz = reduced_pos.z;
+        int ix = ((reduced_pos.x >= 0) ? reduced_pos.x : (reduced_pos.x - Scalar(1.0)));
+        int iy = ((reduced_pos.y >= 0) ? reduced_pos.y : (reduced_pos.y - Scalar(1.0)));
+        int iz = ((reduced_pos.z >= 0) ? reduced_pos.z : (reduced_pos.z - Scalar(1.0)));
 
         // handle particles on the boundary
         if (ix == (int)m_mesh_points.x && !m_n_ghost_cells.x)
