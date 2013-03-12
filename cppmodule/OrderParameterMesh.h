@@ -5,6 +5,9 @@
 
 #include "CollectiveVariable.h"
 
+#include <boost/signals.hpp>
+#include <boost/bind.hpp>
+
 /*! Order parameter evaluated using the particle mesh method
  */
 class OrderParameterMesh : public CollectiveVariable
@@ -34,6 +37,26 @@ class OrderParameterMesh : public CollectiveVariable
          */
         Scalar getLogValue(const std::string& quantity, unsigned int timestep);
 
+#ifdef ENABLE_MPI
+        //! Set the communicator to use
+        /*! \param comm MPI communication class
+         */
+        virtual void setCommunicator(boost::shared_ptr<Communicator> comm)
+            {
+            CollectiveVariable::setCommunicator(comm);
+
+            m_ghost_layer_connection = comm->subscribeGhostLayer(boost::bind(&OrderParameterMesh::getGhostLayerWidth, this));
+            }
+
+        //! Get the ghost layer width
+        /*! \returns the requested value of the ghost layer width
+         */
+        Scalar getGhostLayerWidth()
+            {
+            return m_ghost_layer_width;
+            }
+#endif
+
     protected:
         /*! Compute the biased forces for this collective variable.
             The force that is written to the force arrays must be
@@ -47,8 +70,7 @@ class OrderParameterMesh : public CollectiveVariable
         uint3 m_mesh_points;                //!< Number of sub-divisions along one coordinate
         uint3 m_n_ghost_cells;              //!< Number of ghost cells along every axis
         Index3D m_mesh_index;               //!< Indexer for the particle mesh 
-        GPUArray<unsigned int> m_cell_adj;  //!< Cell adjacency list
-        Index2D m_cell_adj_indexer;         //!< Indexes elements in the cell adjacency list
+        Index3D m_force_mesh_index;         //!< Indexer for the force mesh
         unsigned int m_radius;              //!< Stencil radius (in units of mesh size)
         unsigned int m_n_inner_cells;       //!< Number of inner mesh points (without ghost cells)
         GPUArray<Scalar> m_mode;            //!< Per-type scalar multiplying density ("charges")
@@ -79,9 +101,6 @@ class OrderParameterMesh : public CollectiveVariable
 
         //! Compute the optimal influence function
         virtual void computeInfluenceFunction();
-
-        //! Initializes values in the cell_adj array
-        void initializeCellAdj();
  
         //! The TSC (triangular-shaped cloud) charge assignment function
         Scalar assignTSC(Scalar x);
@@ -111,9 +130,9 @@ class OrderParameterMesh : public CollectiveVariable
         kiss_fftnd_cfg m_kiss_ifft_z;      //!< Inverse FFT configuration, z component of force
 
         #ifdef ENABLE_MPI
-        boost::shared_ptr<DistributedKISSFFT> m_kiss_dfft;  //!< Distributed FFT for forward and inverse transforms
-        boost::shared_ptr<CommunicatorMesh<kiss_fft_cpx> > m_mesh_comm_forward; //!< Communicator for density map
-        boost::shared_ptr<CommunicatorMesh<kiss_fft_cpx> > m_mesh_comm_inverse; //!< Communicator for force mesh
+        boost::shared_ptr<DistributedKISSFFT> m_kiss_dfft;  //!< Distributed FFT for forward transform
+        boost::shared_ptr<DistributedKISSFFT> m_kiss_idfft;  //!< Distributed FFT for inverse transform
+        boost::shared_ptr<CommunicatorMesh<kiss_fft_cpx> > m_mesh_comm; //!< Communicator for force mesh
         #endif
 
         bool m_kiss_fft_initialized;               //!< True if a local KISS FFT has been set up
@@ -129,11 +148,20 @@ class OrderParameterMesh : public CollectiveVariable
         GPUArray<kiss_fft_cpx> m_force_mesh_z;     //!< The force mesh, z component
 
         boost::signals::connection m_boxchange_connection; //!< Connection to ParticleData box change signal
+        boost::signals::connection m_ghost_layer_connection; //!< Requests a ghost layer width
 
         std::vector<string> m_log_names;           //!< Name of the log quantity
 
-        //!< Compute virial on mesh
+        Scalar m_ghost_layer_width;                //!< The minimum width of the Communicator ghost layer
+
+        //! Compute virial on mesh
         void computeVirialMesh();
+
+        //! Helper function to compute number of ghost cells 
+        uint3 computeNumGhostCells();
+    
+        //! Helper function to compute width of ghost particl layer
+        void computeParticleGhostLayerWidth();
     };
 
 //! Define plus operator for complex data type (needed by CommunicatorMesh)
