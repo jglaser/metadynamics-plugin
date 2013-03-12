@@ -1184,7 +1184,7 @@ void IntegratorMetaDynamics::updateSigmaGrid(std::vector<Scalar>& current_val)
 
     assert(h_sigma_grid.data);
 
-    std::vector<unsigned int> grid_coord(m_variables.size());
+    std::vector<unsigned int> grid_coord(m_num_biased_variables);
 
     // add current value of determinant of standard deviation matrix to grid
     bool on_grid = true;
@@ -1462,11 +1462,21 @@ void IntegratorMetaDynamics::computeSigma()
 
     unsigned int i = 0;
     unsigned int j = 0;
+
+    std::vector< ArrayHandle<Scalar4>* > handles;
+
     for (iti = m_variables.begin(); iti != m_variables.end(); ++iti)
         {
         if (iti->m_umbrella) continue;
 
-        ArrayHandle<Scalar4> handle_i = ArrayHandle<Scalar4>(iti->m_cv->getForceArray(), access_location::host, access_mode::read);
+	handles.push_back(new ArrayHandle<Scalar4>(iti->m_cv->getForceArray(), access_location::host, access_mode::read));
+	}	
+
+    for (iti = m_variables.begin(); iti != m_variables.end(); ++iti)
+        {
+        if (iti->m_umbrella) continue;
+
+        ArrayHandle<Scalar4>& handle_i = *handles[i];
 
         j = 0;
         for (itj = m_variables.begin(); itj != m_variables.end(); ++itj)
@@ -1477,8 +1487,7 @@ void IntegratorMetaDynamics::computeSigma()
             if (iti->m_cv->canComputeDerivatives() && itj->m_cv->canComputeDerivatives())
                 {
                 // this releases an array twice, so may create problems in debug mode
-                ArrayHandle<Scalar4> handle_j = (i != j) ?
-                ArrayHandle<Scalar4>(itj->m_cv->getForceArray(), access_location::host, access_mode::read) : handle_i;
+                ArrayHandle<Scalar4>& handle_j = *handles[j];
 
                 // sum up products of derviatives
                 for (unsigned int n = 0; n < m_pdata->getN(); ++n)
@@ -1496,6 +1505,9 @@ void IntegratorMetaDynamics::computeSigma()
             } 
         i++;
         }
+
+    for (unsigned int i = 0; i < handles.size(); ++i)
+	delete handles[i];
 
     #ifdef ENABLE_MPI
     if (m_pdata->getDomainDecomposition())
