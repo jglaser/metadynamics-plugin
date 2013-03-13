@@ -453,7 +453,12 @@ __global__ void gpu_compute_mesh_virial_kernel(const unsigned int n_wave_vectors
 
         Scalar rhog = f_g.x * f.x + f_g.y * f.y;
         Scalar3 k = d_k[idx];
-        Scalar kfac = -Scalar(1.0)/qstarsq;
+        
+        Scalar ksq = dot(k,k);
+        Scalar knorm = sqrtf(ksq);
+        Scalar k_cut = sqrtf(qstarsq);
+        Scalar fac = expf(Scalar(12.0)*(knorm/k_cut-Scalar(1.0)));
+        Scalar kfac = -Scalar(12.0)*fac/(Scalar(1.0)+fac)/knorm/k_cut;
         d_virial_mesh[0*n_wave_vectors+idx] = rhog*kfac*k.x*k.x; // xx
         d_virial_mesh[1*n_wave_vectors+idx] = rhog*kfac*k.x*k.y; // xy
         d_virial_mesh[2*n_wave_vectors+idx] = rhog*kfac*k.x*k.z; // xz
@@ -512,8 +517,8 @@ __global__ void gpu_update_meshes_kernel(const unsigned int n_wave_vectors,
     // Normalization
     f.x /= (Scalar)N_global;
     f.y /= (Scalar)N_global;
-
     Scalar val = f.x*f.x+f.y*f.y;
+
     cufftComplex fourier_G;
     fourier_G.x =f.x * val * d_inf_f[k];
     fourier_G.y =f.y * val * d_inf_f[k];
@@ -985,7 +990,10 @@ void gpu_compute_virial(unsigned int n_wave_vectors,
 
 __device__ Scalar convolution_kernel(Scalar ksq, Scalar qstarsq)
     {
-    return expf(-ksq/qstarsq*Scalar(1.0/2.0));
+//    return expf(-ksq/qstarsq*Scalar(1.0/2.0));
+    Scalar knorm = sqrtf(ksq);
+    Scalar k_cut = sqrtf(qstarsq);
+    return Scalar(1.0)/(Scalar(1.0)+expf(Scalar(12.0)*(knorm/k_cut-Scalar(1.0))));
     }
 
 template<bool local_fft>
