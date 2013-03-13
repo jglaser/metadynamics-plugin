@@ -108,6 +108,9 @@ class _collective_variable(_force):
             if umbrella=="no_umbrella":
                 cpp_umbrella = _metadynamics.umbrella.no_umbrella 
                 self.umbrella=False
+            elif umbrella=="linear":
+                cpp_umbrella = _metadynamics.umbrella.linear
+                self.umbrella=True
             elif umbrella=="harmonic":
                 cpp_umbrella = _metadynamics.umbrella.harmonic
                 self.umbrella=True 

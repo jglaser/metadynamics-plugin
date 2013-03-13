@@ -35,7 +35,11 @@ void CollectiveVariable::computeForces(unsigned int timestep)
             else 
                 delta = val - m_cv0 + m_width_flat/Scalar(2.0);
 
-            if (m_umbrella == harmonic)
+            if (m_umbrella == linear)
+                {
+                m_bias = Scalar(1.0)/m_kappa;
+                }
+            else if (m_umbrella == harmonic)
                 {
                 m_bias = delta/m_kappa/m_kappa;
                 }
@@ -66,7 +70,11 @@ Scalar CollectiveVariable::getUmbrellaPotential(unsigned int timestep)
             else if (val < m_cv0)
                 delta = val - m_cv0 + m_width_flat/Scalar(2.0);
 
-            if (m_umbrella == harmonic)
+            if (m_umbrella == linear)
+                {
+                return delta/m_kappa;
+                }
+            else if (m_umbrella == harmonic)
                 {
                 return Scalar(1.0/2.0)*delta*delta/m_kappa/m_kappa;
                 }
@@ -123,6 +131,7 @@ void export_CollectiveVariable()
 
     enum_<CollectiveVariableWrap::umbrella_Enum>("umbrella")
     .value("no_umbrella", CollectiveVariableWrap::no_umbrella)
+    .value("linear", CollectiveVariableWrap::linear)
     .value("harmonic", CollectiveVariableWrap::harmonic)
     .value("wall", CollectiveVariableWrap::wall)
     ;

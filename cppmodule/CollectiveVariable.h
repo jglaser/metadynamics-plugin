@@ -33,6 +33,7 @@ class CollectiveVariable : public ForceCompute
         enum umbrella_Enum
             {
             no_umbrella = 0,        //!< no umbrella potential
+            linear,                 //!< energy linear in the collective variable
             harmonic,               //!< a harmonic umbrella potential
             wall                    //!< soft wall umbrella potential
             };
