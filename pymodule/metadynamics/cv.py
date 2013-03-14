@@ -23,7 +23,7 @@ class _collective_variable(_force):
     #
     # \param sigma Standard deviation of Gaussians added for this collective variable - only relevant for "well-tempered" or "standard" metadynamics
     # \param name Name of the collective variable
-    def __init__(self, sigma, name=None, umbrella=None):
+    def __init__(self, sigma, name=None):
         _force.__init__(self, name)
 
         self.sigma = sigma
@@ -40,7 +40,8 @@ class _collective_variable(_force):
 
         self.ftm_parameters_set = False
 
-        self.umbrella = umbrella
+        self.umbrella = False
+        self.reweight = False
 
     ## \var sigma
     # \internal
@@ -98,7 +99,7 @@ class _collective_variable(_force):
     # \param cv0 Umbrella potential minimum position
     # \param umbrella If True, do not add Gaussians in this collective variable
     # \param width_flat Width of flat region of umbrella potential
-    def set_params(self, sigma=None, kappa=None, cv0=None, umbrella=None, width_flat=None):
+    def set_params(self, sigma=None, kappa=None, cv0=None, umbrella=None, width_flat=None, reweight=None):
         util.print_status_line()
 
         if sigma is not None:
@@ -107,15 +108,19 @@ class _collective_variable(_force):
         if umbrella is not None:
             if umbrella=="no_umbrella":
                 cpp_umbrella = _metadynamics.umbrella.no_umbrella 
+                self.reweight=False
                 self.umbrella=False
             elif umbrella=="linear":
                 cpp_umbrella = _metadynamics.umbrella.linear
+                self.reweight=True
                 self.umbrella=True
             elif umbrella=="harmonic":
                 cpp_umbrella = _metadynamics.umbrella.harmonic
-                self.umbrella=True 
+                self.reweight=True
+                self.umbrella=True
             elif umbrella=="wall":
                 cpp_umbrella = _metadynamics.umbrella.wall
+                self.reweight=True
                 self.umbrella=True
             else:
                 globals.msg.error("cv: Invalid umbrella mode specified.")
@@ -131,6 +136,9 @@ class _collective_variable(_force):
 
         if cv0 is not None:
             self.cpp_force.setMinimum(cv0)
+
+        if reweight is not None:
+            self.reweight = reweight
 
 ## \brief Lamellar order parameter as a collective variable to study phase transitions in block copolymer systems
 #
