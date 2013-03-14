@@ -19,7 +19,8 @@ class OrderParameterMesh : public CollectiveVariable
                            const unsigned int ny,
                            const unsigned int nz,
                            const Scalar qstar,
-                           const std::vector<Scalar> mode);
+                           const std::vector<Scalar> mode,
+                           const std::vector<int3> zero_modes = std::vector<int3>());
         virtual ~OrderParameterMesh();
 
         Scalar getCurrentValue(unsigned int timestep);
@@ -86,6 +87,8 @@ class OrderParameterMesh : public CollectiveVariable
 
         unsigned int m_q_max_last_computed;        //!< Last time step at which q max was computed
         Scalar3 m_q_max;                           //!< Current wave vector with maximum amplitude
+
+        GPUArray<int3> m_zero_modes;        //!< Fourier modes that should be zeroed
 
         //! Helper function to be called when box changes
         void setBoxChange()

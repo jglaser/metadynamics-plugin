@@ -17,7 +17,8 @@ OrderParameterMesh::OrderParameterMesh(boost::shared_ptr<SystemDefinition> sysde
                                             const unsigned int ny,
                                             const unsigned int nz,
                                             const Scalar qstar,
-                                            std::vector<Scalar> mode)
+                                            std::vector<Scalar> mode,
+                                            std::vector<int3> zero_modes)
     : CollectiveVariable(sysdef, "mesh"),
       m_n_ghost_cells(make_uint3(0,0,0)),
       m_radius(1),
@@ -43,6 +44,12 @@ OrderParameterMesh::OrderParameterMesh(boost::shared_ptr<SystemDefinition> sysde
 
     ArrayHandle<Scalar> h_mode(m_mode, access_location::host, access_mode::overwrite);
     std::copy(mode.begin(), mode.end(), h_mode.data);
+
+    GPUArray<int3> zero_modes_array(zero_modes.size(), m_exec_conf);
+    m_zero_modes.swap(zero_modes_array);
+
+    ArrayHandle<int3> h_zero_modes(m_zero_modes, access_location::host, access_mode::overwrite);
+    std::copy(zero_modes.begin(), zero_modes.end(), h_zero_modes.data);
 
     m_qstarsq = qstar*qstar;
     m_boxchange_connection = m_pdata->connectBoxChange(boost::bind(&OrderParameterMesh::setBoxChange, this));
@@ -1007,7 +1014,8 @@ void export_OrderParameterMesh()
                                      const unsigned int,
                                      const unsigned int,
                                      const Scalar,
-                                     const std::vector<Scalar>&
+                                     const std::vector<Scalar>,
+                                     const std::vector<int3>
                                     >());
 
     }

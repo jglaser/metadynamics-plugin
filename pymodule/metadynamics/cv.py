@@ -271,7 +271,8 @@ class mesh(_collective_variable):
     # \param ny Number of mesh points along second axis
     # \param nz Number of mesh points along third axis
     # \param name Name given to this collective variable
-    def __init__(self, qstar, mode, nx, ny=None, nz=None, name=None,sigma=1.0):
+    # \param zero_modes Indices of modes that should be zeroed
+    def __init__(self, qstar, mode, nx, ny=None, nz=None, name=None,sigma=1.0,zero_modes=None):
         util.print_status_line()
 
         if name is not None:
@@ -301,10 +302,18 @@ class mesh(_collective_variable):
                 raise RuntimeEror('Error creating collective variable.')
             cpp_mode.append(mode[t])
 
+        cpp_zero_modes = _metadynamics.std_vector_int3()
+        if zero_modes is not None:
+            for l in zero_modes:
+                if len(l) != 3:
+                    globals.msg.error("cv.lamellar: List of modes to zero not a list of triples.\n")
+                    raise RuntimeError('Error creating collective variable.')
+                cpp_zero_modes.append(hoomd.make_int3(l[0], l[1], l[2]))
+
         if not globals.exec_conf.isCUDAEnabled():
-            self.cpp_force = _metadynamics.OrderParameterMesh(globals.system_definition, nx,ny,nz,qstar, cpp_mode)
+            self.cpp_force = _metadynamics.OrderParameterMesh(globals.system_definition, nx,ny,nz,qstar, cpp_mode, cpp_zero_modes)
         else:
-            self.cpp_force = _metadynamics.OrderParameterMeshGPU(globals.system_definition, nx,ny,nz,qstar, cpp_mode)
+            self.cpp_force = _metadynamics.OrderParameterMeshGPU(globals.system_definition, nx,ny,nz,qstar, cpp_mode, cpp_zero_modes)
 
         globals.system.addCompute(self.cpp_force, self.force_name)
 

@@ -10,14 +10,16 @@ using namespace boost::python;
     \param nz Number of cells along third axis
     \param qstar Short-wave length cutoff
     \param mode Per-type modes to multiply density
+    \param zero_modes List of modes that should be zeroed
  */
 OrderParameterMeshGPU::OrderParameterMeshGPU(boost::shared_ptr<SystemDefinition> sysdef,
                                             const unsigned int nx,
                                             const unsigned int ny,
                                             const unsigned int nz,
                                             const Scalar qstar,
-                                            std::vector<Scalar> mode)
-    : OrderParameterMesh(sysdef, nx, ny, nz, qstar, mode),
+                                            std::vector<Scalar> mode,
+                                            std::vector<int3> zero_modes)
+    : OrderParameterMesh(sysdef, nx, ny, nz, qstar, mode,zero_modes),
       m_local_fft(true),
       m_sum(m_exec_conf),
       m_block_size(256),
@@ -434,6 +436,7 @@ void OrderParameterMeshGPU::computeInfluenceFunction()
 
     ArrayHandle<Scalar> d_inf_f(m_inf_f, access_location::device, access_mode::overwrite);
     ArrayHandle<Scalar3> d_k(m_k, access_location::device, access_mode::overwrite);
+    ArrayHandle<int3> d_zero_modes(m_zero_modes, access_location::device, access_mode::read);
 
     uint3 global_dim = m_mesh_points;
     #ifdef ENABLE_MPI
@@ -455,6 +458,8 @@ void OrderParameterMeshGPU::computeInfluenceFunction()
                                    d_k.data,
                                    m_pdata->getGlobalBox(),
                                    m_qstarsq,
+                                   d_zero_modes.data,
+                                   m_zero_modes.getNumElements(),
     #ifdef ENABLE_MPI
                                    dffti,
     #endif
@@ -533,7 +538,8 @@ void export_OrderParameterMeshGPU()
                                      const unsigned int,
                                      const unsigned int,
                                      const Scalar,
-                                     const std::vector<Scalar>&
+                                     const std::vector<Scalar>,
+                                     const std::vector<int3>
                                     >());
     }
 

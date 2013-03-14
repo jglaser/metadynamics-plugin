@@ -1005,7 +1005,9 @@ __global__ void gpu_compute_influence_function_kernel(const Index3D mesh_idx,
                                           const Scalar3 b1,
                                           const Scalar3 b2,
                                           const Scalar3 b3,
-                                          const Scalar qstarsq
+                                          const Scalar qstarsq,
+                                          const int3 *zero_modes,
+                                          const unsigned int n_zero_modes
 #ifdef ENABLE_MPI
                                           , const DFFTIndex dffti
 #endif
@@ -1041,11 +1043,18 @@ __global__ void gpu_compute_influence_function_kernel(const Index3D mesh_idx,
     if (n >= (int)(global_dim.z/2 + global_dim.z%2))
         n -= (int) global_dim.z;
     
+    bool zero = false;
+    for (unsigned int i = 0; i < n_zero_modes; ++i)
+        {
+        if (zero_modes[i].x == l && zero_modes[i].y == m && zero_modes[i].z == n)
+            {
+            zero = true;
+            break;
+            }
+        }
+
+    Scalar val(0.0);
     Scalar3 kval = (Scalar)l*b1+(Scalar)m*b2+(Scalar)n*b3;
-    Scalar ksq = dot(kval,kval);
-
-    Scalar val = convolution_kernel(ksq,qstarsq);
-
     unsigned int cell_idx;
     if (local_fft)
         // use cuFFT's memory layout
@@ -1053,6 +1062,13 @@ __global__ void gpu_compute_influence_function_kernel(const Index3D mesh_idx,
     else
         cell_idx = kidx;
 
+    if (!zero)
+        {
+        Scalar ksq = dot(kval,kval);
+        val = convolution_kernel(ksq,qstarsq);
+        }
+
+    // write out result
     d_inf_f[cell_idx] = val;
     d_k[cell_idx] = kval;
     }
@@ -1063,6 +1079,8 @@ void gpu_compute_influence_function(const Index3D& mesh_idx,
                                     Scalar3 *d_k,
                                     const BoxDim& global_box,
                                     const Scalar qstarsq,
+                                    const int3 *d_zero_modes,
+                                    const unsigned int n_zero_modes,
 #ifdef ENABLE_MPI
                                     const DFFTIndex dffti,
 #endif
@@ -1093,7 +1111,9 @@ void gpu_compute_influence_function(const Index3D& mesh_idx,
                                                                               b1,
                                                                               b2,
                                                                               b3,
-                                                                              qstarsq
+                                                                              qstarsq,
+                                                                              d_zero_modes,
+                                                                              n_zero_modes
 #ifdef ENABLE_MPI
                                                                               , dffti
 #endif
@@ -1110,6 +1130,8 @@ void gpu_compute_influence_function(const Index3D& mesh_idx,
                                                                              b2,
                                                                              b3,
                                                                              qstarsq,
+                                                                             d_zero_modes,
+                                                                             n_zero_modes,
                                                                              dffti);
 #endif 
     } 

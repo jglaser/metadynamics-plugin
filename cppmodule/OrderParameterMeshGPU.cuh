@@ -93,6 +93,8 @@ void gpu_compute_influence_function(const Index3D& mesh_idx,
                                     Scalar3 *d_k,
                                     const BoxDim& global_box,
                                     const Scalar qstarsq,
+                                    const int3 *d_zero_modes,
+                                    const unsigned int n_zero_modes,
 #ifdef ENABLE_MPI
                                     const DFFTIndex dffti,
 #endif
