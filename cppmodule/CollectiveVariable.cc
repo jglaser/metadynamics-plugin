@@ -89,7 +89,7 @@ Scalar CollectiveVariable::getUmbrellaPotential(unsigned int timestep)
                 {
                 return m_scale*pow(delta/m_kappa,Scalar(12.0));
                 }
-            else if (m_umbrella = gaussian)
+            else if (m_umbrella == gaussian)
                 {
                 return m_scale*exp(-(val-m_cv0)*(val-m_cv0)/m_kappa/m_kappa/Scalar(2.0))-m_scale;
                 }
