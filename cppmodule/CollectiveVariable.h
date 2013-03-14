@@ -35,7 +35,8 @@ class CollectiveVariable : public ForceCompute
             no_umbrella = 0,        //!< no umbrella potential
             linear,                 //!< energy linear in the collective variable
             harmonic,               //!< a harmonic umbrella potential
-            wall                    //!< soft wall umbrella potential
+            wall,                   //!< soft wall umbrella potential
+            gaussian                //!< Gaussian umbrella potential
             };
 
  
@@ -84,6 +85,14 @@ class CollectiveVariable : public ForceCompute
         void setWidthFlat(Scalar width)
             {
             m_width_flat= width;
+            }
+
+        /*! Set prefactor of umbrella potential
+         *! \param scale Multiplicative scale factor
+         */
+        void setScale(Scalar scale)
+            {
+            m_scale = scale;
             }
 
         /*! Set minimum position of harmonic potential
@@ -146,6 +155,7 @@ class CollectiveVariable : public ForceCompute
         Scalar m_cv0;              //!< Minimum position of umbrella tential
         Scalar m_kappa;            //!< Stiffness of umbrella potential
         Scalar m_width_flat;       //!< Region where the umbrella potential is flat
+        Scalar m_scale;           //!< Prefactor of umbrella potential
     };
 
 //! Export the CollectiveVariable class to python

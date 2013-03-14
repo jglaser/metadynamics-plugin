@@ -99,7 +99,9 @@ class _collective_variable(_force):
     # \param cv0 Umbrella potential minimum position
     # \param umbrella If True, do not add Gaussians in this collective variable
     # \param width_flat Width of flat region of umbrella potential
-    def set_params(self, sigma=None, kappa=None, cv0=None, umbrella=None, width_flat=None, reweight=None):
+    # \param scale Prefactor multiplying umbrella potential
+    # \param reweight True if CV should be included in reweighting
+    def set_params(self, sigma=None, kappa=None, cv0=None, umbrella=None, width_flat=None, scale=None, reweight=None):
         util.print_status_line()
 
         if sigma is not None:
@@ -122,6 +124,10 @@ class _collective_variable(_force):
                 cpp_umbrella = _metadynamics.umbrella.wall
                 self.reweight=True
                 self.umbrella=True
+            elif umbrella=="gaussian":
+                cpp_umbrella = _metadynamics.umbrella.gaussian
+                self.reweight=True
+                self.umbrella=True
             else:
                 globals.msg.error("cv: Invalid umbrella mode specified.")
                 raise RuntimeError("Error setting parameters of collective variable.");
@@ -136,6 +142,9 @@ class _collective_variable(_force):
 
         if cv0 is not None:
             self.cpp_force.setMinimum(cv0)
+
+        if scale is not None:
+            self.cpp_force.setScale(scale)
 
         if reweight is not None:
             self.reweight = reweight

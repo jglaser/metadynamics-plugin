@@ -15,7 +15,8 @@ CollectiveVariable::CollectiveVariable(boost::shared_ptr<SystemDefinition> sysde
       m_umbrella(no_umbrella),
       m_cv0(0.0),
       m_kappa(0.0),
-      m_width_flat(0.0)
+      m_width_flat(0.0),
+      m_scale(1.0)
     {
     }
 
@@ -37,15 +38,19 @@ void CollectiveVariable::computeForces(unsigned int timestep)
 
             if (m_umbrella == linear)
                 {
-                m_bias = Scalar(1.0)/m_kappa;
+                m_bias = m_scale*Scalar(1.0)/m_kappa;
                 }
             else if (m_umbrella == harmonic)
                 {
-                m_bias = delta/m_kappa/m_kappa;
+                m_bias = m_scale*delta/m_kappa/m_kappa;
                 }
             else if (m_umbrella == wall)
                 {
-                m_bias = Scalar(12.0)*pow(delta/m_kappa,Scalar(11.0))/m_kappa;
+                m_bias = m_scale*Scalar(12.0)*pow(delta/m_kappa,Scalar(11.0))/m_kappa;
+                }
+            else if (m_umbrella == gaussian)
+                {
+                m_bias = -m_scale*(val-m_cv0)*exp(-(val-m_cv0)*(val-m_cv0)/m_kappa/m_kappa/Scalar(2.0));
                 }
             }
         }
@@ -61,7 +66,9 @@ Scalar CollectiveVariable::getUmbrellaPotential(unsigned int timestep)
         Scalar val = getCurrentValue(timestep);
         if ((val < m_cv0 + m_width_flat/Scalar(2.0)) && 
             (val > m_cv0 - m_width_flat/Scalar(2.0)))
+            {
             return Scalar(0.0);
+            }
         else
             {
             Scalar delta(0.0);
@@ -72,15 +79,19 @@ Scalar CollectiveVariable::getUmbrellaPotential(unsigned int timestep)
 
             if (m_umbrella == linear)
                 {
-                return delta/m_kappa;
+                return m_scale*delta/m_kappa;
                 }
             else if (m_umbrella == harmonic)
                 {
-                return Scalar(1.0/2.0)*delta*delta/m_kappa/m_kappa;
+                return Scalar(1.0/2.0)*m_scale*delta*delta/m_kappa/m_kappa;
                 }
             else if (m_umbrella == wall)
                 {
-                return pow(delta/m_kappa,Scalar(12.0));
+                return m_scale*pow(delta/m_kappa,Scalar(12.0));
+                }
+            else if (m_umbrella = gaussian)
+                {
+                return m_scale*exp(-(val-m_cv0)*(val-m_cv0)/m_kappa/m_kappa/Scalar(2.0))-m_scale;
                 }
             }
         }
@@ -127,6 +138,7 @@ void export_CollectiveVariable()
         .def("setKappa", &CollectiveVariable::setKappa)
         .def("setWidthFlat", &CollectiveVariable::setWidthFlat)
         .def("setMinimum", &CollectiveVariable::setMinimum)
+        .def("setScale", &CollectiveVariable::setScale)
         ;
 
     enum_<CollectiveVariableWrap::umbrella_Enum>("umbrella")
@@ -134,5 +146,6 @@ void export_CollectiveVariable()
     .value("linear", CollectiveVariableWrap::linear)
     .value("harmonic", CollectiveVariableWrap::harmonic)
     .value("wall", CollectiveVariableWrap::wall)
+    .value("gaussian", CollectiveVariableWrap::gaussian)
     ;
     }
