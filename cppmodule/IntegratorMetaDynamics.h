@@ -340,6 +340,7 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         GPUArray<Scalar> m_sigma_inv;                     //!< Square matrix of Gaussian standard deviations (inverse)
         GPUArray<Scalar> m_sigma_grid;                    //!< Gaussian volume as function of the collective ariables
         GPUArray<unsigned int> m_grid_hist;               //!< Number of times a state has been visited
+        GPUArray<Scalar> m_grid_hist_reweight;            //!< Umbrella-reweighted histogram
         GPUArray<Scalar> m_current_val;                   //!< Current CV values array
         Scalar m_sigma_g;                                 //!< Estimated standard deviation of particle displacements
         bool m_adaptive;                                  //!< True if adaptive Gaussians should be used
@@ -411,7 +412,7 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         Scalar sigmaDeterminant();
 
         //! Update the grid of sigma values
-        void updateSigmaGrid(std::vector<Scalar>& current_val);
+        void updateSigmaGrid(std::vector<Scalar>& current_val, Scalar reweight);
     };
 
 //! Export to python
