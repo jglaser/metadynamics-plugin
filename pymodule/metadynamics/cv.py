@@ -43,6 +43,9 @@ class _collective_variable(_force):
         self.umbrella = False
         self.reweight = False
 
+        self.cpp_transform = _metadynamics.IntegratorMetaDynamics.transform_type.linear;
+        self.power = 1.0;
+
     ## \var sigma
     # \internal
 
@@ -101,7 +104,8 @@ class _collective_variable(_force):
     # \param width_flat Width of flat region of umbrella potential
     # \param scale Prefactor multiplying umbrella potential
     # \param reweight True if CV should be included in reweighting
-    def set_params(self, sigma=None, kappa=None, cv0=None, umbrella=None, width_flat=None, scale=None, reweight=None):
+    # \param transform Transformation to apply to collective variable
+    def set_params(self, sigma=None, kappa=None, cv0=None, umbrella=None, width_flat=None, scale=None, reweight=None, transform=None, power=None):
         util.print_status_line()
 
         if sigma is not None:
@@ -148,6 +152,18 @@ class _collective_variable(_force):
 
         if reweight is not None:
             self.reweight = reweight
+
+        if transform is not None:
+            if transform=="linear":
+                self.cpp_transform = _metadynamics.IntegratorMetaDynamics.transform_type.linear
+            elif transform=="power_law":
+                self.cpp_transform = _metadynamics.IntegratorMetaDynamics.transform_type.power_law
+            else:
+                globals.msg.error("cv: Invalid transform type specified.")
+                raise RuntimeError("Error setting parameters of collective variable.");
+
+        if power is not None:
+            self.power = float(power);
 
 ## \brief Lamellar order parameter as a collective variable to study phase transitions in block copolymer systems
 #
