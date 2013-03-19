@@ -322,12 +322,6 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
         {
         if (it->m_umbrella) continue;
         Scalar val = it->m_cv->getCurrentValue(timestep);
-
-        if (it->m_transform == CollectiveVariableItem::power_law)
-            {
-            val = pow(val, it->m_pow);
-            }
-
         current_val.push_back(val);
         }
 
@@ -342,7 +336,7 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
             if (! m_variables[i].m_umbrella) m_variables[i].m_cv->computeDerivatives(timestep);
 
         // compute instantaneous estimate of standard deviation matrix
-        computeSigma(current_val);
+        computeSigma();
         } 
 
     // add up umbrella potentials for reweighting
@@ -687,7 +681,7 @@ Scalar IntegratorMetaDynamics::interpolateBiasPotential(const std::vector<Scalar
         if (lower < 0 || upper >= m_variables[cv_idx].m_num_points)
             {
             m_exec_conf->msg->warning() << "integrate.mode_metadynamics: Value " << val[cv]
-                                        << " of collective variable " << m_variables[cv_idx].m_cv->getName() << " out of bounds." << endl
+                                        << " of collective variable " << cv_idx << " out of bounds." << endl
                                         << "Assuming bias potential of zero." << endl;
             return Scalar(0.0);
             }
@@ -739,11 +733,17 @@ Scalar IntegratorMetaDynamics::biasPotentialDerivative(unsigned int cv, const st
     ArrayHandle<unsigned int> h_lengths(m_lengths, access_location::host, access_mode::read);
 
 
-    Scalar delta = (h_cv_max.data[cv] - h_cv_min.data[cv])/
-                   (Scalar)(h_lengths.data[cv] - 1);
+    unsigned int cv_idx = 0;
+    for (unsigned int i = 0; i < m_variables.size(); ++i)
+        {
+        if (m_variables[i].m_umbrella) continue;
+        if (cv_idx == cv) break;
+        cv_idx++;
+        }
 
-    Scalar bias = Scalar(0.0);
-    if (val[cv] - delta < h_cv_min.data[cv]) 
+    Scalar delta = (h_cv_max.data[cv_idx] - h_cv_min.data[cv_idx])/
+                   (Scalar)(h_lengths.data[cv_idx] - 1);
+    if (val[cv] - delta < m_variables[cv_idx].m_cv_min) 
         {
         // forward difference
         std::vector<Scalar> val2 = val;
@@ -751,16 +751,16 @@ Scalar IntegratorMetaDynamics::biasPotentialDerivative(unsigned int cv, const st
 
         Scalar y2 = interpolateBiasPotential(val2);
         Scalar y1 = interpolateBiasPotential(val);
-        bias = (y2-y1)/delta;
+        return (y2-y1)/delta;
         }
-    else if (val[cv] + delta > h_cv_max.data[cv])
+    else if (val[cv] + delta > m_variables[cv_idx].m_cv_max)
         {
         // backward difference
         std::vector<Scalar> val2 = val;
         val2[cv] -= delta;
         Scalar y1 = interpolateBiasPotential(val2);
         Scalar y2 = interpolateBiasPotential(val);
-        bias = (y2-y1)/delta;
+        return (y2-y1)/delta;
         }
     else
         {
@@ -771,30 +771,8 @@ Scalar IntegratorMetaDynamics::biasPotentialDerivative(unsigned int cv, const st
         val2[cv] += delta;
         Scalar y1 = interpolateBiasPotential(val1);
         Scalar y2 = interpolateBiasPotential(val2);
-        bias = (y2 - y1)/(Scalar(2.0)*delta);
+        return (y2 - y1)/(Scalar(2.0)*delta);
         }
-
-
-    unsigned int cv_idx;
-    unsigned int i = 0;
-    for (cv_idx = 0; cv_idx < m_variables.size(); ++cv_idx)
-        {
-        if (m_variables[i].m_umbrella) continue;
-        if (i== cv) break;
-        i++;
-        }
-
-       
-    if (m_variables[cv_idx].m_transform == CollectiveVariableItem::power_law)
-        {
-        if (val[cv] >= h_cv_min.data[cv] && val[cv] <= h_cv_max.data[cv])
-            {
-            Scalar p = m_variables[cv_idx].m_pow;
-            bias *= p*pow(val[cv],(p-Scalar(1.0)/p));
-            }
-        }
-
-    return bias;
     }
 
 void IntegratorMetaDynamics::setGrid(bool use_grid)
@@ -1492,7 +1470,7 @@ Scalar IntegratorMetaDynamics::fractionDerivative(Scalar val)
         }
     } 
 
-void IntegratorMetaDynamics::computeSigma(std::vector<Scalar>& current_val)
+void IntegratorMetaDynamics::computeSigma()
     {
     std::vector<CollectiveVariableItem>::iterator iti,itj;
 
@@ -1510,19 +1488,13 @@ void IntegratorMetaDynamics::computeSigma(std::vector<Scalar>& current_val)
     for (iti = m_variables.begin(); iti != m_variables.end(); ++iti)
         {
         if (iti->m_umbrella) continue;
-        handles.push_back(new ArrayHandle<Scalar4>(iti->m_cv->getForceArray(), access_location::host, access_mode::read));
-        }	
+
+	handles.push_back(new ArrayHandle<Scalar4>(iti->m_cv->getForceArray(), access_location::host, access_mode::read));
+	}	
 
     for (iti = m_variables.begin(); iti != m_variables.end(); ++iti)
         {
         if (iti->m_umbrella) continue;
-
-        Scalar faci(1.0);
-        if (iti->m_transform == CollectiveVariableItem::power_law)
-            {
-            Scalar p = iti->m_pow;
-            faci = p*pow(current_val[i],(p-Scalar(1.0))/p);
-            }
 
         ArrayHandle<Scalar4>& handle_i = *handles[i];
 
@@ -1531,15 +1503,7 @@ void IntegratorMetaDynamics::computeSigma(std::vector<Scalar>& current_val)
             {
             if (itj->m_umbrella) continue;
 
-            Scalar facj(1.0);
-            if (itj->m_transform == CollectiveVariableItem::power_law)
-                {
-                Scalar p = itj->m_pow;
-                facj = p*pow(current_val[j],(p-Scalar(1.0))/p);
-                }
-
             sigmasq[i*ncv+j] = Scalar(0.0);
-
             if (iti->m_cv->canComputeDerivatives() && itj->m_cv->canComputeDerivatives())
                 {
                 // this releases an array twice, so may create problems in debug mode
@@ -1554,8 +1518,6 @@ void IntegratorMetaDynamics::computeSigma(std::vector<Scalar>& current_val)
                     Scalar3 force_j = make_scalar3(f_j.x,f_j.y,f_j.z);
                     sigmasq[i*ncv+j] += m_sigma_g*m_sigma_g*dot(force_i,force_j);
                     }
-
-                sigmasq[i*ncv+j] *= faci*facj;
                 }
             else if (i==j && is_root) sigmasq[i*ncv+j] = iti->m_sigma*iti->m_sigma;
 
@@ -1678,9 +1640,4 @@ void export_IntegratorMetaDynamics()
     .value("well_tempered", IntegratorMetaDynamics::mode_well_tempered)
     .value("flux_tempered", IntegratorMetaDynamics::mode_flux_tempered)
     ;
-
-    enum_<CollectiveVariableItem::Enum>("transform_type")
-    .value("linear", CollectiveVariableItem::linear)
-    .value("power_law", CollectiveVariableItem::power_law)
-    ; 
     }

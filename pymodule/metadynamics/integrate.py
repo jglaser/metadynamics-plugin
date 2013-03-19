@@ -245,7 +245,7 @@ class mode_metadynamics(_integrator):
                 if f.ftm_parameters_set:
                     self.cpp_integrator.setHistograms(True)
 
-                self.cpp_integrator.registerCollectiveVariable(f.cpp_force, f.sigma, f.cv_min, f.cv_max, f.num_points, f.cpp_transform, f.power, f.ftm_min, f.ftm_max, f.umbrella)
+                self.cpp_integrator.registerCollectiveVariable(f.cpp_force, f.sigma, f.cv_min, f.cv_max, f.num_points, f.ftm_min, f.ftm_max, f.umbrella)
 
                 if f.use_grid is True:
                     if len(self.cv_names) == 0:

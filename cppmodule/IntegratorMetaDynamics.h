@@ -15,11 +15,6 @@
 //! Structure to hold information about a collective variable
 struct CollectiveVariableItem
     {
-    enum Enum {
-        linear = 0,
-        power_law 
-        };
-
     boost::shared_ptr<CollectiveVariable> m_cv; //!< The collective variable
     Scalar m_sigma;                             //!< Width of compensating gaussians for this variable
     Scalar m_cv_min;                            //!< Minium value of collective variable (if using grid)
@@ -28,8 +23,6 @@ struct CollectiveVariableItem
     Scalar m_ftm_min;                           //!< Location of lower boundary for flux-tempered metadynamics
     Scalar m_ftm_max;                           //!< Location of upper boundary for flux-tempered metadynamics
     bool m_umbrella;                            //!< True if this variable should be used in umbrella mode
-    Enum m_transform;                          //!< Type of transformation applied to CV
-    Scalar m_pow;                               //!< Exponent of of the power law transformation
     };
 
 //! Implements a metadynamics update scheme
@@ -129,21 +122,10 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
             \param cv_min Minimum value, if using grid
             \param cv_max Maximum value, if using grid
             \param num_points Number of grid points to use for interpolation
-            \param transform Type of transformation to apply to the CV
-            \param pow Exponent of power law for variable transformation
             \param ftm_min Lower CV boundary for flux-tempered MetaD
             \param ftm_max Upper CV boundary for flux-tempered MetaD
          */
-        void registerCollectiveVariable(boost::shared_ptr<CollectiveVariable> cv,
-                                        Scalar sigma,
-                                        Scalar cv_min=Scalar(0.0),
-                                        Scalar cv_max=Scalar(0.0),
-                                        int num_points=0,
-                                        CollectiveVariableItem::Enum transform = CollectiveVariableItem::linear,
-                                        Scalar pow = Scalar(1.0),
-                                        Scalar ftm_min=Scalar(0.0),
-                                        Scalar ftm_max=Scalar(0.0),
-                                        bool umbrella=false)
+        void registerCollectiveVariable(boost::shared_ptr<CollectiveVariable> cv, Scalar sigma, Scalar cv_min=Scalar(0.0), Scalar cv_max=Scalar(0.0), int num_points=0, Scalar ftm_min=Scalar(0.0), Scalar ftm_max=Scalar(0.0), bool umbrella=false)
             {
             assert(cv);
             assert(sigma > 0);
@@ -161,9 +143,6 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
             cv_item.m_ftm_max = ftm_max;
 
             cv_item.m_umbrella = umbrella;
-
-            cv_item.m_transform = transform;
-            cv_item.m_pow = pow;
 
             if (!umbrella) m_num_biased_variables++;
 
@@ -427,7 +406,7 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         Scalar fractionDerivative(Scalar val);
 
         //! Compute sigma matrix
-        void computeSigma(std::vector<Scalar>& current_val);
+        void computeSigma();
 
         //! Compute determinant of sigma matrix
         Scalar sigmaDeterminant();
