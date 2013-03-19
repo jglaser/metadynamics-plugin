@@ -10,8 +10,9 @@
 LamellarOrderParameterGPU::LamellarOrderParameterGPU(boost::shared_ptr<SystemDefinition> sysdef,
                           const std::vector<Scalar>& mode,
                           const std::vector<int3>& lattice_vectors,
+                          const Scalar offs,
                           const std::string& suffix)
-    : LamellarOrderParameter(sysdef, mode, lattice_vectors, suffix)
+    : LamellarOrderParameter(sysdef, mode, lattice_vectors, offs, suffix)
     {
 
     GPUArray<Scalar> gpu_mode(mode.size(), m_exec_conf);
@@ -86,7 +87,7 @@ void LamellarOrderParameterGPU::computeCV(unsigned int timestep)
 
     sum /= Scalar(2.0)*(Scalar) N*(Scalar)N;
 
-    m_cv = sum;
+    m_cv = sqrt(sum)+m_offs;
 
     if (m_prof)
         m_prof->pop(m_exec_conf);
@@ -138,6 +139,7 @@ void export_LamellarOrderParameterGPU()
         ("LamellarOrderParameterGPU", init< boost::shared_ptr<SystemDefinition>,
                                          const std::vector<Scalar>&,
                                          const std::vector<int3>&,
+                                         const Scalar,
                                          const std::string& >());
     }
 #endif

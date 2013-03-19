@@ -187,7 +187,7 @@ class lamellar(_collective_variable):
     # \param mode Per-type list (dictionary) of mode coefficients
     # \param lattice_vectors List of reciprocal lattice vectors (Miller indices) for every mode
     # \param name Name given to this collective variable
-    def __init__(self, mode, lattice_vectors, name=None,sigma=1.0):
+    def __init__(self, mode, lattice_vectors, name=None,sigma=1.0,offs=0.0):
         util.print_status_line()
 
         if name is not None:
@@ -223,9 +223,9 @@ class lamellar(_collective_variable):
             cpp_lattice_vectors.append(hoomd.make_int3(l[0], l[1], l[2]))
 
         if not globals.exec_conf.isCUDAEnabled():
-            self.cpp_force = _metadynamics.LamellarOrderParameter(globals.system_definition, cpp_mode, cpp_lattice_vectors, suffix)
+            self.cpp_force = _metadynamics.LamellarOrderParameter(globals.system_definition, cpp_mode, cpp_lattice_vectors, offs,suffix)
         else:
-            self.cpp_force = _metadynamics.LamellarOrderParameterGPU(globals.system_definition, cpp_mode, cpp_lattice_vectors, suffix)
+            self.cpp_force = _metadynamics.LamellarOrderParameterGPU(globals.system_definition, cpp_mode, cpp_lattice_vectors, offs, suffix)
 
         globals.system.addCompute(self.cpp_force, self.force_name)
 
