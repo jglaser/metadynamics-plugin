@@ -43,6 +43,9 @@ class _collective_variable(_force):
         self.umbrella = False
         self.reweight = False
 
+        self.path = None
+        self.cpp_path_frames = None
+
     ## \var sigma
     # \internal
 
@@ -79,6 +82,11 @@ class _collective_variable(_force):
         self.num_points = num_points
 
         self.use_grid = True
+
+    def disable_grid(self):
+        util.print_status_line()
+
+        self.use_grid = False
 
     ## Sets parameters for the histogram of flux-tempered metadynamics
     # \param ftm_min Minimum of the collective variable (smallest grid value)
@@ -149,6 +157,16 @@ class _collective_variable(_force):
         if reweight is not None:
             self.reweight = reweight
 
+    def set_path(self, path, frames=None):
+        util.print_status_line()
+
+        self.path=path
+
+        if frames is not None:
+            self.cpp_path_frames = hoomd.std_vector_float()
+            for i in frames:
+                self.cpp_path_frames.append(i)
+   
 ## \brief Lamellar order parameter as a collective variable to study phase transitions in block copolymer systems
 #
 # This collective variable is based on the Fourier modes of concentration
@@ -324,4 +342,51 @@ class mesh(_collective_variable):
     def update_coeffs(self):
         pass
 
+class _path_parallel(_collective_variable):
+    ## Construct a path collective variable, parallel direction
+    # \param name Name of this path variable
+    def __init__(self, num_frames, scale, name="path",sigma=1.0):
+        _collective_variable.__init__(self, sigma, name)
 
+        dir = _metadynamics.PathCollectiveVariable.direction.parallel;
+        self.cpp_force = _metadynamics.PathCollectiveVariable(globals.system_definition, dir, num_frames, scale, name);
+
+        globals.system.addCompute(self.cpp_force, self.force_name)
+
+        self.enabled = False
+        self.log = True
+
+    def update_coeffs(self):
+        self.cpp_force.removeAllPathComponents();
+        for f in globals.forces:
+            if f.enabled and isinstance(f, _collective_variable) and f.path is not None:
+                if "_"+f.path==self.name:
+                    self.cpp_force.registerPathComponent(f.cpp_force, f.cpp_path_frames)
+
+class _path_transverse(_collective_variable):
+    ## Construct a path collective variable, transverse direction
+    # \param name Name of this path variable
+    def __init__(self, num_frames, scale, name="path",sigma=1.0):
+        _collective_variable.__init__(self, sigma, name)
+
+        dir = _metadynamics.PathCollectiveVariable.direction.transverse;
+        self.cpp_force = _metadynamics.PathCollectiveVariable(globals.system_definition, dir, num_frames, scale, name);
+
+        globals.system.addCompute(self.cpp_force, self.force_name)
+
+        self.enabled = False
+        self.log = True
+
+    def update_coeffs(self):
+        self.cpp_force.removeAllPathComponents();
+        for f in globals.forces:
+            if f.enabled and isinstance(f, _collective_variable) and f.path is not None:
+                if ("_"+f.path)==self.name:
+                    self.cpp_force.registerPathComponent(f.cpp_force, f.cpp_path_frames)
+
+class path:
+    def __init__(self, num_frames, scale, name="path", sigma=1.0):
+        util.print_status_line()
+
+        self.par = _path_parallel(num_frames, scale, name, sigma)
+        self.trans = _path_transverse(num_frames, scale, name, sigma)

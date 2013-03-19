@@ -221,7 +221,7 @@ class mode_metadynamics(_integrator):
                 if f.umbrella and not f.reweight:
                     continue
 
-                if f.enabled and isinstance(f, cv._collective_variable):
+                if isinstance(f, cv._collective_variable) and f.use_grid:
                     if f.name != self.cv_names[num_cv]:
                         notfound = True
                     num_cv += 1;
@@ -234,9 +234,8 @@ class mode_metadynamics(_integrator):
         self.cv_names = []
         self.cpp_integrator.removeAllVariables()
 
-        use_grid = False;
         for f in globals.forces:
-            if f.enabled and isinstance(f, cv._collective_variable):
+            if isinstance(f, cv._collective_variable):
 
                 if f.umbrella and not f.reweight:
                     continue
@@ -245,23 +244,16 @@ class mode_metadynamics(_integrator):
                 if f.ftm_parameters_set:
                     self.cpp_integrator.setHistograms(True)
 
-                self.cpp_integrator.registerCollectiveVariable(f.cpp_force, f.sigma, f.cv_min, f.cv_max, f.num_points, f.ftm_min, f.ftm_max, f.umbrella)
-
                 if f.use_grid is True:
-                    if len(self.cv_names) == 0:
-                        use_grid = True
-                    else:
-                        if use_grid is False:
-                            globals.msg.error("integrate.mode_metadynamics: Not all collective variables have been set up for grid mode.\n")
-                            raise RuntimeError('Error setting up Metadynamics.');
-                if not f.umbrella: 
+                    self.cpp_integrator.registerCollectiveVariable(f.cpp_force, f.sigma, f.cv_min, f.cv_max, f.num_points, f.ftm_min, f.ftm_max, f.umbrella)
+
                     self.cv_names.append(f.name)
 
         if len(self.cv_names) == 0:
             globals.msg.warning("integrate.mode_metadynamics: No collective variables defined. Continuing with simulation anyway.\n")
 
         if not self.cpp_integrator.isInitialized():
-           self.cpp_integrator.setGrid(use_grid)
+           self.cpp_integrator.setGrid(True)
 
         _integrator.update_forces(self)
 

@@ -4,6 +4,7 @@
 #include "LamellarOrderParameter.h"
 #include "AspectRatio.h"
 #include "OrderParameterMesh.h"
+#include "PathCollectiveVariable.h"
 
 #ifdef ENABLE_CUDA
 #include "LamellarOrderParameterGPU.h"
@@ -24,6 +25,7 @@ BOOST_PYTHON_MODULE(_metadynamics)
     export_LamellarOrderParameter();
     export_AspectRatio();
     export_OrderParameterMesh();
+    export_PathCollectiveVariable();
 
 #ifdef ENABLE_CUDA
     export_LamellarOrderParameterGPU();

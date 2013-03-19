@@ -681,7 +681,7 @@ Scalar IntegratorMetaDynamics::interpolateBiasPotential(const std::vector<Scalar
         if (lower < 0 || upper >= m_variables[cv_idx].m_num_points)
             {
             m_exec_conf->msg->warning() << "integrate.mode_metadynamics: Value " << val[cv]
-                                        << " of collective variable " << cv_idx << " out of bounds." << endl
+                                        << " of collective variable " << m_variables[cv_idx].m_cv->getName() << " out of bounds." << endl
                                         << "Assuming bias potential of zero." << endl;
             return Scalar(0.0);
             }
