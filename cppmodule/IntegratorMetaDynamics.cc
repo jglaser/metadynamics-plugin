@@ -917,9 +917,13 @@ void IntegratorMetaDynamics::writeGrid(const std::string& filename)
             }
 
         file << setprecision(10) << h_grid.data[grid_idx];
-        Scalar reweight_factor = h_grid_hist_reweight.data[grid_idx]/(Scalar)h_grid_hist.data[grid_idx];
+        Scalar reweight_factor;
+        if (h_grid_hist.data[grid_idx])
+            reweight_factor = (Scalar)h_grid_hist.data[grid_idx]/h_grid_hist_reweight.data[grid_idx];
+        else
+            reweight_factor = Scalar(0.0);
 
-        file << m_delimiter << setprecision(10) << h_reweighted_grid.data[grid_idx]/reweight_factor;
+        file << m_delimiter << setprecision(10) << h_reweighted_grid.data[grid_idx]*reweight_factor;
 
         // write average of Gaussian volume
         Scalar val;
