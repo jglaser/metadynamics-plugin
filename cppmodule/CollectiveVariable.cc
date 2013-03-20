@@ -27,7 +27,7 @@ void CollectiveVariable::computeForces(unsigned int timestep)
         Scalar val = getCurrentValue(timestep);
         if ((val < m_cv0 + m_width_flat/Scalar(2.0)) && 
             (val > m_cv0 - m_width_flat/Scalar(2.0)))
-            m_bias = Scalar(0.0);
+            setBiasFactor(0.0);
         else
             {
             Scalar delta(0.0);
@@ -38,19 +38,19 @@ void CollectiveVariable::computeForces(unsigned int timestep)
 
             if (m_umbrella == linear)
                 {
-                m_bias = m_scale*Scalar(1.0)/m_kappa;
+                setBiasFactor(m_scale*Scalar(1.0)/m_kappa);
                 }
             else if (m_umbrella == harmonic)
                 {
-                m_bias = m_scale*delta/m_kappa/m_kappa;
+                setBiasFactor(m_scale*delta/m_kappa/m_kappa);
                 }
             else if (m_umbrella == wall)
                 {
-                m_bias = m_scale*Scalar(12.0)*pow(delta/m_kappa,Scalar(11.0))/m_kappa;
+                setBiasFactor(m_scale*Scalar(12.0)*pow(delta/m_kappa,Scalar(11.0))/m_kappa);
                 }
             else if (m_umbrella == gaussian)
                 {
-                m_bias = -m_scale*(val-m_cv0)*exp(-(val-m_cv0)*(val-m_cv0)/m_kappa/m_kappa/Scalar(2.0));
+                setBiasFactor(-m_scale*(val-m_cv0)*exp(-(val-m_cv0)*(val-m_cv0)/m_kappa/m_kappa/Scalar(2.0)));
                 }
             }
         }

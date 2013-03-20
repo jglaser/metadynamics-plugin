@@ -10,7 +10,9 @@ PathCollectiveVariable::PathCollectiveVariable(boost::shared_ptr<SystemDefinitio
       m_num_frames(num_frames),
       m_scale(scale),
       m_cv_last_updated(0),
-      m_cv(0.0)
+      m_cv(0.0),
+      m_denom(0.0),
+      m_numerator(0.0)
     {
     if (m_num_frames < 2)
         {
@@ -37,7 +39,7 @@ Scalar PathCollectiveVariable::getCurrentValue(unsigned int timestep)
 
     // calculate Euclidian norms of the distance to the path
     m_norm=std::vector<Scalar>();
-    Scalar denom(0.0);
+    m_denom=Scalar(0.0);
     std::vector<Scalar>::iterator it;
     for (unsigned int frame = 0; frame < m_num_frames; ++frame)
         {
@@ -48,24 +50,24 @@ Scalar PathCollectiveVariable::getCurrentValue(unsigned int timestep)
             n += del*del;
             }
         m_norm.push_back(n);
-        denom += exp(-n*m_scale);
+        m_denom += exp(-n*m_scale);
         }
   
     Scalar res;
-    Scalar numerator(0.0);
+    m_numerator=Scalar(0.0);
     if (m_direction == parallel)
         {
-        // calcualate coordinate along the path
+        // calculate coordinate along the path
         for (it = m_norm.begin(); it != m_norm.end(); ++it)
             {
             Scalar norm = *it;
-            numerator += Scalar(it-m_norm.begin())*exp(-norm*m_scale);
+            m_numerator += Scalar(it-m_norm.begin())*exp(-norm*m_scale);
             }
-        res = numerator/denom/(Scalar(m_num_frames-1));
+        res = m_numerator/m_denom/(Scalar(m_num_frames-1));
         }
     else if (m_direction == transverse)
         {
-        res = -Scalar(1.0)/m_scale*log(denom);
+        res = -Scalar(1.0)/m_scale*log(m_denom);
         }
     else
         {
@@ -76,7 +78,11 @@ Scalar PathCollectiveVariable::getCurrentValue(unsigned int timestep)
 
     m_cv = res;
     
-    
+    return res;
+    }
+
+void PathCollectiveVariable::computeBiasForces(unsigned int timestep)
+    {
     // Compute bias factors for all path component CVs
     for (unsigned int frame = 0; frame < m_num_frames; ++frame)
         {
@@ -85,23 +91,22 @@ Scalar PathCollectiveVariable::getCurrentValue(unsigned int timestep)
 
         for (cv_it = m_path_components.begin(); cv_it != m_path_components.end(); ++cv_it)
             {
-            Scalar bias(0.0);
+            Scalar cur_bias(0.0);
             if (m_direction == parallel)
                 {
-                bias = -Scalar(frame)*Scalar(2.0)*sqrt(norm)*m_scale/denom;
-                bias += numerator/denom/denom*Scalar(2.0)*sqrt(norm)*m_scale;
-                bias /= Scalar(m_num_frames-1);
+                cur_bias = -Scalar(frame)*Scalar(2.0)*sqrt(norm)*m_scale/m_denom;
+                cur_bias += m_numerator/m_denom/m_denom*Scalar(2.0)*sqrt(norm)*m_scale;
+                cur_bias /= Scalar(m_num_frames-1);
                 }
             else if (m_direction == transverse)
                 {
-                bias = Scalar(1.0)/denom*Scalar(2.0)*sqrt(norm);
+                cur_bias = Scalar(1.0)/m_denom*Scalar(2.0)*sqrt(norm);
                 }
 
-            cv_it->m_cv->setBiasFactor(m_bias*bias);
+            std::cout << m_bias << " " << m_bias*cur_bias << std::endl;
+            cv_it->m_cv->setBiasFactor(m_bias*cur_bias);
             }
         }
-
-    return res;
     }
 
 void export_PathCollectiveVariable()

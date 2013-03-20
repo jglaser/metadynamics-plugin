@@ -59,6 +59,15 @@ struct PathCollectiveVariable : public CollectiveVariable
             return false;
             }
 
+        /*! Returns true if the evaluation of other variables depends on the evaluation
+         * of this variable
+         */
+        virtual bool needEvaluateFirst()
+            {
+            return true;
+            }
+
+
         /*! Returns the names of log quantitites provided
          */
         std::vector< std::string > getProvidedLogQuantities()
@@ -90,10 +99,7 @@ struct PathCollectiveVariable : public CollectiveVariable
 
 
     protected:
-        virtual void computeBiasForces(unsigned int timestep)
-            {
-            // we do not compute our own forces
-            }
+        virtual void computeBiasForces(unsigned int timestep);
 
     private:
         std::vector<PathComponent> m_path_components;  //!< List of path components (CVs)
@@ -105,6 +111,8 @@ struct PathCollectiveVariable : public CollectiveVariable
         Scalar m_cv;                                   //!< Current value
         std::vector<Scalar> m_norm;                    //!< Distance metric of CVs for every frame
         std::string m_log_name;                        //!< Name of logging quantity
+        Scalar m_denom;                                //!< Denominator of parallel path CV
+        Scalar m_numerator;                            //!< Numerator of parallel path CV
     };
 
 void export_PathCollectiveVariable();

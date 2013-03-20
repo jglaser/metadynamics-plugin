@@ -277,6 +277,12 @@ void IntegratorMetaDynamics::update(unsigned int timestep)
     // update bias potential
     updateBiasPotential(timestep+1);
 
+    // if there are any variables that need to be evaluated before the others,
+    // compute them first
+    std::vector<CollectiveVariableItem>::iterator it;
+    for (it = m_variables.begin(); it != m_variables.end(); ++it)
+        if (it->m_cv->needEvaluateFirst()) it->m_cv->compute(timestep+1);
+    
     // compute the net force on all particles
 #ifdef ENABLE_CUDA
     if (exec_conf->exec_mode == ExecutionConfiguration::GPU)

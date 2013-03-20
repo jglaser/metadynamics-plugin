@@ -133,6 +133,14 @@ class CollectiveVariable : public ForceCompute
          */
         Scalar getUmbrellaPotential(unsigned int timestep);
 
+        /*! Returns true if the evaluation of other variables depends on the evaluation
+         * of this variable
+         */
+        virtual bool needEvaluateFirst()
+            {
+            return false;
+            }
+
     protected:
         /*! \param timestep The current value of the time step
          */
