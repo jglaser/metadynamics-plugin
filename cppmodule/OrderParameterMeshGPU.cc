@@ -63,17 +63,17 @@ void OrderParameterMeshGPU::initializeFFT()
     if (! m_local_fft)
         {
         // ghost cell exchanger 
-        m_gpu_mesh_comm = boost::shared_ptr<CommunicatorMeshGPUScalar4 >(
-            new CommunicatorMeshGPUScalar4(m_sysdef, m_comm, m_n_ghost_cells, m_force_mesh_index, true));
+        m_gpu_mesh_comm = boost::shared_ptr<CommunicatorMeshGPUComplex >(
+            new CommunicatorMeshGPUComplex(m_sysdef, m_comm, m_n_ghost_cells, m_force_mesh_index, true));
 
         // set up distributed FFT 
         m_gpu_dfft = boost::shared_ptr<DistributedFFTGPU>(
             new DistributedFFTGPU(m_exec_conf, m_pdata->getDomainDecomposition(), m_mesh_index, make_uint3(0,0,0)));
         m_gpu_dfft->setProfiler(m_prof);
 
-        // set up inverse distributed FFT (batched)
+        // set up inverse distributed FFT 
         m_gpu_idfft = boost::shared_ptr<DistributedFFTGPU>(
-            new DistributedFFTGPU(m_exec_conf, m_pdata->getDomainDecomposition(), m_force_mesh_index, m_n_ghost_cells,3));
+            new DistributedFFTGPU(m_exec_conf, m_pdata->getDomainDecomposition(), m_force_mesh_index, m_n_ghost_cells));
         m_gpu_idfft->setProfiler(m_prof);
 
         }
@@ -94,16 +94,10 @@ void OrderParameterMeshGPU::initializeFFT()
     GPUArray<cufftComplex> fourier_mesh_G(m_n_inner_cells, m_exec_conf);
     m_fourier_mesh_G.swap(fourier_mesh_G);
 
-    GPUArray<cufftComplex> fourier_mesh_force_xyz(m_n_inner_cells*3, m_exec_conf);
-    m_fourier_mesh_force_xyz.swap(fourier_mesh_force_xyz);
-
     unsigned int num_cells = m_force_mesh_index.getNumElements();
 
-    GPUArray<cufftComplex> force_mesh_xyz(num_cells*3, m_exec_conf);
-    m_force_mesh_xyz.swap(force_mesh_xyz);
-
-    GPUArray<Scalar4> force_mesh(num_cells, m_exec_conf);
-    m_force_mesh.swap(force_mesh);
+    GPUArray<cufftComplex> inv_fourier_mesh(num_cells, m_exec_conf);
+    m_inv_fourier_mesh.swap(inv_fourier_mesh);
 
     if (exec_conf->getComputeCapability() < 300)
         {
@@ -240,8 +234,6 @@ void OrderParameterMeshGPU::updateMeshes()
         ArrayHandle<cufftComplex> d_fourier_mesh(m_fourier_mesh, access_location::device, access_mode::readwrite);
         ArrayHandle<cufftComplex> d_fourier_mesh_G(m_fourier_mesh_G, access_location::device, access_mode::overwrite);
 
-        ArrayHandle<cufftComplex> d_fourier_mesh_force_xyz(m_fourier_mesh_force_xyz, access_location::device, access_mode::overwrite);
-
         ArrayHandle<Scalar> d_inf_f(m_inf_f, access_location::device, access_mode::read);
         ArrayHandle<Scalar3> d_k(m_k, access_location::device, access_mode::read);
 
@@ -253,8 +245,7 @@ void OrderParameterMeshGPU::updateMeshes()
                           d_inf_f.data,
                           d_k.data,
                           V_cell,
-                          m_pdata->getNGlobal(),
-                          d_fourier_mesh_force_xyz.data);
+                          m_pdata->getNGlobal());
 
         if (m_exec_conf->isCUDAErrorCheckingEnabled())
             CHECK_CUDA_ERROR();
@@ -263,22 +254,12 @@ void OrderParameterMeshGPU::updateMeshes()
     if (m_local_fft)
         {
         // do local inverse transform of force mesh
-        ArrayHandle<cufftComplex> d_fourier_mesh_force_xyz(m_fourier_mesh_force_xyz, access_location::device, access_mode::read);
-        ArrayHandle<cufftComplex> d_force_mesh_xyz(m_force_mesh_xyz, access_location::device, access_mode::overwrite);
+        ArrayHandle<cufftComplex> d_fourier_mesh_G(m_fourier_mesh_G, access_location::device, access_mode::read);
+        ArrayHandle<cufftComplex> d_inv_fourier_mesh(m_inv_fourier_mesh, access_location::device, access_mode::overwrite);
 
         cufftExecC2C(m_cufft_plan,
-                     d_fourier_mesh_force_xyz.data,
-                     d_force_mesh_xyz.data,
-                     CUFFT_INVERSE);
-
-        cufftExecC2C(m_cufft_plan,
-                     d_fourier_mesh_force_xyz.data+m_n_inner_cells,
-                     d_force_mesh_xyz.data+m_n_inner_cells,
-                     CUFFT_INVERSE);
-
-        cufftExecC2C(m_cufft_plan,
-                     d_fourier_mesh_force_xyz.data+m_n_inner_cells*2,
-                     d_force_mesh_xyz.data+m_n_inner_cells*2,
+                     d_fourier_mesh_G.data,
+                     d_inv_fourier_mesh.data,
                      CUFFT_INVERSE);
         }
     #ifdef ENABLE_MPI
@@ -286,32 +267,19 @@ void OrderParameterMeshGPU::updateMeshes()
         {
         // Distributed inverse transform of force mesh
         m_exec_conf->msg->notice(8) << "cv.mesh: Distributed iFFT force mesh" << std::endl;
-        m_gpu_idfft->FFT3D(m_fourier_mesh_force_xyz, m_force_mesh_xyz, true);
+        m_gpu_idfft->FFT3D(m_fourier_mesh_G, m_inv_fourier_mesh, true);
         }
     #endif
-
-        {
-        // coalesce forces
-        ArrayHandle<cufftComplex> d_force_mesh_xyz(m_force_mesh_xyz, access_location::device, access_mode::read);
-        ArrayHandle<Scalar4> d_force_mesh(m_force_mesh, access_location::device, access_mode::overwrite);
-        
-        gpu_coalesce_forces(m_force_mesh_index.getNumElements(),
-                            d_force_mesh_xyz.data,
-                            d_force_mesh.data);
-
-        if (m_exec_conf->isCUDAErrorCheckingEnabled())
-            CHECK_CUDA_ERROR();
-        }
 
     if (m_prof) m_prof->pop(m_exec_conf);
 
     #ifdef ENABLE_MPI
     if (! m_local_fft)
         {
-        // update outer cells of force mesh using ghost cells from neighboring processors
+        // update outer cells of inverse Fourier mesh using ghost cells from neighboring processors
         if (m_prof) m_prof->push("ghost exchange");
         m_exec_conf->msg->notice(8) << "cv.mesh: Ghost cell update" << std::endl;
-        m_gpu_mesh_comm->updateGhostCells(m_force_mesh);
+        m_gpu_mesh_comm->updateGhostCells(m_inv_fourier_mesh);
         if (m_prof) m_prof->pop();
         }
     #endif
@@ -320,25 +288,29 @@ void OrderParameterMeshGPU::updateMeshes()
 
 void OrderParameterMeshGPU::interpolateForces()
     {
-    if (m_prof) m_prof->push(m_exec_conf,"interpolate");
+    if (m_prof) m_prof->push(m_exec_conf,"forces");
 
     ArrayHandle<Scalar4> d_postype(m_pdata->getPositions(), access_location::device, access_mode::read);
-    ArrayHandle<Scalar4> d_force_mesh(m_force_mesh, access_location::device, access_mode::read);
+    ArrayHandle<cufftComplex> d_inv_fourier_mesh(m_inv_fourier_mesh, access_location::device, access_mode::read);
     ArrayHandle<Scalar> d_mode(m_mode, access_location::device, access_mode::read);
 
     ArrayHandle<Scalar4> d_force(m_force, access_location::device, access_mode::overwrite);
+    ArrayHandle<Scalar> d_virial(m_virial, access_location::device, access_mode::overwrite);
 
-    gpu_interpolate_forces(m_pdata->getN(),
-                           d_postype.data,
-                           d_force.data,
-                           m_bias,
-                           d_force_mesh.data,
-                           m_force_mesh_index,
-                           m_n_ghost_cells,
-                           d_mode.data,
-                           m_pdata->getBox(),
-                           m_pdata->getGlobalBox(),
-                           m_local_fft);
+    gpu_compute_forces(m_pdata->getN(),
+                       d_postype.data,
+                       d_force.data,
+                       d_virial.data,
+                       m_virial.getPitch(),
+                       m_bias,
+                       d_inv_fourier_mesh.data,
+                       m_force_mesh_index,
+                       m_n_ghost_cells,
+                       d_mode.data,
+                       m_pdata->getBox(),
+                       m_pdata->getGlobalBox(),
+                       m_local_fft,
+                       m_pdata->getNGlobal());
 
     if (m_exec_conf->isCUDAErrorCheckingEnabled())
         CHECK_CUDA_ERROR();
@@ -384,7 +356,7 @@ void OrderParameterMeshGPU::computeVirial()
 
     for (unsigned int i = 0; i<6; ++i)
         m_external_virial[i] = m_bias*Scalar(1.0/2.0)*h_sum_virial.data[i];
-      
+
     if (m_prof) m_prof->pop(m_exec_conf);
     }
 
@@ -473,12 +445,13 @@ void OrderParameterMeshGPU::computeInfluenceFunction()
 
 void OrderParameterMeshGPU::computeQmax(unsigned int timestep)
     {
-    if (m_prof) m_prof->push("max q");
 
     // compute Fourier grid
     getCurrentValue(timestep);
 
     if (timestep && m_q_max_last_computed == timestep) return;
+
+    if (m_prof) m_prof->push("max q");
     m_q_max_last_computed = timestep;
 
     ArrayHandle<cufftComplex> d_fourier_mesh(m_fourier_mesh, access_location::device, access_mode::read);

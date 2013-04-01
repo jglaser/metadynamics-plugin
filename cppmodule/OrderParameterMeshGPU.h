@@ -52,19 +52,16 @@ class OrderParameterMeshGPU : public OrderParameterMesh
 
         #ifdef ENABLE_MPI
         typedef CommunicatorMeshGPU<cufftComplex, gpu_communicate_complex_mesh_map> CommunicatorMeshGPUComplex;
-        typedef CommunicatorMeshGPU<Scalar4, gpu_communicate_scalar4_mesh_map> CommunicatorMeshGPUScalar4;
 
         boost::shared_ptr<DistributedFFTGPU> m_gpu_dfft;  //!< Distributed FFT for forward transform
         boost::shared_ptr<DistributedFFTGPU> m_gpu_idfft; //!< Distributed FFT for inverse transform
-        boost::shared_ptr<CommunicatorMeshGPUScalar4> m_gpu_mesh_comm; //!< Communicator for force mesh
+        boost::shared_ptr<CommunicatorMeshGPUComplex> m_gpu_mesh_comm; //!< Communicator for force mesh
         #endif
 
         GPUArray<cufftComplex> m_mesh;                 //!< The particle density mesh
         GPUArray<cufftComplex> m_fourier_mesh;         //!< The fourier transformed mesh
         GPUArray<cufftComplex> m_fourier_mesh_G;       //!< Fourier transformed mesh times the influence function
-        GPUArray<cufftComplex> m_fourier_mesh_force_xyz; //!< Force mesh in Fourier space 
-        GPUArray<cufftComplex> m_force_mesh_xyz;      //!< The inverse-fourier transformed force mesh
-        GPUArray<Scalar4> m_force_mesh;             //!< Storage for force vectors
+        GPUArray<cufftComplex> m_inv_fourier_mesh;     //!< The inverse-fourier transformed force mesh
 
         uint3 m_n_ghost_bins;                      //!< Number of ghost bins in every direction
         unsigned int m_n_particle_bins;            //!< Total number of bins

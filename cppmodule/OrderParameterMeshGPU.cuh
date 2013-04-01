@@ -53,24 +53,22 @@ void gpu_update_meshes(const unsigned int n_wave_vectors,
                          const Scalar *d_inf_f,
                          const Scalar3 *d_k,
                          const Scalar V_cell,
-                         const unsigned int N_global,
-                         cufftComplex *d_fourier_mesh_force_xyz);
+                         const unsigned int N_global);
 
-void gpu_coalesce_forces(const unsigned int num_force_cells,
-                         const cufftComplex *d_force_mesh_xyz,
-                         Scalar4 *d_force_mesh);
-
-void gpu_interpolate_forces(const unsigned int N,
-                             const Scalar4 *d_postype,
-                             Scalar4 *d_force,
-                             const Scalar bias,
-                             Scalar4 *d_force_mesh,
-                             const Index3D& mesh_idx,
-                             const uint3 n_ghost_cells,
-                             const Scalar *d_mode,
-                             const BoxDim& box,
-                             const BoxDim& global_box,
-                             const bool local_fft);
+void gpu_compute_forces(const unsigned int N,
+                            const Scalar4 *d_postype,
+                            Scalar4 *d_force,
+                            Scalar *d_virial,
+                            const unsigned int virial_pitch,
+                            const Scalar bias,
+                            const cufftComplex *d_inv_fourier_mesh,
+                            const Index3D& mesh_idx,
+                            const uint3 n_ghost_cells,
+                            const Scalar *d_mode,
+                            const BoxDim& box,
+                            const BoxDim& global_box,
+                            const bool local_fft,
+                            const unsigned int n_global);
 
 void gpu_compute_cv(unsigned int n_wave_vectors,
                    Scalar *d_sum_partial,
