@@ -218,10 +218,10 @@ class mode_metadynamics(_integrator):
             notfound = False;
             num_cv = 0
             for f in globals.forces:
-                if f.umbrella and not f.reweight:
-                    continue
-
                 if isinstance(f, cv._collective_variable) and f.use_grid:
+                    if f.umbrella and not f.reweight:
+                        continue
+
                     if f.name != self.cv_names[num_cv]:
                         notfound = True
                     num_cv += 1;
