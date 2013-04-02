@@ -237,14 +237,11 @@ void OrderParameterMeshGPU::updateMeshes()
         ArrayHandle<Scalar> d_inf_f(m_inf_f, access_location::device, access_mode::read);
         ArrayHandle<Scalar3> d_k(m_k, access_location::device, access_mode::read);
 
-        Scalar V_cell = m_pdata->getBox().getVolume()/(Scalar)m_n_inner_cells;
-
         gpu_update_meshes(m_n_inner_cells,
                           d_fourier_mesh.data,
                           d_fourier_mesh_G.data,
                           d_inf_f.data,
                           d_k.data,
-                          V_cell,
                           m_pdata->getNGlobal());
 
         if (m_exec_conf->isCUDAErrorCheckingEnabled())
@@ -295,13 +292,10 @@ void OrderParameterMeshGPU::interpolateForces()
     ArrayHandle<Scalar> d_mode(m_mode, access_location::device, access_mode::read);
 
     ArrayHandle<Scalar4> d_force(m_force, access_location::device, access_mode::overwrite);
-    ArrayHandle<Scalar> d_virial(m_virial, access_location::device, access_mode::overwrite);
 
     gpu_compute_forces(m_pdata->getN(),
                        d_postype.data,
                        d_force.data,
-                       d_virial.data,
-                       m_virial.getPitch(),
                        m_bias,
                        d_inv_fourier_mesh.data,
                        m_force_mesh_index,
@@ -355,7 +349,7 @@ void OrderParameterMeshGPU::computeVirial()
     ArrayHandle<Scalar> h_sum_virial(m_sum_virial, access_location::host, access_mode::read);
 
     for (unsigned int i = 0; i<6; ++i)
-        m_external_virial[i] = m_bias*Scalar(1.0/2.0)*h_sum_virial.data[i];
+        m_external_virial[i] = m_bias*h_sum_virial.data[i];
 
     if (m_prof) m_prof->pop(m_exec_conf);
     }

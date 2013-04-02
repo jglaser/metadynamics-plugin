@@ -102,8 +102,6 @@ __global__ void gpu_assign_particles_kernel(const unsigned int N,
 
     if (idx >= N) return;
 
-    Scalar V_cell = box.getVolume()/(Scalar)(mesh_idx.getW()*mesh_idx.getH()*mesh_idx.getD());
- 
     Scalar4 postype = d_postype[idx];
 
     Scalar3 pos = make_scalar3(postype.x, postype.y, postype.z);
@@ -161,7 +159,7 @@ __global__ void gpu_assign_particles_kernel(const unsigned int N,
                 Scalar3 dx_frac = shift - make_scalar3(i,j,k);
                 
                 // compute fraction of particle density assigned to cell
-                Scalar density_fraction = assignTSC(dx_frac.x)*assignTSC(dx_frac.y)*assignTSC(dx_frac.z)/V_cell;
+                Scalar density_fraction = assignTSC(dx_frac.x)*assignTSC(dx_frac.y)*assignTSC(dx_frac.z);
 
                 unsigned int cell_idx;
                 if (local_fft)
@@ -295,7 +293,6 @@ __global__ void gpu_assign_binned_particles_to_mesh_kernel(const unsigned int in
                                mesh_idx.getH()+n_ghost_bins.y,
                                mesh_idx.getD()+n_ghost_bins.z);
 
-    Scalar V_cell = box.getVolume()/(Scalar)(mesh_idx.getW()*mesh_idx.getH()*mesh_idx.getD());
     Scalar grid_val(0.0);
 
     // loop over particles in neighboring bins
@@ -364,7 +361,7 @@ __global__ void gpu_assign_binned_particles_to_mesh_kernel(const unsigned int in
 
     // write out mesh value
     cufftComplex c;
-    c.x = grid_val/V_cell;
+    c.x = grid_val;
     c.y = Scalar(0.0);
     d_mesh[cell_idx] = c;
     }
@@ -476,7 +473,8 @@ __global__ void gpu_compute_mesh_virial_kernel(const unsigned int n_wave_vectors
         Scalar knorm = sqrtf(ksq);
         Scalar k_cut = sqrtf(qstarsq);
         Scalar fac = expf(-Scalar(12.0)*(knorm/k_cut-Scalar(1.0)));
-        Scalar kfac = -Scalar(12.0)/(Scalar(1.0)+fac)/knorm/k_cut;
+        Scalar kfac = -Scalar(6.0)/(Scalar(1.0)+fac)/knorm/k_cut;
+//        Scalar kfac = -Scalar(1.0/2.0)/qstarsq;
         d_virial_mesh[0*n_wave_vectors+idx] = rhog*kfac*k.x*k.x; // xx
         d_virial_mesh[1*n_wave_vectors+idx] = rhog*kfac*k.x*k.y; // xy
         d_virial_mesh[2*n_wave_vectors+idx] = rhog*kfac*k.x*k.z; // xz
@@ -519,7 +517,6 @@ __global__ void gpu_update_meshes_kernel(const unsigned int n_wave_vectors,
                                          cufftComplex *d_fourier_mesh_G,
                                          const Scalar *d_inf_f,
                                          const Scalar3 *d_k,
-                                         const Scalar V_cell,
                                          const unsigned int N_global)
     {
     unsigned int k = blockDim.x * blockIdx.x + threadIdx.x;
@@ -528,9 +525,6 @@ __global__ void gpu_update_meshes_kernel(const unsigned int n_wave_vectors,
 
     cufftComplex f = d_fourier_mesh[k];
 
-    f.x *= V_cell;
-    f.y *= V_cell;
-    
     // Normalization
     f.x /= (Scalar)N_global;
     f.y /= (Scalar)N_global;
@@ -549,7 +543,6 @@ void gpu_update_meshes(const unsigned int n_wave_vectors,
                          cufftComplex *d_fourier_mesh_G,
                          const Scalar *d_inf_f,
                          const Scalar3 *d_k,
-                         const Scalar V_cell,
                          const unsigned int N_global)
 
     {
@@ -560,7 +553,6 @@ void gpu_update_meshes(const unsigned int n_wave_vectors,
                                                                           d_fourier_mesh_G,
                                                                           d_inf_f,
                                                                           d_k,
-                                                                          V_cell,
                                                                           N_global);
     }
 
@@ -571,8 +563,6 @@ template<bool local_fft>
 __global__ void gpu_compute_forces_kernel(const unsigned int N,
                                           const Scalar4 *d_postype,
                                           Scalar4 *d_force,
-                                          Scalar *d_virial,
-                                          const unsigned int virial_pitch,
                                           const Scalar bias,
                                           const Index3D mesh_idx,
                                           const uint3 n_ghost_cells,
@@ -610,11 +600,6 @@ __global__ void gpu_compute_forces_kernel(const unsigned int N,
     Scalar3 shift = p-c;
 
     Scalar3 force = make_scalar3(0.0,0.0,0.0);
-
-    Scalar virial[6];
-
-    for (unsigned int l = 0; l < 6; ++l)
-        virial[l] = Scalar(0.0);
 
     Scalar3 a1 = box.getLatticeVector(0);
     Scalar3 a2 = box.getLatticeVector(1);
@@ -665,26 +650,13 @@ __global__ void gpu_compute_forces_kernel(const unsigned int N,
 
                 cufftComplex inv_mesh = tex1Dfetch(inv_fourier_mesh_tex,cell_idx);
 
-                Scalar3 f = make_scalar3(0.0,0.0,0.0);
-                f += -inner_dim.x*b1*mode*assignTSCderiv(dx_frac.x)*assignTSC(dx_frac.y)*assignTSC(dx_frac.z)*inv_mesh.x;
-                f += -inner_dim.y*b2*mode*assignTSC(dx_frac.x)*assignTSCderiv(dx_frac.y)*assignTSC(dx_frac.z)*inv_mesh.x;
-                f += -inner_dim.z*b3*mode*assignTSC(dx_frac.x)*assignTSC(dx_frac.y)*assignTSCderiv(dx_frac.z)*inv_mesh.x;
-    
-                force += f;
-
-                virial[0] += dx_frac.x/inner_dim.x*dot(a1,f); // xx
-                virial[1] += dx_frac.x/inner_dim.x*dot(a2,f); // xy
-                virial[2] += dx_frac.x/inner_dim.x*dot(a3,f); // xz
-                virial[3] += dx_frac.y/inner_dim.y*dot(a2,f); // yy
-                virial[4] += dx_frac.y/inner_dim.y*dot(a3,f); // yz
-                virial[5] += dx_frac.z/inner_dim.z*dot(a3,f); // zz
+                force += -(Scalar)inner_dim.x*b1*mode*assignTSCderiv(dx_frac.x)*assignTSC(dx_frac.y)*assignTSC(dx_frac.z)*inv_mesh.x;
+                force += -(Scalar)inner_dim.y*b2*mode*assignTSC(dx_frac.x)*assignTSCderiv(dx_frac.y)*assignTSC(dx_frac.z)*inv_mesh.x;
+                force += -(Scalar)inner_dim.z*b3*mode*assignTSC(dx_frac.x)*assignTSC(dx_frac.y)*assignTSCderiv(dx_frac.z)*inv_mesh.x;
                 }  
 
     // Normalization
-    force *= Scalar(2.0)/n_global;
-
-    for (unsigned int l = 0; l < 6; ++l)
-        d_virial[l*virial_pitch+idx] = bias*virial[l]*Scalar(2.0)/n_global;
+    force *= Scalar(2.0)/(Scalar)n_global;
 
     // Multiply with bias potential derivative
     force *= bias;
@@ -695,8 +667,6 @@ __global__ void gpu_compute_forces_kernel(const unsigned int N,
 void gpu_compute_forces(const unsigned int N,
                         const Scalar4 *d_postype,
                         Scalar4 *d_force,
-                        Scalar *d_virial,
-                        const unsigned int virial_pitch,
                         const Scalar bias,
                         const cufftComplex *d_inv_fourier_mesh,
                         const Index3D& mesh_idx,
@@ -729,8 +699,6 @@ void gpu_compute_forces(const unsigned int N,
         gpu_compute_forces_kernel<true><<<N/block_size+1,block_size>>>(N,
                                                                      d_postype,
                                                                      d_force,
-                                                                     d_virial,
-                                                                     virial_pitch,
                                                                      bias,
                                                                      mesh_idx,
                                                                      n_ghost_cells,
@@ -745,8 +713,6 @@ void gpu_compute_forces(const unsigned int N,
         gpu_compute_forces_kernel<false><<<N/block_size+1,block_size>>>(N,
                                                                      d_postype,
                                                                      d_force,
-                                                                     d_virial,
-                                                                     virial_pitch,
                                                                      bias,
                                                                      mesh_idx,
                                                                      n_ghost_cells,
