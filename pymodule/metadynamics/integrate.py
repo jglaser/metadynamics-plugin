@@ -218,7 +218,7 @@ class mode_metadynamics(_integrator):
             notfound = False;
             num_cv = 0
             for f in globals.forces:
-                if isinstance(f, cv._collective_variable) and f.use_grid:
+                if isinstance(f, cv._collective_variable):
                     if f.umbrella and not f.reweight:
                         continue
 
@@ -244,10 +244,9 @@ class mode_metadynamics(_integrator):
                 if f.ftm_parameters_set:
                     self.cpp_integrator.setHistograms(True)
 
-                if f.use_grid is True:
-                    self.cpp_integrator.registerCollectiveVariable(f.cpp_force, f.sigma, f.cv_min, f.cv_max, f.num_points, f.ftm_min, f.ftm_max, f.umbrella)
+                self.cpp_integrator.registerCollectiveVariable(f.cpp_force, f.sigma, f.cv_min, f.cv_max, f.num_points, f.ftm_min, f.ftm_max, f.umbrella)
 
-                    self.cv_names.append(f.name)
+                self.cv_names.append(f.name)
 
         if len(self.cv_names) == 0:
             globals.msg.warning("integrate.mode_metadynamics: No collective variables defined. Continuing with simulation anyway.\n")
