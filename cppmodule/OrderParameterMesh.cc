@@ -246,24 +246,10 @@ void OrderParameterMesh::initializeFFT()
     GPUArray<kiss_fft_cpx> fourier_mesh_G(m_n_inner_cells, m_exec_conf);
     m_fourier_mesh_G.swap(fourier_mesh_G);
 
-    GPUArray<kiss_fft_cpx> fourier_mesh_x(m_n_inner_cells, m_exec_conf);
-    m_fourier_mesh_x.swap(fourier_mesh_x);
-
-    GPUArray<kiss_fft_cpx> fourier_mesh_y(m_n_inner_cells, m_exec_conf);
-    m_fourier_mesh_y.swap(fourier_mesh_y);
-
-    GPUArray<kiss_fft_cpx> fourier_mesh_z(m_n_inner_cells, m_exec_conf);
-    m_fourier_mesh_z.swap(fourier_mesh_z);
- 
     unsigned int num_cells = m_force_mesh_index.getNumElements();
-    GPUArray<kiss_fft_cpx> force_mesh_x(num_cells, m_exec_conf);
-    m_force_mesh_x.swap(force_mesh_x);
 
-    GPUArray<kiss_fft_cpx> force_mesh_y(num_cells, m_exec_conf);
-    m_force_mesh_y.swap(force_mesh_y);
-
-    GPUArray<kiss_fft_cpx> force_mesh_z(num_cells, m_exec_conf);
-    m_force_mesh_z.swap(force_mesh_z);
+    GPUArray<kiss_fft_cpx> inv_fourier_mesh(num_cells, m_exec_conf);
+    m_inv_fourier_mesh.swap(inv_fourier_mesh);
     }
 
 void OrderParameterMesh::computeInfluenceFunction()
@@ -361,6 +347,21 @@ Scalar OrderParameterMesh::assignTSC(Scalar x)
         return Scalar(0.0);
     }
 
+Scalar OrderParameterMesh::assignTSCderiv(Scalar x)
+    {
+    Scalar xsq = x*x;
+    Scalar xabs = copysignf(x,Scalar(1.0));
+    Scalar fac =(Scalar(3.0/2.0)-xabs);
+
+    Scalar ret(0.0);
+    if (xsq <= Scalar(1.0/4.0))
+        ret = -Scalar(2.0)*x;
+    else if (xsq <= Scalar(9.0/4.0))
+        ret = -fac*x/xabs;
+
+    return ret;
+    }
+
 //! Assignment of particles to mesh using three-point scheme (triangular shaped cloud)
 /*! This is a second order accurate scheme with continuous value and continuous derivative
  */
@@ -372,18 +373,8 @@ void OrderParameterMesh::assignParticles()
     ArrayHandle<kiss_fft_cpx> h_mesh(m_mesh, access_location::host, access_mode::overwrite);
     ArrayHandle<Scalar> h_mode(m_mode, access_location::host, access_mode::read);
 
-    const BoxDim& global_box = m_pdata->getGlobalBox();
     const BoxDim& box = m_pdata->getBox();
 
-    #ifdef ENABLE_MPI
-    unsigned int nproc = m_exec_conf->getNRanks();
-    unsigned int n_tot_mesh_points = nproc*m_n_inner_cells;
-    #else
-    unsigned int n_tot_mesh_points = m_n_inner_cells;
-    #endif
-
-    Scalar V_cell = global_box.getVolume()/((Scalar)n_tot_mesh_points);
- 
     // set mesh to zero
     memset(h_mesh.data, 0, sizeof(kiss_fft_cpx)*m_mesh.getNumElements());
  
@@ -469,7 +460,7 @@ void OrderParameterMesh::assignParticles()
                     Scalar3 dx_frac = shift - make_scalar3(i,j,k);
 
                     // compute fraction of particle density assigned to cell
-                    Scalar density_fraction = assignTSC(dx_frac.x)*assignTSC(dx_frac.y)*assignTSC(dx_frac.z)/V_cell;
+                    Scalar density_fraction = assignTSC(dx_frac.x)*assignTSC(dx_frac.y)*assignTSC(dx_frac.z);
                     unsigned int neigh_idx;
                     if (local_fft)
                         // store in row major order for kiss FFT
@@ -513,30 +504,17 @@ void OrderParameterMesh::updateMeshes()
     ArrayHandle<kiss_fft_cpx> h_fourier_mesh(m_fourier_mesh, access_location::host, access_mode::readwrite);
     ArrayHandle<kiss_fft_cpx> h_fourier_mesh_G(m_fourier_mesh_G, access_location::host, access_mode::overwrite);
  
-    Scalar V = m_pdata->getGlobalBox().getVolume();
-    #ifdef ENABLE_MPI
-    unsigned int nproc = m_exec_conf->getNRanks();
-    unsigned int n_tot_mesh_points = nproc*m_n_inner_cells;
-    #else
-    unsigned int n_tot_mesh_points = m_n_inner_cells;
-    #endif
-    Scalar V_cell = V/((Scalar)n_tot_mesh_points);
-
     unsigned int N_global = m_pdata->getNGlobal();
 
         {
-        ArrayHandle<kiss_fft_cpx> h_fourier_mesh_x(m_fourier_mesh_x, access_location::host, access_mode::overwrite);
-        ArrayHandle<kiss_fft_cpx> h_fourier_mesh_y(m_fourier_mesh_y, access_location::host, access_mode::overwrite);
-        ArrayHandle<kiss_fft_cpx> h_fourier_mesh_z(m_fourier_mesh_z, access_location::host, access_mode::overwrite);
-
         // multiply with influence function
         for (unsigned int k = 0; k < m_n_inner_cells; ++k)
             {
             kiss_fft_cpx f = h_fourier_mesh.data[k];
 
             // normalization
-            f.r *= V_cell/ (Scalar) N_global;
-            f.i *= V_cell/ (Scalar) N_global;
+            f.r /= (Scalar) N_global;
+            f.i /= (Scalar) N_global;
 
             Scalar val = f.r*f.r+f.i*f.i;
 
@@ -544,43 +522,23 @@ void OrderParameterMesh::updateMeshes()
             h_fourier_mesh_G.data[k].i = f.i * val * h_inf_f.data[k];
 
             h_fourier_mesh.data[k] = f;
-
-            // factor of two to account for derivative of fourth power of a mode
-            Scalar3 kval = Scalar(2.0)*h_k.data[k]/(Scalar)N_global;
-            h_fourier_mesh_x.data[k].r = -h_fourier_mesh_G.data[k].i*kval.x;
-            h_fourier_mesh_x.data[k].i = h_fourier_mesh_G.data[k].r*kval.x;
-
-            h_fourier_mesh_y.data[k].r = -h_fourier_mesh_G.data[k].i*kval.y;
-            h_fourier_mesh_y.data[k].i = h_fourier_mesh_G.data[k].r*kval.y;
-
-            h_fourier_mesh_z.data[k].r = -h_fourier_mesh_G.data[k].i*kval.z;
-            h_fourier_mesh_z.data[k].i = h_fourier_mesh_G.data[k].r*kval.z;
             }
         }
 
     if (m_kiss_fft_initialized)
         {
         // do a local inverse transform of the force mesh
-        ArrayHandle<kiss_fft_cpx> h_force_mesh_x(m_force_mesh_x, access_location::host, access_mode::overwrite);
-        ArrayHandle<kiss_fft_cpx> h_force_mesh_y(m_force_mesh_y, access_location::host, access_mode::overwrite);
-        ArrayHandle<kiss_fft_cpx> h_force_mesh_z(m_force_mesh_z, access_location::host, access_mode::overwrite);
-        ArrayHandle<kiss_fft_cpx> h_fourier_mesh_x(m_fourier_mesh_x, access_location::host, access_mode::read);
-        ArrayHandle<kiss_fft_cpx> h_fourier_mesh_y(m_fourier_mesh_y, access_location::host, access_mode::read);
-        ArrayHandle<kiss_fft_cpx> h_fourier_mesh_z(m_fourier_mesh_z, access_location::host, access_mode::read);
-
-        kiss_fftnd(m_kiss_ifft_x, h_fourier_mesh_x.data, h_force_mesh_x.data);
-        kiss_fftnd(m_kiss_ifft_y, h_fourier_mesh_y.data, h_force_mesh_y.data);
-        kiss_fftnd(m_kiss_ifft_z, h_fourier_mesh_z.data, h_force_mesh_z.data);
+        ArrayHandle<kiss_fft_cpx> h_inv_fourier_mesh(m_inv_fourier_mesh, access_location::host, access_mode::overwrite);
+        ArrayHandle<kiss_fft_cpx> h_fourier_mesh_G(m_fourier_mesh_G, access_location::host, access_mode::read);
+        kiss_fftnd(m_kiss_ifft_x, h_inv_fourier_mesh.data, h_fourier_mesh_G.data);
         }
 
     #ifdef ENABLE_MPI
     if (m_pdata->getDomainDecomposition())
         {
         // Distributed inverse transform force on mesh points 
-        m_exec_conf->msg->notice(8) << "cv.mesh: Distributed iFFT force mesh" << std::endl;
-        m_kiss_idfft->FFT3D(m_fourier_mesh_x, m_force_mesh_x, true);
-        m_kiss_idfft->FFT3D(m_fourier_mesh_y, m_force_mesh_y, true);
-        m_kiss_idfft->FFT3D(m_fourier_mesh_z, m_force_mesh_z, true);
+        m_exec_conf->msg->notice(8) << "cv.mesh: Distributed iFFT" << std::endl;
+        m_kiss_idfft->FFT3D(m_fourier_mesh_G, m_inv_fourier_mesh, true);
         }
     #endif
 
@@ -592,9 +550,7 @@ void OrderParameterMesh::updateMeshes()
         // update outer cells of force mesh using ghost cells from neighboring processors
         if (m_prof) m_prof->push("ghost exchange");
         m_exec_conf->msg->notice(8) << "cv.mesh: Ghost cell update" << std::endl;
-        m_mesh_comm->updateGhostCells(m_force_mesh_x);
-        m_mesh_comm->updateGhostCells(m_force_mesh_y);
-        m_mesh_comm->updateGhostCells(m_force_mesh_z);
+        m_mesh_comm->updateGhostCells(m_inv_fourier_mesh);
         if (m_prof) m_prof->pop();
         }
     #endif
@@ -605,22 +561,27 @@ void OrderParameterMesh::interpolateForces()
     if (m_prof) m_prof->push("interpolate");
 
     ArrayHandle<Scalar4> h_postype(m_pdata->getPositions(), access_location::host, access_mode::read);
-    ArrayHandle<kiss_fft_cpx> h_force_mesh_x(m_force_mesh_x, access_location::host, access_mode::read);
-    ArrayHandle<kiss_fft_cpx> h_force_mesh_y(m_force_mesh_y, access_location::host, access_mode::read);
-    ArrayHandle<kiss_fft_cpx> h_force_mesh_z(m_force_mesh_z, access_location::host, access_mode::read);
+    ArrayHandle<kiss_fft_cpx> h_inv_fourier_mesh(m_inv_fourier_mesh, access_location::host, access_mode::read);
     ArrayHandle<Scalar> h_mode(m_mode, access_location::host, access_mode::read);
 
     ArrayHandle<Scalar4> h_force(m_force, access_location::host, access_mode::overwrite);
 
     const BoxDim& box = m_pdata->getBox();
 
-    // inverse dimensions
-    Scalar3 dim_inv = make_scalar3(Scalar(1.0)/(Scalar)m_mesh_points.x,
-                                   Scalar(1.0)/(Scalar)m_mesh_points.y,
-                                   Scalar(1.0)/(Scalar)m_mesh_points.z); 
+    Scalar3 a1 = box.getLatticeVector(0);
+    Scalar3 a2 = box.getLatticeVector(1);
+    Scalar3 a3 = box.getLatticeVector(2);
+
+    // reciprocal lattice vectors
+    Scalar V_box = box.getVolume();
+    Scalar3 b1 = make_scalar3(a2.y*a3.z-a2.z*a3.y, a2.z*a3.x-a2.x*a3.z, a2.x*a3.y-a2.y*a3.x)/V_box;
+    Scalar3 b2 = make_scalar3(a3.y*a1.z-a3.z*a1.y, a3.z*a1.x-a3.x*a1.z, a3.x*a1.y-a3.y*a1.x)/V_box;
+    Scalar3 b3 = make_scalar3(a1.y*a2.z-a1.z*a2.y, a1.z*a2.x-a1.x*a2.z, a1.x*a2.y-a1.y*a2.x)/V_box;
 
     // particle number
     bool local_fft = m_kiss_fft_initialized;
+
+    unsigned int n_global = m_pdata->getNGlobal();
 
     for (unsigned int idx = 0; idx < m_pdata->getN(); ++idx)
         {
@@ -628,6 +589,7 @@ void OrderParameterMesh::interpolateForces()
 
         Scalar3 pos = make_scalar3(postype.x, postype.y, postype.z);
         unsigned int type = __scalar_as_int(postype.w);
+        Scalar mode = h_mode.data[type];
 
         // compute coordinates in units of the mesh size
         Scalar3 f = box.makeFraction(pos);
@@ -698,14 +660,15 @@ void OrderParameterMesh::interpolateForces()
                     else
                         neigh_idx = m_force_mesh_index(neighi,neighj,neighk);
 
-                    force += -assignTSC(dx_frac.x)*assignTSC(dx_frac.y)*assignTSC(dx_frac.z)*h_mode.data[type]
-                                    *make_scalar3(h_force_mesh_x.data[neigh_idx].r,
-                                                  h_force_mesh_y.data[neigh_idx].r,
-                                                  h_force_mesh_z.data[neigh_idx].r);
+                    kiss_fft_cpx inv_mesh = h_inv_fourier_mesh.data[neigh_idx];
+                    force += -(Scalar)m_mesh_points.x*b1*mode*assignTSCderiv(dx_frac.x)*assignTSC(dx_frac.y)*assignTSC(dx_frac.z)*inv_mesh.r;
+                    force += -(Scalar)m_mesh_points.y*b2*mode*assignTSC(dx_frac.x)*assignTSCderiv(dx_frac.y)*assignTSC(dx_frac.z)*inv_mesh.r;
+                    force += -(Scalar)m_mesh_points.z*b3*mode*assignTSC(dx_frac.x)*assignTSC(dx_frac.y)*assignTSCderiv(dx_frac.z)*inv_mesh.r;
+
                     }  
 
         // Multiply with bias potential derivative
-        force *= m_bias;
+        force *= Scalar(2.0)/(Scalar)n_global*m_bias;
 
         h_force.data[idx] = make_scalar4(force.x,force.y,force.z,0.0);
          
@@ -867,7 +830,12 @@ void OrderParameterMesh::computeVirial()
 
             Scalar rhog = f_g.r * f.r + f_g.i * f.i;
             Scalar3 k = h_k.data[kidx];
-            Scalar kfac = -Scalar(1.0)/m_qstarsq;
+            Scalar k_cut = sqrt(m_qstarsq);
+            Scalar ksq = dot(k,k);
+            Scalar knorm = sqrt(ksq);
+            Scalar fac = expf(-Scalar(12.0)*(knorm/k_cut-Scalar(1.0)));
+            Scalar kfac = -Scalar(6.0)/(Scalar(1.0)+fac)/knorm/k_cut;
+
             virial[0] += rhog*kfac*k.x*k.x; // xx
             virial[1] += rhog*kfac*k.x*k.y; // xy
             virial[2] += rhog*kfac*k.x*k.z; // xz
@@ -878,7 +846,7 @@ void OrderParameterMesh::computeVirial()
         } 
 
     for (unsigned int i = 0; i < 6; ++i)
-        m_external_virial[i] = m_bias*Scalar(1.0/2.0)*virial[i];
+        m_external_virial[i] = m_bias*virial[i];
 
     if (m_prof) m_prof->pop();
     }

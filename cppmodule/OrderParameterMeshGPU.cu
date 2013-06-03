@@ -601,10 +601,6 @@ __global__ void gpu_compute_forces_kernel(const unsigned int N,
 
     Scalar3 force = make_scalar3(0.0,0.0,0.0);
 
-    Scalar3 a1 = box.getLatticeVector(0);
-    Scalar3 a2 = box.getLatticeVector(1);
-    Scalar3 a3 = box.getLatticeVector(2);
-
     // assign particle to cell and next neighbors
     for (int i = -1; i <= 1 ; ++i)
     	for (int j = -1; j <= 1; ++j)

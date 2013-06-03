@@ -108,6 +108,9 @@ class OrderParameterMesh : public CollectiveVariable
         //! The TSC (triangular-shaped cloud) charge assignment function
         Scalar assignTSC(Scalar x);
 
+        //! Derivative of the TSC (triangular-shaped cloud) charge assignment function
+        Scalar assignTSCderiv(Scalar x);
+
         //! Helper function to assign particle coordinates to mesh
         virtual void assignParticles();
 
@@ -143,12 +146,7 @@ class OrderParameterMesh : public CollectiveVariable
         GPUArray<kiss_fft_cpx> m_mesh;             //!< The particle density mesh
         GPUArray<kiss_fft_cpx> m_fourier_mesh;     //!< The fourier transformed mesh
         GPUArray<kiss_fft_cpx> m_fourier_mesh_G;   //!< Fourier transformed mesh times the influence function
-        GPUArray<kiss_fft_cpx> m_fourier_mesh_x;   //!< The fourier transformed force mesh, x component
-        GPUArray<kiss_fft_cpx> m_fourier_mesh_y;   //!< The fourier transformed force mesh, y component
-        GPUArray<kiss_fft_cpx> m_fourier_mesh_z;   //!< The fourier transformed force mesh, z component
-        GPUArray<kiss_fft_cpx> m_force_mesh_x;     //!< The force mesh, x component
-        GPUArray<kiss_fft_cpx> m_force_mesh_y;     //!< The force mesh, y component
-        GPUArray<kiss_fft_cpx> m_force_mesh_z;     //!< The force mesh, z component
+        GPUArray<kiss_fft_cpx> m_inv_fourier_mesh; //!< The inverse-Fourier transformed mesh
 
         boost::signals::connection m_boxchange_connection; //!< Connection to ParticleData box change signal
         boost::signals::connection m_ghost_layer_connection; //!< Requests a ghost layer width
