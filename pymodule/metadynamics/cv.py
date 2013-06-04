@@ -23,16 +23,18 @@ class _collective_variable(_force):
     #
     # \param sigma Standard deviation of Gaussians added for this collective variable - only relevant for "well-tempered" or "standard" metadynamics
     # \param name Name of the collective variable
-    def __init__(self, sigma, cv_min, cv_max, num_points, name=None):
+    def __init__(self, sigma, name=None):
         _force.__init__(self, name)
 
         self.sigma = sigma
 
-        # grid parameters
-        self.cv_min =  cv_min
-        self.cv_max = cv_max
-        self.num_points = int(num_points)
+        # default grid parameters
+        self.cv_min = 0.0
+        self.cv_max = 0.0
+        self.num_points = 0
         
+        self.use_grid = False
+
         self.ftm_min = 0.0
         self.ftm_max = 0.0
 
@@ -56,6 +58,9 @@ class _collective_variable(_force):
     ## \var num_points
     # \internal
 
+    ## \var use_grid
+    # \internal
+
     ## \var ftm_min
     # \internal
 
@@ -64,6 +69,24 @@ class _collective_variable(_force):
 
     ## \var ftm_num_points
     # \internal
+
+    ## Sets grid mode for this collective variable
+    # \param cv_min Minimum of the collective variable (smallest grid value)
+    # \param cv_max Maximum of the collective variable (largest grid value)
+    # \param num_points Dimension of the grid for this collective variable 
+    def enable_grid(self,cv_min, cv_max, num_points):
+        util.print_status_line()
+
+        self.cv_min = cv_min
+        self.cv_max = cv_max
+        self.num_points = num_points
+
+        self.use_grid = True
+
+    def disable_grid(self):
+        util.print_status_line()
+
+        self.use_grid = False
 
     ## Sets parameters for the histogram of flux-tempered metadynamics
     # \param ftm_min Minimum of the collective variable (smallest grid value)
@@ -179,13 +202,10 @@ class _collective_variable(_force):
 class lamellar(_collective_variable):
     ## Construct a lamellar order parameter
     # \param sigma Standard deviation of deposited Gaussians
-    # \param cv_min Minimum grid value
-    # \param cv_max Maxium grid value
-    # \param num_points Number of grid points
     # \param mode Per-type list (dictionary) of mode coefficients
     # \param lattice_vectors List of reciprocal lattice vectors (Miller indices) for every mode
     # \param name Name given to this collective variable
-    def __init__(self, mode, lattice_vectors, cv_min, cv_max, num_points, name=None,sigma=1.0,offs=0.0):
+    def __init__(self, mode, lattice_vectors, name=None,sigma=1.0,offs=0.0):
         util.print_status_line()
 
         if name is not None:
@@ -194,7 +214,7 @@ class lamellar(_collective_variable):
         else:
             suffix = "" 
 
-        _collective_variable.__init__(self, sigma, cv_min, cv_max, num_points, name)
+        _collective_variable.__init__(self, sigma, name)
 
         if len(lattice_vectors) == 0:
                 globals.msg.error("cv.lamellar: List of supplied latice vectors is empty.\n")
@@ -243,14 +263,11 @@ class aspect_ratio(_collective_variable):
     #
     # \param dir1 Cartesian index of first direction 
     # \param dir2 Cartesian index of second direction
-    # \param cv_min Minimum grid value
-    # \param cv_max Maxium grid value
-    # \param num_points Number of grid points
     # \param sigma Standard deviation of deposited Gaussians
-    def __init__(self, dir1, dir2, cv_min, cv_max, num_points, name="",sigma=1.0):
+    def __init__(self, dir1, dir2, name="",sigma=1.0):
         util.print_status_line()
 
-        _collective_variable.__init__(self, sigma, cv_min, cv_max, num_points, name)
+        _collective_variable.__init__(self, sigma, name)
 
         self.cpp_force = _metadynamics.AspectRatio(globals.system_definition, int(dir1), int(dir2))
 
@@ -268,15 +285,12 @@ class mesh(_collective_variable):
     # \param sigma Standard deviation of deposited Gaussians
     # \param qstar Short-wavelength cutoff
     # \param mode Per-type list (dictionary) of mode coefficients
-    # \param cv_min Minimum grid value
-    # \param cv_max Maxium grid value
-    # \param num_points Number of grid points
     # \param nx Number of mesh points along first axis
     # \param ny Number of mesh points along second axis
     # \param nz Number of mesh points along third axis
     # \param name Name given to this collective variable
     # \param zero_modes Indices of modes that should be zeroed
-    def __init__(self, qstar, mode, cv_min, cv_max, num_points, nx, ny=None, nz=None, name=None,sigma=1.0,zero_modes=None):
+    def __init__(self, qstar, mode, nx, ny=None, nz=None, name=None,sigma=1.0,zero_modes=None):
         util.print_status_line()
 
         if name is not None:
@@ -291,7 +305,7 @@ class mesh(_collective_variable):
         if nz is None:
             nz = nx
 
-        _collective_variable.__init__(self, sigma, cv_min, cv_max, num_points, name)
+        _collective_variable.__init__(self, sigma, name)
 
         if type(mode) != type(dict()):
                 globals.msg.error("cv.mesh: Mode amplitudes specified incorrectly.\n")
