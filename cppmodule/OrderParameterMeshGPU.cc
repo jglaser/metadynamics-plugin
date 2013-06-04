@@ -1,7 +1,7 @@
+#ifdef ENABLE_CUDA
 #include "OrderParameterMeshGPU.h"
 #include "OrderParameterMeshGPU.cuh"
 
-#ifdef ENABLE_CUDA
 using namespace boost::python;
 
 /*! \param sysdef The system definition
