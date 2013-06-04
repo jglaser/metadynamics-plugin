@@ -1,5 +1,6 @@
-#ifdef ENABLE_CUDA
 #include "OrderParameterMeshGPU.h"
+
+#ifdef ENABLE_CUDA
 #include "OrderParameterMeshGPU.cuh"
 
 using namespace boost::python;
