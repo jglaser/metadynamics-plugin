@@ -471,7 +471,7 @@ void OrderParameterMeshGPU::computeQmax(unsigned int timestep)
         // all processes send their results to all other processes
         // and then they determine the maximum wave vector
         Scalar4 *all_q_max = new Scalar4[m_exec_conf->getNRanks()];
-        MPI_Alltoall(&q_max,
+        MPI_Allgather(&q_max,
                      sizeof(Scalar4),
                      MPI_BYTE,
                      all_q_max, 

@@ -940,14 +940,14 @@ void OrderParameterMesh::computeQmax(unsigned int timestep)
         // and then they determine the maximum wave vector
         Scalar *all_amplitudes = new Scalar[m_exec_conf->getNRanks()];
         Scalar3 *all_q_max = new Scalar3[m_exec_conf->getNRanks()];
-        MPI_Alltoall(&max_amplitude,
+        MPI_Allgather(&max_amplitude,
                        1,
                        MPI_HOOMD_SCALAR,
                        all_amplitudes,
                        1,
                        MPI_HOOMD_SCALAR,
                        m_exec_conf->getMPICommunicator());
-        MPI_Alltoall(&q_max,
+        MPI_Allgather(&q_max,
                        sizeof(Scalar3),
                        MPI_BYTE,
                        all_q_max, 
