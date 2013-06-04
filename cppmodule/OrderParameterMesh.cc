@@ -165,9 +165,9 @@ uint3 OrderParameterMesh::computeNumGhostCells()
 
         // the ghost layer must have a width of the maximum distance in addition
         // to one radius of ghost cells
-        if (!periodic.x) n_ghost_cells.x += 2*(d_max_frac.x*m_mesh_points.x+1);
-        if (!periodic.y) n_ghost_cells.y += 2*(d_max_frac.y*m_mesh_points.y+1);
-        if (!periodic.z) n_ghost_cells.z += 2*(d_max_frac.z*m_mesh_points.z+1);
+        if (!periodic.x) n_ghost_cells.x += 2*((unsigned int)(d_max_frac.x*(Scalar)m_mesh_points.x)+1);
+        if (!periodic.y) n_ghost_cells.y += 2*((unsigned int)(d_max_frac.y*(Scalar)m_mesh_points.y)+1);
+        if (!periodic.z) n_ghost_cells.z += 2*((unsigned int)(d_max_frac.z*(Scalar)m_mesh_points.z)+1);
         }
     #endif
 
