@@ -33,7 +33,7 @@ class _collective_variable(_force):
         self.cv_max = 0.0
         self.num_points = 0
         
-        self.use_grid = False
+        self.grid_set = False
 
         self.ftm_min = 0.0
         self.ftm_max = 0.0
@@ -58,7 +58,7 @@ class _collective_variable(_force):
     ## \var num_points
     # \internal
 
-    ## \var use_grid
+    ## \var grid_set
     # \internal
 
     ## \var ftm_min
@@ -74,19 +74,14 @@ class _collective_variable(_force):
     # \param cv_min Minimum of the collective variable (smallest grid value)
     # \param cv_max Maximum of the collective variable (largest grid value)
     # \param num_points Dimension of the grid for this collective variable 
-    def enable_grid(self,cv_min, cv_max, num_points):
+    def set_grid(self,cv_min, cv_max, num_points):
         util.print_status_line()
 
         self.cv_min = cv_min
         self.cv_max = cv_max
-        self.num_points = num_points
+        self.num_points = int(num_points)
 
-        self.use_grid = True
-
-    def disable_grid(self):
-        util.print_status_line()
-
-        self.use_grid = False
+        self.grid_set = True
 
     ## Sets parameters for the histogram of flux-tempered metadynamics
     # \param ftm_min Minimum of the collective variable (smallest grid value)
