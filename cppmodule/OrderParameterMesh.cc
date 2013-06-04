@@ -500,11 +500,11 @@ void OrderParameterMesh::updateMeshes()
     #endif
 
     ArrayHandle<kiss_fft_cpx> h_fourier_mesh(m_fourier_mesh, access_location::host, access_mode::readwrite);
-    ArrayHandle<kiss_fft_cpx> h_fourier_mesh_G(m_fourier_mesh_G, access_location::host, access_mode::overwrite);
  
     unsigned int N_global = m_pdata->getNGlobal();
 
         {
+        ArrayHandle<kiss_fft_cpx> h_fourier_mesh_G(m_fourier_mesh_G, access_location::host, access_mode::overwrite);
         // multiply with influence function
         for (unsigned int k = 0; k < m_n_inner_cells; ++k)
             {
