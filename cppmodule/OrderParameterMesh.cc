@@ -112,9 +112,7 @@ OrderParameterMesh::~OrderParameterMesh()
     if (m_kiss_fft_initialized)
         {
         free(m_kiss_fft);
-        free(m_kiss_ifft_x);
-        free(m_kiss_ifft_y);
-        free(m_kiss_ifft_z);
+        free(m_kiss_ifft);
         kiss_fft_cleanup();
         }
     m_boxchange_connection.disconnect();
@@ -229,9 +227,7 @@ void OrderParameterMesh::initializeFFT()
         dims[2] = m_mesh_points.x;
 
         m_kiss_fft = kiss_fftnd_alloc(dims, 3, 0, NULL, NULL);
-        m_kiss_ifft_x = kiss_fftnd_alloc(dims, 3, 1, NULL, NULL);
-        m_kiss_ifft_y = kiss_fftnd_alloc(dims, 3, 1, NULL, NULL);
-        m_kiss_ifft_z = kiss_fftnd_alloc(dims, 3, 1, NULL, NULL);
+        m_kiss_ifft = kiss_fftnd_alloc(dims, 3, 1, NULL, NULL);
 
         m_kiss_fft_initialized = true;
         }
@@ -320,8 +316,10 @@ void OrderParameterMesh::computeInfluenceFunction()
         
         Scalar3 k = (Scalar)n.x*b1+(Scalar)n.y*b2+(Scalar)n.z*b3;
         Scalar ksq = dot(k,k);
-
-        Scalar val = exp(-ksq/m_qstarsq*Scalar(1.0/2.0));
+ 
+        Scalar knorm = sqrtf(ksq);
+        Scalar k_cut = sqrtf(m_qstarsq);
+        Scalar val = Scalar(1.0)/(Scalar(1.0)+expf(Scalar(12.0)*(knorm/k_cut-Scalar(1.0))));
 
         h_inf_f.data[cell_idx] = val;
 
@@ -530,7 +528,7 @@ void OrderParameterMesh::updateMeshes()
         // do a local inverse transform of the force mesh
         ArrayHandle<kiss_fft_cpx> h_inv_fourier_mesh(m_inv_fourier_mesh, access_location::host, access_mode::overwrite);
         ArrayHandle<kiss_fft_cpx> h_fourier_mesh_G(m_fourier_mesh_G, access_location::host, access_mode::read);
-        kiss_fftnd(m_kiss_ifft_x, h_inv_fourier_mesh.data, h_fourier_mesh_G.data);
+        kiss_fftnd(m_kiss_ifft, h_fourier_mesh_G.data, h_inv_fourier_mesh.data);
         }
 
     #ifdef ENABLE_MPI
@@ -707,8 +705,10 @@ Scalar OrderParameterMesh::computeCV()
         #endif
 
         if (! exclude)
+            {
             sum += h_fourier_mesh_G.data[k].r * h_fourier_mesh.data[k].r
                 + h_fourier_mesh_G.data[k].i * h_fourier_mesh.data[k].i;
+            }
         }
 
     sum *= Scalar(1.0/2.0);

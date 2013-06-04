@@ -131,9 +131,7 @@ class OrderParameterMesh : public CollectiveVariable
 
     private:
         kiss_fftnd_cfg m_kiss_fft;         //!< The FFT configuration
-        kiss_fftnd_cfg m_kiss_ifft_x;      //!< Inverse FFT configuration, x component of force
-        kiss_fftnd_cfg m_kiss_ifft_y;      //!< Inverse FFT configuration, y component of force
-        kiss_fftnd_cfg m_kiss_ifft_z;      //!< Inverse FFT configuration, z component of force
+        kiss_fftnd_cfg m_kiss_ifft;        //!< Inverse FFT configuration
 
         #ifdef ENABLE_MPI
         boost::shared_ptr<DistributedKISSFFT> m_kiss_dfft;  //!< Distributed FFT for forward transform
