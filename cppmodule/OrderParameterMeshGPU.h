@@ -64,7 +64,7 @@ class OrderParameterMeshGPU : public OrderParameterMesh
         GPUArray<cufftComplex> m_inv_fourier_mesh;     //!< The inverse-fourier transformed force mesh
 
         uint3 m_n_ghost_bins;                      //!< Number of ghost bins in every direction
-        unsigned int m_n_particle_bins;            //!< Total number of bins
+        Index2D m_bin_idx;                         //!< Total number of bins
         GPUArray<Scalar4> m_particle_bins;         //!< Cell list for particle positions and modes
         GPUArray<unsigned int> m_n_cell;           //!< Number of particles per cell
         unsigned int m_cell_size;                  //!< Current max. number of particles per cell

@@ -178,7 +178,7 @@ __global__ void gpu_bin_particles_kernel(const unsigned int N,
                                          Scalar4 *d_particle_bins,
                                          unsigned int *d_n_cell,
                                          unsigned int *d_overflow,
-                                         const unsigned int maxn,
+                                         const Index2D bin_idx,
                                          const Index3D mesh_idx,
                                          const uint3 n_ghost_bins,
                                          const Scalar *d_mode,
@@ -206,11 +206,11 @@ __global__ void gpu_bin_particles_kernel(const unsigned int N,
         bin_coord.y < 0 || bin_coord.y >= bin_dim.y ||
         bin_coord.z < 0 || bin_coord.z >= bin_dim.z) return;
 
-    unsigned int bin_idx = bin_coord.z + bin_dim.z * (bin_coord.y + bin_dim.y * bin_coord.x);
+    unsigned int bin = bin_coord.z + bin_dim.z * (bin_coord.y + bin_dim.y * bin_coord.x);
 
-    unsigned int n = atomicInc(&d_n_cell[bin_idx], 0xffffffff);
+    unsigned int n = atomicInc(&d_n_cell[bin], 0xffffffff);
 
-    if (n >= maxn)
+    if (n >= bin_idx.getW())
         {
         // overflow
         atomicMax(d_overflow, n+1);
@@ -225,7 +225,7 @@ __global__ void gpu_bin_particles_kernel(const unsigned int N,
                                  (Scalar)bin_coord.z + Scalar(0.5) - Scalar(n_ghost_bins.z/2));
         Scalar3 shift = f - c;
 
-        d_particle_bins[bin_idx*maxn+n] = make_scalar4(shift.x,shift.y,shift.z, mode);
+        d_particle_bins[bin_idx(n,bin)] = make_scalar4(shift.x,shift.y,shift.z, mode);
         }
     }
 
@@ -234,7 +234,7 @@ void gpu_bin_particles(const unsigned int N,
                        Scalar4 *d_particle_bins,
                        unsigned int *d_n_cell,
                        unsigned int *d_overflow,
-                       const unsigned int maxn,
+                       const Index2D& bin_idx,
                        const Index3D& mesh_idx,
                        const uint3 n_ghost_bins,
                        const Scalar *d_mode,
@@ -247,7 +247,7 @@ void gpu_bin_particles(const unsigned int N,
                                                              d_particle_bins,
                                                              d_n_cell,
                                                              d_overflow,
-                                                             maxn,
+                                                             bin_idx,
                                                              mesh_idx,
                                                              n_ghost_bins,
                                                              d_mode,
@@ -265,9 +265,9 @@ __global__ void gpu_assign_binned_particles_to_mesh_kernel(const unsigned int in
                                                            const Index3D mesh_idx,
                                                            const uint3 n_ghost_bins,
                                                            const unsigned int *d_n_cell,
-                                                           const unsigned int maxn,
                                                            cufftComplex *d_mesh,
-                                                           const BoxDim box)
+                                                           const BoxDim box,
+                                                           const Index2D bin_idx)
     {
     unsigned int cell_idx = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -304,41 +304,27 @@ __global__ void gpu_assign_binned_particles_to_mesh_kernel(const unsigned int in
                 int neighj = j + m;
                 int neighk = k + n;
 
-                // when using ghost cells, only add particles from inner bins
-                if (! n_ghost_bins.x)
-                    {
-                    if (neighi == (int)inner_nx)
-                        neighi = 0;
-                    else if (neighi < 0)
-                        neighi += (int)inner_nx; 
-                    }
-                else if ((neighi < -(int)n_ghost_bins.x/2) || (neighi >= (int)(mesh_idx.getW() + n_ghost_bins.x/2)))
-                    continue;
+                // the following code wraps around boundaries
+                // only in periodic directions
+                if (neighi == (int)(inner_nx+n_ghost_bins.x/2))
+                    neighi = 0;
+                else if (neighi < -(int)n_ghost_bins.x/2)
+                    neighi += (int)inner_nx; 
 
-                if (! n_ghost_bins.y)
-                    {
-                    if (neighj == (int)inner_ny)
-                        neighj = 0;
-                    else if (neighj < 0)
-                        neighj += (int) inner_ny;
-                    }
-                else if ((neighj < -(int)n_ghost_bins.y/2) || (neighj >= (int)(mesh_idx.getH() + n_ghost_bins.y/2)))
-                    continue;
+                if (neighj == (int)(inner_ny+n_ghost_bins.y/2))
+                    neighj = 0;
+                else if (neighj < -(int)n_ghost_bins.y/2)
+                    neighj += (int) inner_ny;
 
-                if (! n_ghost_bins.z)
-                    {
-                    if (neighk == (int)inner_nz)
-                        neighk = 0;
-                    else if (neighk < 0)
-                        neighk += (int)inner_nz;
-                    }
-                else if ((neighk < -(int)n_ghost_bins.z/2) || (neighk >= (int)(mesh_idx.getD() + n_ghost_bins.z/2)))
-                    continue;
+                if (neighk == (int)(inner_nz+n_ghost_bins.z/2))
+                    neighk = 0;
+                else if (neighk < -(int)n_ghost_bins.z/2)
+                    neighk += (int)inner_nz;
 
-                int3 bin_idx = make_int3(neighi + (int)n_ghost_bins.x/2,
-                                         neighj + (int)n_ghost_bins.y/2,
-                                         neighk + (int)n_ghost_bins.z/2);
-                unsigned int neigh_bin = bin_idx.z + bin_dim.z*(bin_idx.y + bin_dim.y * bin_idx.x);
+                int3 bin = make_int3(neighi + (int)n_ghost_bins.x/2,
+                                     neighj + (int)n_ghost_bins.y/2,
+                                     neighk + (int)n_ghost_bins.z/2);
+                unsigned int neigh_bin = bin.z + bin_dim.z*(bin.y + bin_dim.y * bin.x);
 
                 unsigned int n_bin = tex1Dfetch(n_cell_tex,neigh_bin);
                 Scalar3 cell_shift = make_scalar3((Scalar)l,(Scalar)m,(Scalar)n);
@@ -346,7 +332,7 @@ __global__ void gpu_assign_binned_particles_to_mesh_kernel(const unsigned int in
                 // loop over particles in bin
                 for (unsigned int neigh_idx = 0; neigh_idx < n_bin; neigh_idx++)
                     {
-                    Scalar4 xyzm = tex1Dfetch(particle_bins_tex, maxn*neigh_bin+neigh_idx);
+                    Scalar4 xyzm = tex1Dfetch(particle_bins_tex, bin_idx(neigh_idx,neigh_bin));
                     
                     // since the particle is in the neighboring cell, the shift needs to be added
                     Scalar shift_x = xyzm.x + cell_shift.x;
@@ -369,9 +355,8 @@ __global__ void gpu_assign_binned_particles_to_mesh_kernel(const unsigned int in
 void gpu_assign_binned_particles_to_mesh(const Index3D& mesh_idx,
                                          const uint3 n_ghost_bins,
                                          const Scalar4 *d_particle_bins,
-                                         const unsigned int num_bins,
+                                         const Index2D& bin_idx,
                                          const unsigned int *d_n_cell,
-                                         const unsigned int maxn,
                                          cufftComplex *d_mesh,
                                          const BoxDim& box,
                                          const bool local_fft)
@@ -380,11 +365,11 @@ void gpu_assign_binned_particles_to_mesh(const Index3D& mesh_idx,
 
     particle_bins_tex.normalized = false;
     particle_bins_tex.filterMode = cudaFilterModePoint;
-    cudaBindTexture(0, particle_bins_tex, d_particle_bins, sizeof(Scalar4)*num_bins*maxn);
+    cudaBindTexture(0, particle_bins_tex, d_particle_bins, sizeof(Scalar4)*bin_idx.getNumElements());
 
     n_cell_tex.normalized = false;
     n_cell_tex.filterMode = cudaFilterModePoint;
-    cudaBindTexture(0, n_cell_tex, d_n_cell, sizeof(unsigned int)*num_bins);
+    cudaBindTexture(0, n_cell_tex, d_n_cell, sizeof(unsigned int)*bin_idx.getH());
 
 
     unsigned int block_size = 512;
@@ -399,9 +384,9 @@ void gpu_assign_binned_particles_to_mesh(const Index3D& mesh_idx,
                                                                               mesh_idx,
                                                                               n_ghost_bins,
                                                                               d_n_cell,
-                                                                              maxn,
                                                                               d_mesh,
-                                                                              box);
+                                                                              box,
+                                                                              bin_idx);
     else
         gpu_assign_binned_particles_to_mesh_kernel<false><<<n_blocks,block_size>>>(inner_dim.x,
                                                                                inner_dim.y,
@@ -409,9 +394,9 @@ void gpu_assign_binned_particles_to_mesh(const Index3D& mesh_idx,
                                                                                mesh_idx,
                                                                                n_ghost_bins,
                                                                                d_n_cell,
-                                                                               maxn,
                                                                                d_mesh,
-                                                                               box);
+                                                                               box,
+                                                                               bin_idx);
 
     cudaUnbindTexture(particle_bins_tex);
     cudaUnbindTexture(n_cell_tex);

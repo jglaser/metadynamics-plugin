@@ -46,9 +46,10 @@ OrderParameterMeshGPU::OrderParameterMeshGPU(boost::shared_ptr<SystemDefinition>
     m_n_ghost_bins = make_uint3(periodic.x ? 0 : 2*m_radius,
                                 periodic.y ? 0 : 2*m_radius,
                                 periodic.z ? 0 : 2*m_radius);
-    m_n_particle_bins = (m_mesh_points.x+m_n_ghost_bins.x)
-                        *(m_mesh_points.y+m_n_ghost_bins.y)
-                        *(m_mesh_points.z+m_n_ghost_bins.z);
+    unsigned int n_particle_bins = (m_mesh_points.x+m_n_ghost_bins.x)
+                                  *(m_mesh_points.y+m_n_ghost_bins.y)
+                                  *(m_mesh_points.z+m_n_ghost_bins.z);
+    m_bin_idx = Index2D(m_cell_size,n_particle_bins);
     }
 
 OrderParameterMeshGPU::~OrderParameterMeshGPU()
@@ -102,10 +103,10 @@ void OrderParameterMeshGPU::initializeFFT()
 
     if (exec_conf->getComputeCapability() < 300)
         {
-        GPUArray<Scalar4> particle_bins(m_n_particle_bins*m_cell_size, m_exec_conf);
+        GPUArray<Scalar4> particle_bins(m_bin_idx.getNumElements(), m_exec_conf);
         m_particle_bins.swap(particle_bins);
 
-        GPUArray<unsigned int> n_cell(m_n_particle_bins, m_exec_conf);
+        GPUArray<unsigned int> n_cell(m_bin_idx.getH(), m_exec_conf);
         m_n_cell.swap(n_cell);
 
         GPUFlags<unsigned int> cell_overflowed(m_exec_conf);
@@ -161,7 +162,7 @@ void OrderParameterMeshGPU::assignParticles()
                                   d_particle_bins.data,
                                   d_n_cell.data,
                                   m_cell_overflowed.getDeviceFlags(),
-                                  m_cell_size,
+                                  m_bin_idx,
                                   m_mesh_index,
                                   m_n_ghost_bins,
                                   d_mode.data,
@@ -178,7 +179,8 @@ void OrderParameterMeshGPU::assignParticles()
                 // reallocate particle bins array
                 m_cell_size = flags;
 
-                GPUArray<Scalar4> particle_bins(m_n_particle_bins*m_cell_size,m_exec_conf);
+                m_bin_idx = Index2D(m_cell_size,m_bin_idx.getH());
+                GPUArray<Scalar4> particle_bins(m_bin_idx.getNumElements(),m_exec_conf);
                 m_particle_bins.swap(particle_bins);
                 m_cell_overflowed.resetFlags(0);
                 }
@@ -194,9 +196,8 @@ void OrderParameterMeshGPU::assignParticles()
         gpu_assign_binned_particles_to_mesh(m_mesh_index,
                                             m_n_ghost_bins,
                                             d_particle_bins.data,
-                                            m_n_particle_bins,
+                                            m_bin_idx,
                                             d_n_cell.data,
-                                            m_cell_size,
                                             d_mesh.data,
                                             m_pdata->getBox(),
                                             m_local_fft);
