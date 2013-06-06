@@ -287,11 +287,12 @@ __global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh
 
     Scalar assign_x, assign_y, assign_z;
     Scalar shift, shift_sq, fac;
+    int neigh_bin_idx;
     for (unsigned int idx = 0; idx < n_bin; ++idx)
         {
         Scalar4 xyzm = d_particle_bins[bin_idx(bin,idx)];
         
-        int neigh_bin_idx = -1;
+        neigh_bin_idx = 0;
 
         // loop over neighboring bins
         for (int l = -1; l <= 1 ; ++l)
@@ -328,60 +329,11 @@ __global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh
                     else
                         assign_z = Scalar(1.0/2.0)*fac*fac;
      
-                    int neighi = i + l;
-                    int neighj = j + m;
-                    int neighk = k + n;
-
-                    neigh_bin_idx++;
-                    if (neighi >= (int)(bin_dim.x-n_ghost_bins.x/2))
-                        {
-                        if (local_fft || ! n_ghost_bins.x)
-                            neighi = 0;
-                        else
-                            continue;
-                        }
-                    else if (neighi < (int)(n_ghost_bins.x/2))
-                        {
-                        if (local_fft || ! n_ghost_bins.x)
-                            neighi += (int)bin_dim.x;
-                        else
-                            continue;
-                        }
-
-                    if (neighj >= (int)(bin_dim.y-n_ghost_bins.y/2))
-                        {
-                        if (local_fft || ! n_ghost_bins.y)
-                            neighj = 0;
-                        else
-                            continue;
-                        }
-                    else if (neighj < (int)(n_ghost_bins.y/2))
-                        {
-                        if (local_fft || ! n_ghost_bins.y)
-                            neighj += (int)bin_dim.y;
-                        else
-                            continue;
-                        }
-
-                    if (neighk >= (int)(bin_dim.z-n_ghost_bins.z/2))
-                        {
-                        if (local_fft || ! n_ghost_bins.z)
-                            neighk = 0;
-                        else
-                            continue;
-                        }
-                    else if (neighk < (int)(n_ghost_bins.z/2))
-                        {
-                        if (local_fft || ! n_ghost_bins.z)
-                            neighk += (int)bin_dim.z;
-                        else
-                            continue;
-                        } 
-     
-                    // compute fraction of particle density assigned to cell from particles
-                    // in this bin
+                    // compute fraction of particle density assigned to cell
+                    // from particles in this bin
                     Scalar mode = xyzm.w;
                     scratch_neighbors[scratch_idx.getH()*threadIdx.x+neigh_bin_idx] += mode*assign_x*assign_y*assign_z;
+                    neigh_bin_idx++;
                     }
                 }
             } // end of loop over neighboring bins
@@ -389,45 +341,47 @@ __global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh
 
     // write out shared memory to neighboring cells
     // loop over neighboring bins
-    int neigh_bin_idx = -1;
+    neigh_bin_idx = 0;
+    bool ignore = false;
     for (int l = -1; l <= 1 ; ++l)
+        {
+        int neighi = i + l;
+        if (neighi >= (int)(bin_dim.x-n_ghost_bins.x/2))
+            {
+            if (local_fft || ! n_ghost_bins.x)
+                neighi = 0;
+            else
+                ignore = true;
+            }
+        else if (neighi < (int)(n_ghost_bins.x/2))
+            {
+            if (local_fft || ! n_ghost_bins.x)
+                neighi += (int)bin_dim.x;
+            else
+                ignore = true;
+            }
+
         for (int m = -1; m <= 1; ++m)
+            {
+            int neighj = j + m;
+            if (neighj >= (int)(bin_dim.y-n_ghost_bins.y/2))
+                {
+                if (local_fft || ! n_ghost_bins.y)
+                    neighj = 0;
+                else
+                    ignore = true;
+                }
+            else if (neighj < (int)(n_ghost_bins.y/2))
+                {
+                if (local_fft || ! n_ghost_bins.y)
+                    neighj += (int)bin_dim.y;
+                else
+                    ignore = true;
+                }
+
             for (int n = -1; n <= 1; ++n)
                 {
-                int neighi = i + l;
-                int neighj = j + m;
                 int neighk = k + n;
-
-                neigh_bin_idx++;
-                if (neighi >= (int)(bin_dim.x-n_ghost_bins.x/2))
-                    {
-                    if (local_fft || ! n_ghost_bins.x)
-                        neighi = 0;
-                    else
-                        continue;
-                    }
-                else if (neighi < (int)(n_ghost_bins.x/2))
-                    {
-                    if (local_fft || ! n_ghost_bins.x)
-                        neighi += (int)bin_dim.x;
-                    else
-                        continue;
-                    }
-
-                if (neighj >= (int)(bin_dim.y-n_ghost_bins.y/2))
-                    {
-                    if (local_fft || ! n_ghost_bins.y)
-                        neighj = 0;
-                    else
-                        continue;
-                    }
-                else if (neighj < (int)(n_ghost_bins.y/2))
-                    {
-                    if (local_fft || ! n_ghost_bins.y)
-                        neighj += (int)bin_dim.y;
-                    else
-                        continue;
-                    }
 
                 if (neighk >= (int)(bin_dim.z-n_ghost_bins.z/2))
                     {
@@ -444,24 +398,32 @@ __global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh
                         continue;
                     } 
 
-                uint3 scratch_cell_coord = make_uint3(neighi - n_ghost_bins.x/2,
-                                                      neighj - n_ghost_bins.y/2,
-                                                      neighk - n_ghost_bins.z/2);
+                if (!ignore)
+                    {
+                    uint3 scratch_cell_coord = make_uint3(neighi - n_ghost_bins.x/2,
+                                                          neighj - n_ghost_bins.y/2,
+                                                          neighk - n_ghost_bins.z/2);
 
-                // write out to global memory
-                unsigned int cell_idx;
-                if (local_fft)
-                    // use cuFFT's memory layout
-                    cell_idx = scratch_cell_coord.z + mesh_idx.getD() * (scratch_cell_coord.y + mesh_idx.getH() * scratch_cell_coord.x);
-                else
-                    cell_idx = mesh_idx(scratch_cell_coord.x,
-                                        scratch_cell_coord.y,
-                                        scratch_cell_coord.z);
+                    // write out to global memory
+                    unsigned int cell_idx;
+                    if (local_fft)
+                        // use cuFFT's memory layout
+                        cell_idx = scratch_cell_coord.z + mesh_idx.getD() * (scratch_cell_coord.y + mesh_idx.getH() * scratch_cell_coord.x);
+                    else
+                        cell_idx = mesh_idx(scratch_cell_coord.x,
+                                            scratch_cell_coord.y,
+                                            scratch_cell_coord.z);
 
 
-                d_mesh_scratch[scratch_idx(cell_idx,neigh_bin_idx)] =
-                    scratch_neighbors[scratch_idx.getH()*threadIdx.x+neigh_bin_idx];
+                    d_mesh_scratch[scratch_idx(cell_idx,neigh_bin_idx)] =
+                        scratch_neighbors[scratch_idx.getH()*threadIdx.x+neigh_bin_idx];
+                    }
+
+                ignore = false;
+                neigh_bin_idx++;
                 }
+            }
+        }
     }
 
 __global__ void gpu_reduce_scratch_kernel(const Index3D mesh_idx,
