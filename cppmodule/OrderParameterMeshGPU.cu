@@ -342,7 +342,9 @@ __global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh
     // write out shared memory to neighboring cells
     // loop over neighboring bins
     neigh_bin_idx = 0;
-    bool ignore = false;
+    bool ignore_x = false;
+    bool ignore_y = false;
+    bool ignore_z = false;
     for (int l = -1; l <= 1 ; ++l)
         {
         int neighi = i + l;
@@ -351,14 +353,14 @@ __global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh
             if (local_fft || ! n_ghost_bins.x)
                 neighi = 0;
             else
-                ignore = true;
+                ignore_x = true;
             }
         else if (neighi < (int)(n_ghost_bins.x/2))
             {
             if (local_fft || ! n_ghost_bins.x)
                 neighi += (int)bin_dim.x;
             else
-                ignore = true;
+                ignore_x = true;
             }
 
         for (int m = -1; m <= 1; ++m)
@@ -369,14 +371,14 @@ __global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh
                 if (local_fft || ! n_ghost_bins.y)
                     neighj = 0;
                 else
-                    ignore = true;
+                    ignore_y = true;
                 }
             else if (neighj < (int)(n_ghost_bins.y/2))
                 {
                 if (local_fft || ! n_ghost_bins.y)
                     neighj += (int)bin_dim.y;
                 else
-                    ignore = true;
+                    ignore_y = true;
                 }
 
             for (int n = -1; n <= 1; ++n)
@@ -388,17 +390,17 @@ __global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh
                     if (local_fft || ! n_ghost_bins.z)
                         neighk = 0;
                     else
-                        ignore = true;
+                        ignore_z = true;
                     }
                 else if (neighk < (int)(n_ghost_bins.z/2))
                     {
                     if (local_fft || ! n_ghost_bins.z)
                         neighk += (int)bin_dim.z;
                     else
-                        ignore = true;
+                        ignore_z = true;
                     } 
 
-                if (!ignore)
+                if (! (ignore_x || ignore_y || ignore_z))
                     {
                     uint3 scratch_cell_coord = make_uint3(neighi - n_ghost_bins.x/2,
                                                           neighj - n_ghost_bins.y/2,
@@ -418,10 +420,12 @@ __global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh
                         scratch_neighbors[scratch_idx.getH()*threadIdx.x+neigh_bin_idx];
                     }
 
-                ignore = false;
+                ignore_z = false;
                 neigh_bin_idx++;
                 }
+            ignore_y = false;
             }
+        ignore_x = false;
         }
     }
 
