@@ -30,15 +30,6 @@ void gpu_assign_binned_particles_to_mesh(const Index3D& mesh_idx,
                                          cufftComplex *d_mesh,
                                          const bool local_fft);
 
-void gpu_assign_particles_30(const unsigned int N,
-                          const Scalar4 *d_postype,
-                          cufftComplex *d_mesh,
-                          const Index3D& mesh_idx,
-                          const uint3 n_ghost_cells,
-                          const Scalar *d_mode,
-                          const BoxDim& box,
-                          const bool local_fft);
-
 void gpu_compute_mesh_virial(const unsigned int n_wave_vectors,
                              cufftComplex *d_fourier_mesh,
                              cufftComplex *d_fourier_mesh_G,

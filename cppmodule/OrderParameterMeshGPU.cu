@@ -86,93 +86,6 @@ __device__ int3 find_cell(const Scalar3& pos,
     return make_int3(ix, iy, iz);
     }
 
-//! Assignment of particles to mesh using three-point scheme (triangular shaped cloud)
-/*! This is a second order accurate scheme with continuous value and continuous derivative
- */
-template<bool local_fft>
-__global__ void gpu_assign_particles_kernel(const unsigned int N,
-                                       const Scalar4 *d_postype,
-                                       cufftComplex *d_mesh,
-                                       const Index3D mesh_idx,
-                                       const uint3 n_ghost_cells,
-                                       const Scalar *d_mode,
-                                       const BoxDim box)
-    {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-
-    if (idx >= N) return;
-
-    Scalar4 postype = d_postype[idx];
-
-    Scalar3 pos = make_scalar3(postype.x, postype.y, postype.z);
-    unsigned int type = __float_as_int(postype.w);
-    Scalar mode = d_mode[type];
-
-    // compute coordinates in units of the mesh size
-    int3 cell_coord = find_cell(pos, mesh_idx.getW(), mesh_idx.getH(), mesh_idx.getD(),
-                                 make_uint3(0,0,0),box);
-
-    // center of cell (in units of the cell size)
-    Scalar3 c = make_scalar3((Scalar)cell_coord.x+Scalar(0.5),
-                             (Scalar)cell_coord.y+Scalar(0.5),
-                             (Scalar)cell_coord.z+Scalar(0.5));
-
-    Scalar3 p = box.makeFraction(pos)*make_scalar3(mesh_idx.getW(), mesh_idx.getH(), mesh_idx.getD());
-    Scalar3 shift = p-c;
-
-    // assign particle to cell and next neighbors
-    for (int i = -1; i <= 1 ; ++i)
-    	for (int j = -1; j <= 1; ++j)
-            for (int k = -1; k <= 1; ++k)
-                {
-                int neighi = cell_coord.x + i;
-                int neighj = cell_coord.y + j;
-                int neighk = cell_coord.z + k;
-
-                if (! n_ghost_cells.x)
-                    {
-                    if (neighi == mesh_idx.getW())
-                        neighi = 0;
-                    else if (neighi < 0)
-                        neighi += mesh_idx.getW();
-                    }
-                else if (neighi < 0 || neighi >= (int) mesh_idx.getW()) continue;
-
-                if (! n_ghost_cells.y)
-                    {
-                    if (neighj == mesh_idx.getH())
-                        neighj = 0;
-                    else if (neighj < 0)
-                        neighj += mesh_idx.getH();
-                    }
-                else if (neighj < 0 || neighj >= (int) mesh_idx.getH()) continue;
-
-                if (! n_ghost_cells.z)
-                    {
-                    if (neighk == mesh_idx.getD())
-                        neighk = 0;
-                    else if (neighk < 0)
-                        neighk += mesh_idx.getD();
-                    }
-                else if (neighk < 0 || neighk >= (int) mesh_idx.getD()) continue;
-                
-                Scalar3 dx_frac = shift - make_scalar3(i,j,k);
-                
-                // compute fraction of particle density assigned to cell
-                Scalar density_fraction = assignTSC(dx_frac.x)*assignTSC(dx_frac.y)*assignTSC(dx_frac.z);
-
-                unsigned int cell_idx;
-                if (local_fft)
-                    // use cuFFT's memory layout
-                    cell_idx = neighk + mesh_idx.getD() * (neighj + mesh_idx.getH() * neighi);
-                else
-                    cell_idx = mesh_idx(neighi, neighj, neighk);
-
-                atomicFloatAdd(&d_mesh[cell_idx].x, mode*density_fraction);
-                }
-                 
-    }
-
 __global__ void gpu_bin_particles_kernel(const unsigned int N,
                                          const Scalar4 *d_postype,
                                          Scalar4 *d_particle_bins,
@@ -492,37 +405,6 @@ void gpu_assign_binned_particles_to_mesh(const Index3D& mesh_idx,
                                                         d_mesh_scratch,
                                                         scratch_idx,
                                                         d_mesh);
-    }
-
-void gpu_assign_particles_30(const unsigned int N,
-                          const Scalar4 *d_postype,
-                          cufftComplex *d_mesh,
-                          const Index3D& mesh_idx,
-                          const uint3 n_ghost_cells,
-                          const Scalar *d_mode,
-                          const BoxDim& box,
-                          const bool local_fft)
-    {
-
-    unsigned int block_size = 512;
-
-    if (local_fft) 
-        gpu_assign_particles_kernel<true><<<N/block_size+1, block_size>>>(N,
-                                                                          d_postype,
-                                                                          d_mesh,
-                                                                          mesh_idx,
-                                                                          n_ghost_cells,
-                                                                          d_mode,
-                                                                          box);
-    else    
-        gpu_assign_particles_kernel<false><<<N/block_size+1, block_size>>>(N,
-                                                                          d_postype,
-                                                                          d_mesh,
-                                                                          mesh_idx,
-                                                                          n_ghost_cells,
-                                                                          d_mode,
-                                                                          box);
- 
     }
 
 __global__ void gpu_compute_mesh_virial_kernel(const unsigned int n_wave_vectors,

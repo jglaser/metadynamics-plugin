@@ -102,23 +102,20 @@ void OrderParameterMeshGPU::initializeFFT()
     GPUArray<cufftComplex> inv_fourier_mesh(num_cells, m_exec_conf);
     m_inv_fourier_mesh.swap(inv_fourier_mesh);
 
-    if (exec_conf->getComputeCapability() < 300)
-        {
-        GPUArray<Scalar4> particle_bins(m_bin_idx.getNumElements(), m_exec_conf);
-        m_particle_bins.swap(particle_bins);
+    GPUArray<Scalar4> particle_bins(m_bin_idx.getNumElements(), m_exec_conf);
+    m_particle_bins.swap(particle_bins);
 
-        GPUArray<unsigned int> n_cell(m_bin_idx.getW(), m_exec_conf);
-        m_n_cell.swap(n_cell);
+    GPUArray<unsigned int> n_cell(m_bin_idx.getW(), m_exec_conf);
+    m_n_cell.swap(n_cell);
 
-        GPUFlags<unsigned int> cell_overflowed(m_exec_conf);
-        m_cell_overflowed.swap(cell_overflowed);
+    GPUFlags<unsigned int> cell_overflowed(m_exec_conf);
+    m_cell_overflowed.swap(cell_overflowed);
 
-        m_cell_overflowed.resetFlags(0);
+    m_cell_overflowed.resetFlags(0);
 
-        // allocate scratch space for density reduction
-        GPUArray<Scalar> mesh_scratch(m_scratch_idx.getNumElements(), m_exec_conf);
-        m_mesh_scratch.swap(mesh_scratch);
-        }
+    // allocate scratch space for density reduction
+    GPUArray<Scalar> mesh_scratch(m_scratch_idx.getNumElements(), m_exec_conf);
+    m_mesh_scratch.swap(mesh_scratch);
     }
 
 //! Assignment of particles to mesh using three-point scheme (triangular shaped cloud)
@@ -132,67 +129,45 @@ void OrderParameterMeshGPU::assignParticles()
     ArrayHandle<cufftComplex> d_mesh(m_mesh, access_location::device, access_mode::overwrite);
     ArrayHandle<Scalar> d_mode(m_mode, access_location::device, access_mode::read);
 
-    if (exec_conf->getComputeCapability() >= 300)
+    ArrayHandle<unsigned int> d_n_cell(m_n_cell, access_location::device, access_mode::overwrite);
+  
+    bool cont = true;
+    while (cont)
         {
-        // reset particle mesh
-        cudaMemset(d_mesh.data, 0, sizeof(cufftComplex)*m_mesh.getNumElements());
+        cudaMemset(d_n_cell.data,0,sizeof(unsigned int)*m_n_cell.getNumElements());
 
-        // optimized for Kepler
-        gpu_assign_particles_30(m_pdata->getN()+m_pdata->getNGhosts(),
-                             d_postype.data,
-                             d_mesh.data,
-                             m_mesh_index,
-                             m_n_ghost_cells,
-                             d_mode.data,
-                             m_pdata->getBox(),
-                             m_local_fft);
-
-        if (m_exec_conf->isCUDAErrorCheckingEnabled())
-            CHECK_CUDA_ERROR();
-        }
-    else
-        {
-        // optimized for Fermi
-        ArrayHandle<unsigned int> d_n_cell(m_n_cell, access_location::device, access_mode::overwrite);
-      
-        bool cont = true;
-        while (cont)
             {
-            cudaMemset(d_n_cell.data,0,sizeof(unsigned int)*m_n_cell.getNumElements());
+            ArrayHandle<Scalar4> d_particle_bins(m_particle_bins, access_location::device, access_mode::overwrite);
+            gpu_bin_particles(m_pdata->getN()+m_pdata->getNGhosts(),
+                              d_postype.data,
+                              d_particle_bins.data,
+                              d_n_cell.data,
+                              m_cell_overflowed.getDeviceFlags(),
+                              m_bin_idx,
+                              m_mesh_index,
+                              m_n_ghost_bins,
+                              d_mode.data,
+                              m_pdata->getBox());
 
-                {
-                ArrayHandle<Scalar4> d_particle_bins(m_particle_bins, access_location::device, access_mode::overwrite);
-                gpu_bin_particles(m_pdata->getN()+m_pdata->getNGhosts(),
-                                  d_postype.data,
-                                  d_particle_bins.data,
-                                  d_n_cell.data,
-                                  m_cell_overflowed.getDeviceFlags(),
-                                  m_bin_idx,
-                                  m_mesh_index,
-                                  m_n_ghost_bins,
-                                  d_mode.data,
-                                  m_pdata->getBox());
+            if (m_exec_conf->isCUDAErrorCheckingEnabled())
+                CHECK_CUDA_ERROR();
+            }
 
-                if (m_exec_conf->isCUDAErrorCheckingEnabled())
-                    CHECK_CUDA_ERROR();
-                }
+        unsigned int flags = m_cell_overflowed.readFlags();
+        
+        if (flags)
+            {
+            // reallocate particle bins array
+            m_cell_size = flags;
 
-            unsigned int flags = m_cell_overflowed.readFlags();
-            
-            if (flags)
-                {
-                // reallocate particle bins array
-                m_cell_size = flags;
-
-                m_bin_idx = Index2D(m_bin_idx.getW(),m_cell_size);
-                GPUArray<Scalar4> particle_bins(m_bin_idx.getNumElements(),m_exec_conf);
-                m_particle_bins.swap(particle_bins);
-                m_cell_overflowed.resetFlags(0);
-                }
-            else
-                {
-                cont = false;
-                }
+            m_bin_idx = Index2D(m_bin_idx.getW(),m_cell_size);
+            GPUArray<Scalar4> particle_bins(m_bin_idx.getNumElements(),m_exec_conf);
+            m_particle_bins.swap(particle_bins);
+            m_cell_overflowed.resetFlags(0);
+            }
+        else
+            {
+            cont = false;
             }
 
         // assign particles to mesh
