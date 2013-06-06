@@ -254,15 +254,14 @@ void gpu_bin_particles(const unsigned int N,
                                                              box);
     }
 
-
+template<bool local_fft>
 __global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh_idx,
                                                            const uint3 n_ghost_bins,
                                                            const Scalar4 *d_particle_bins,
                                                            const unsigned int *d_n_cell,
                                                            Scalar *d_mesh_scratch,
                                                            const Index2D bin_idx,
-                                                           const Index2D scratch_idx,
-                                                           const bool local_fft)
+                                                           const Index2D scratch_idx)
     {
     extern __shared__ Scalar scratch_neighbors[];
 
@@ -287,6 +286,8 @@ __global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh
     // loop over particles in bin
     unsigned int n_bin = d_n_cell[bin];
 
+    Scalar assign_x, assign_y, assign_z;
+    Scalar shift, shift_sq, fac;
     for (unsigned int idx = 0; idx < n_bin; ++idx)
         {
         Scalar4 xyzm = d_particle_bins[bin_idx(bin,idx)];
@@ -295,9 +296,39 @@ __global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh
 
         // loop over neighboring bins
         for (int l = -1; l <= 1 ; ++l)
+            {
+            // precalculate assignment factor
+            shift = xyzm.x - (Scalar)l;
+            shift_sq = shift*shift;
+            fac = (Scalar(3.0/2.0)-copysignf(shift,Scalar(1.0)));
+
+            if (!l)
+                assign_x = Scalar(3.0/4.0)-shift_sq;
+            else
+                assign_x = Scalar(1.0/2.0)*fac*fac;
+ 
             for (int m = -1; m <= 1; ++m)
+                {
+                shift = xyzm.y - (Scalar)m;
+                shift_sq = shift*shift;
+                fac = (Scalar(3.0/2.0)-copysignf(shift,Scalar(1.0)));
+
+                if (!m)
+                    assign_y = Scalar(3.0/4.0)-shift_sq;
+                else
+                    assign_y = Scalar(1.0/2.0)*fac*fac;
+     
                 for (int n = -1; n <= 1; ++n)
                     {
+                    shift = xyzm.z - (Scalar)n;
+                    shift_sq = shift*shift;
+                    fac = (Scalar(3.0/2.0)-copysignf(shift,Scalar(1.0)));
+
+                    if (!n)
+                        assign_z = Scalar(3.0/4.0)-shift_sq;
+                    else
+                        assign_z = Scalar(1.0/2.0)*fac*fac;
+     
                     int neighi = i + l;
                     int neighj = j + m;
                     int neighk = k + n;
@@ -305,14 +336,14 @@ __global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh
                     neigh_bin_idx++;
                     if (neighi >= (int)(bin_dim.x-n_ghost_bins.x/2))
                         {
-                        if (! n_ghost_bins.x)
+                        if (local_fft || ! n_ghost_bins.x)
                             neighi = 0;
                         else
                             continue;
                         }
                     else if (neighi < (int)(n_ghost_bins.x/2))
                         {
-                        if (! n_ghost_bins.x)
+                        if (local_fft || ! n_ghost_bins.x)
                             neighi += (int)bin_dim.x;
                         else
                             continue;
@@ -320,14 +351,14 @@ __global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh
 
                     if (neighj >= (int)(bin_dim.y-n_ghost_bins.y/2))
                         {
-                        if (! n_ghost_bins.y)
+                        if (local_fft || ! n_ghost_bins.y)
                             neighj = 0;
                         else
                             continue;
                         }
                     else if (neighj < (int)(n_ghost_bins.y/2))
                         {
-                        if (! n_ghost_bins.y)
+                        if (local_fft || ! n_ghost_bins.y)
                             neighj += (int)bin_dim.y;
                         else
                             continue;
@@ -335,28 +366,26 @@ __global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh
 
                     if (neighk >= (int)(bin_dim.z-n_ghost_bins.z/2))
                         {
-                        if (! n_ghost_bins.z)
+                        if (local_fft || ! n_ghost_bins.z)
                             neighk = 0;
                         else
                             continue;
                         }
                     else if (neighk < (int)(n_ghost_bins.z/2))
                         {
-                        if (! n_ghost_bins.z)
+                        if (local_fft || ! n_ghost_bins.z)
                             neighk += (int)bin_dim.z;
                         else
                             continue;
                         } 
      
-                    Scalar shift_x = xyzm.x - (Scalar)l;
-                    Scalar shift_y = xyzm.y - (Scalar)m;
-                    Scalar shift_z = xyzm.z - (Scalar)n;
-
                     // compute fraction of particle density assigned to cell from particles
                     // in this bin
                     Scalar mode = xyzm.w;
-                    scratch_neighbors[scratch_idx.getH()*threadIdx.x+neigh_bin_idx] += mode*assignTSC(shift_x)*assignTSC(shift_y)*assignTSC(shift_z);
-                    } // end of loop over neighboring bins
+                    scratch_neighbors[scratch_idx.getH()*threadIdx.x+neigh_bin_idx] += mode*assign_x*assign_y*assign_z;
+                    }
+                }
+            } // end of loop over neighboring bins
         } // end of ptl loop
 
     // write out shared memory to neighboring cells
@@ -373,14 +402,14 @@ __global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh
                 neigh_bin_idx++;
                 if (neighi >= (int)(bin_dim.x-n_ghost_bins.x/2))
                     {
-                    if (! n_ghost_bins.x)
+                    if (local_fft || ! n_ghost_bins.x)
                         neighi = 0;
                     else
                         continue;
                     }
                 else if (neighi < (int)(n_ghost_bins.x/2))
                     {
-                    if (! n_ghost_bins.x)
+                    if (local_fft || ! n_ghost_bins.x)
                         neighi += (int)bin_dim.x;
                     else
                         continue;
@@ -388,14 +417,14 @@ __global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh
 
                 if (neighj >= (int)(bin_dim.y-n_ghost_bins.y/2))
                     {
-                    if (! n_ghost_bins.y)
+                    if (local_fft || ! n_ghost_bins.y)
                         neighj = 0;
                     else
                         continue;
                     }
                 else if (neighj < (int)(n_ghost_bins.y/2))
                     {
-                    if (! n_ghost_bins.y)
+                    if (local_fft || ! n_ghost_bins.y)
                         neighj += (int)bin_dim.y;
                     else
                         continue;
@@ -403,14 +432,14 @@ __global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh
 
                 if (neighk >= (int)(bin_dim.z-n_ghost_bins.z/2))
                     {
-                    if (! n_ghost_bins.z)
+                    if (local_fft || ! n_ghost_bins.z)
                         neighk = 0;
                     else
                         continue;
                     }
                 else if (neighk < (int)(n_ghost_bins.z/2))
                     {
-                    if (! n_ghost_bins.z)
+                    if (local_fft || ! n_ghost_bins.z)
                         neighk += (int)bin_dim.z;
                     else
                         continue;
@@ -472,16 +501,26 @@ void gpu_assign_binned_particles_to_mesh(const Index3D& mesh_idx,
 
     unsigned int shared_size = block_size*scratch_idx.getH()*sizeof(Scalar);
 
-    gpu_assign_binned_particles_to_scratch_kernel<<<n_blocks,block_size,shared_size>>>(
-                                                                              mesh_idx,
-                                                                              n_ghost_bins,
-                                                                              d_particle_bins,
-                                                                              d_n_cell,
-                                                                              d_mesh_scratch,
-                                                                              bin_idx,
-                                                                              scratch_idx,
-                                                                              local_fft);
+    if (local_fft)
+        gpu_assign_binned_particles_to_scratch_kernel<true><<<n_blocks,block_size,shared_size>>>(
+                                                                                  mesh_idx,
+                                                                                  n_ghost_bins,
+                                                                                  d_particle_bins,
+                                                                                  d_n_cell,
+                                                                                  d_mesh_scratch,
+                                                                                  bin_idx,
+                                                                                  scratch_idx);
+    else
+        gpu_assign_binned_particles_to_scratch_kernel<false><<<n_blocks,block_size,shared_size>>>(
+                                                                                  mesh_idx,
+                                                                                  n_ghost_bins,
+                                                                                  d_particle_bins,
+                                                                                  d_n_cell,
+                                                                                  d_mesh_scratch,
+                                                                                  bin_idx,
+                                                                                  scratch_idx);
 
+        
     block_size = 512;
     n_blocks = mesh_idx.getNumElements()/block_size;
     if (mesh_idx.getNumElements()%block_size) n_blocks +=1;
