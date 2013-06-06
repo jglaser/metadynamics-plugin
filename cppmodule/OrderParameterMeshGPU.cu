@@ -255,151 +255,240 @@ void gpu_bin_particles(const unsigned int N,
     }
 
 
-texture<Scalar4, 1, cudaReadModeElementType> particle_bins_tex;
-texture<unsigned int, 1, cudaReadModeElementType> n_cell_tex;
-
-template<bool local_fft>
-__global__ void gpu_assign_binned_particles_to_mesh_kernel(const unsigned int inner_nx,
-                                                           const unsigned int inner_ny,
-                                                           const unsigned int inner_nz,
-                                                           const Index3D mesh_idx,
+__global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh_idx,
                                                            const uint3 n_ghost_bins,
+                                                           const Scalar4 *d_particle_bins,
                                                            const unsigned int *d_n_cell,
-                                                           cufftComplex *d_mesh,
-                                                           const BoxDim box,
-                                                           const Index2D bin_idx)
+                                                           Scalar *d_mesh_scratch,
+                                                           const Index2D bin_idx,
+                                                           const Index2D scratch_idx,
+                                                           const bool local_fft)
     {
-    unsigned int cell_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    extern __shared__ Scalar scratch_neighbors[];
 
-    if (cell_idx >= mesh_idx.getNumElements()) return;
+    unsigned int bin = blockIdx.x * blockDim.x + threadIdx.x;
 
+    if (bin >= bin_idx.getH()) return;
+
+    int3 bin_dim = make_int3(mesh_idx.getW()+n_ghost_bins.x,
+                             mesh_idx.getH()+n_ghost_bins.y,
+                             mesh_idx.getD()+n_ghost_bins.z);
+
+    // grid coordinates of bin
     int i,j,k;
-    if (local_fft)
+    i = bin /bin_dim.y / bin_dim.z;
+    j = (bin - i * bin_dim.y*bin_dim.z)/bin_dim.z;
+    k = bin % bin_dim.z;
+
+    // reset shared memory
+    for (unsigned int sidx = 0; sidx < scratch_idx.getW(); ++sidx)
+        scratch_neighbors[scratch_idx.getW()*threadIdx.x+sidx] = Scalar(0.0);
+
+    // loop over particles in bin
+    unsigned int n_bin = d_n_cell[bin];
+
+    for (unsigned int idx = 0; idx < n_bin; ++idx)
         {
-        // use cuFFT's memory layout
-        i = cell_idx / mesh_idx.getH() / mesh_idx.getD();
-        j = (cell_idx - i * mesh_idx.getH()*mesh_idx.getD())/mesh_idx.getD();
-        k = cell_idx % mesh_idx.getD();
-        }
-    else
-        {
-        uint3 cell_coord = mesh_idx.getTriple(cell_idx);
-        i = cell_coord.x;
-        j = cell_coord.y;
-        k = cell_coord.z;
-        }
+        Scalar4 xyzm = d_particle_bins[bin_idx(idx,bin)];
+        
+        int neigh_bin_idx = -1;
 
-    uint3 bin_dim = make_uint3(mesh_idx.getW()+n_ghost_bins.x,
-                               mesh_idx.getH()+n_ghost_bins.y,
-                               mesh_idx.getD()+n_ghost_bins.z);
+        // loop over neighboring bins
+        for (int l = -1; l <= 1 ; ++l)
+            for (int m = -1; m <= 1; ++m)
+                for (int n = -1; n <= 1; ++n)
+                    {
+                    int neighi = i + l;
+                    int neighj = j + m;
+                    int neighk = k + n;
 
-    Scalar grid_val(0.0);
+                    neigh_bin_idx++;
+                    if (neighi >= (int)(bin_dim.x-n_ghost_bins.x/2))
+                        {
+                        if (! n_ghost_bins.x)
+                            neighi = 0;
+                        else
+                            continue;
+                        }
+                    else if (neighi < (int)(n_ghost_bins.x/2))
+                        {
+                        if (! n_ghost_bins.x)
+                            neighi += (int)bin_dim.x;
+                        else
+                            continue;
+                        }
 
-    // loop over particles in neighboring bins
+                    if (neighj >= (int)(bin_dim.y-n_ghost_bins.y/2))
+                        {
+                        if (! n_ghost_bins.y)
+                            neighj = 0;
+                        else
+                            continue;
+                        }
+                    else if (neighj < (int)(n_ghost_bins.y/2))
+                        {
+                        if (! n_ghost_bins.y)
+                            neighj += (int)bin_dim.y;
+                        else
+                            continue;
+                        }
+
+                    if (neighk >= (int)(bin_dim.z-n_ghost_bins.z/2))
+                        {
+                        if (! n_ghost_bins.z)
+                            neighk = 0;
+                        else
+                            continue;
+                        }
+                    else if (neighk < (int)(n_ghost_bins.z/2))
+                        {
+                        if (! n_ghost_bins.z)
+                            neighk += (int)bin_dim.z;
+                        else
+                            continue;
+                        } 
+     
+                    Scalar shift_x = xyzm.x - (Scalar)l;
+                    Scalar shift_y = xyzm.y - (Scalar)m;
+                    Scalar shift_z = xyzm.z - (Scalar)n;
+
+                    // compute fraction of particle density assigned to cell from particles
+                    // in this bin
+                    Scalar mode = xyzm.w;
+                    scratch_neighbors[scratch_idx.getW()*threadIdx.x+neigh_bin_idx] += mode*assignTSC(shift_x)*assignTSC(shift_y)*assignTSC(shift_z);
+                    } // end of loop over neighboring bins
+        } // end of ptl loop
+
+    // write out shared memory to neighboring cells
+    // loop over neighboring bins
+    int neigh_bin_idx = -1;
     for (int l = -1; l <= 1 ; ++l)
-    	for (int m = -1; m <= 1; ++m)
+        for (int m = -1; m <= 1; ++m)
             for (int n = -1; n <= 1; ++n)
                 {
                 int neighi = i + l;
                 int neighj = j + m;
                 int neighk = k + n;
 
-                // the following code wraps around boundaries
-                // only in periodic directions
-                if (neighi == (int)(inner_nx+n_ghost_bins.x/2))
-                    neighi = 0;
-                else if (neighi < -(int)n_ghost_bins.x/2)
-                    neighi += (int)inner_nx; 
-
-                if (neighj == (int)(inner_ny+n_ghost_bins.y/2))
-                    neighj = 0;
-                else if (neighj < -(int)n_ghost_bins.y/2)
-                    neighj += (int) inner_ny;
-
-                if (neighk == (int)(inner_nz+n_ghost_bins.z/2))
-                    neighk = 0;
-                else if (neighk < -(int)n_ghost_bins.z/2)
-                    neighk += (int)inner_nz;
-
-                int3 bin = make_int3(neighi + (int)n_ghost_bins.x/2,
-                                     neighj + (int)n_ghost_bins.y/2,
-                                     neighk + (int)n_ghost_bins.z/2);
-                unsigned int neigh_bin = bin.z + bin_dim.z*(bin.y + bin_dim.y * bin.x);
-
-                unsigned int n_bin = tex1Dfetch(n_cell_tex,neigh_bin);
-                Scalar3 cell_shift = make_scalar3((Scalar)l,(Scalar)m,(Scalar)n);
-
-                // loop over particles in bin
-                for (unsigned int neigh_idx = 0; neigh_idx < n_bin; neigh_idx++)
+                neigh_bin_idx++;
+                if (neighi >= (int)(bin_dim.x-n_ghost_bins.x/2))
                     {
-                    Scalar4 xyzm = tex1Dfetch(particle_bins_tex, bin_idx(neigh_idx,neigh_bin));
-                    
-                    // since the particle is in the neighboring cell, the shift needs to be added
-                    Scalar shift_x = xyzm.x + cell_shift.x;
-                    Scalar shift_y = xyzm.y + cell_shift.y;
-                    Scalar shift_z = xyzm.z + cell_shift.z;
-
-                    // compute fraction of particle density assigned to cell
-                    Scalar& mode = xyzm.w;
-                    grid_val += mode*assignTSC(shift_x)*assignTSC(shift_y)*assignTSC(shift_z);
+                    if (! n_ghost_bins.x)
+                        neighi = 0;
+                    else
+                        continue;
                     }
-                } // end of loop over neighboring bins
+                else if (neighi < (int)(n_ghost_bins.x/2))
+                    {
+                    if (! n_ghost_bins.x)
+                        neighi += (int)bin_dim.x;
+                    else
+                        continue;
+                    }
 
-    // write out mesh value
-    cufftComplex c;
-    c.x = grid_val;
-    c.y = Scalar(0.0);
-    d_mesh[cell_idx] = c;
+                if (neighj >= (int)(bin_dim.y-n_ghost_bins.y/2))
+                    {
+                    if (! n_ghost_bins.y)
+                        neighj = 0;
+                    else
+                        continue;
+                    }
+                else if (neighj < (int)(n_ghost_bins.y/2))
+                    {
+                    if (! n_ghost_bins.y)
+                        neighj += (int)bin_dim.y;
+                    else
+                        continue;
+                    }
+
+                if (neighk >= (int)(bin_dim.z-n_ghost_bins.z/2))
+                    {
+                    if (! n_ghost_bins.z)
+                        neighk = 0;
+                    else
+                        continue;
+                    }
+                else if (neighk < (int)(n_ghost_bins.z/2))
+                    {
+                    if (! n_ghost_bins.z)
+                        neighk += (int)bin_dim.z;
+                    else
+                        continue;
+                    } 
+
+                uint3 scratch_cell_coord = make_uint3(neighi - n_ghost_bins.x/2,
+                                                      neighj - n_ghost_bins.y/2,
+                                                      neighk - n_ghost_bins.z/2);
+
+                // write out to global memory
+                unsigned int cell_idx;
+                if (local_fft)
+                    // use cuFFT's memory layout
+                    cell_idx = scratch_cell_coord.z + mesh_idx.getD() * (scratch_cell_coord.y + mesh_idx.getH() * scratch_cell_coord.x);
+                else
+                    cell_idx = mesh_idx(scratch_cell_coord.x,
+                                        scratch_cell_coord.y,
+                                        scratch_cell_coord.z);
+
+
+                d_mesh_scratch[scratch_idx(neigh_bin_idx,cell_idx)] =
+                    scratch_neighbors[scratch_idx.getW()*threadIdx.x+neigh_bin_idx];
+                }
+    }
+
+__global__ void gpu_reduce_scratch_kernel(const Index3D mesh_idx,
+                               const Scalar *d_mesh_scratch,
+                               const Index2D scratch_idx,
+                               cufftComplex *d_mesh)
+    {
+    unsigned int cell_idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (cell_idx >= mesh_idx.getNumElements()) return;
+
+    // simply add up contents of scratch cell
+    Scalar grid_val(0.0);
+    for (unsigned int sidx = 0; sidx < scratch_idx.getW(); ++sidx)
+        grid_val += d_mesh_scratch[scratch_idx(sidx,cell_idx)];
+
+    d_mesh[cell_idx].x = grid_val;
+    d_mesh[cell_idx].y = Scalar(0.0);
     }
 
 void gpu_assign_binned_particles_to_mesh(const Index3D& mesh_idx,
                                          const uint3 n_ghost_bins,
                                          const Scalar4 *d_particle_bins,
+                                         Scalar *d_mesh_scratch,
                                          const Index2D& bin_idx,
+                                         const Index2D& scratch_idx,
                                          const unsigned int *d_n_cell,
                                          cufftComplex *d_mesh,
-                                         const BoxDim& box,
                                          const bool local_fft)
     {
     uint3 inner_dim = make_uint3(mesh_idx.getW(), mesh_idx.getH(), mesh_idx.getD());
 
-    particle_bins_tex.normalized = false;
-    particle_bins_tex.filterMode = cudaFilterModePoint;
-    cudaBindTexture(0, particle_bins_tex, d_particle_bins, sizeof(Scalar4)*bin_idx.getNumElements());
+    unsigned int block_size = 64;
+    unsigned int n_blocks = bin_idx.getH()/block_size;
+    if (bin_idx.getH()%block_size) n_blocks +=1;
 
-    n_cell_tex.normalized = false;
-    n_cell_tex.filterMode = cudaFilterModePoint;
-    cudaBindTexture(0, n_cell_tex, d_n_cell, sizeof(unsigned int)*bin_idx.getH());
+    unsigned int shared_size = block_size*scratch_idx.getW()*sizeof(Scalar);
 
-
-    unsigned int block_size = 512;
-    unsigned int n_blocks = mesh_idx.getNumElements()/block_size;
-    if (mesh_idx.getNumElements()%block_size) n_blocks +=1;
-
-   
-    if (local_fft)
-        gpu_assign_binned_particles_to_mesh_kernel<true><<<n_blocks,block_size>>>(inner_dim.x,
-                                                                              inner_dim.y,
-                                                                              inner_dim.z,
+    gpu_assign_binned_particles_to_scratch_kernel<<<n_blocks,block_size,shared_size>>>(
                                                                               mesh_idx,
                                                                               n_ghost_bins,
+                                                                              d_particle_bins,
                                                                               d_n_cell,
-                                                                              d_mesh,
-                                                                              box,
-                                                                              bin_idx);
-    else
-        gpu_assign_binned_particles_to_mesh_kernel<false><<<n_blocks,block_size>>>(inner_dim.x,
-                                                                               inner_dim.y,
-                                                                               inner_dim.z,
-                                                                               mesh_idx,
-                                                                               n_ghost_bins,
-                                                                               d_n_cell,
-                                                                               d_mesh,
-                                                                               box,
-                                                                               bin_idx);
+                                                                              d_mesh_scratch,
+                                                                              bin_idx,
+                                                                              scratch_idx,
+                                                                              local_fft);
 
-    cudaUnbindTexture(particle_bins_tex);
-    cudaUnbindTexture(n_cell_tex);
+    block_size = 512;
+    n_blocks = mesh_idx.getNumElements()/block_size;
+    if (mesh_idx.getNumElements()%block_size) n_blocks +=1;
+    gpu_reduce_scratch_kernel<<<n_blocks, block_size>>>(mesh_idx,
+                                                        d_mesh_scratch,
+                                                        scratch_idx,
+                                                        d_mesh);
     }
 
 void gpu_assign_particles_30(const unsigned int N,

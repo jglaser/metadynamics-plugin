@@ -50,6 +50,7 @@ OrderParameterMeshGPU::OrderParameterMeshGPU(boost::shared_ptr<SystemDefinition>
                                   *(m_mesh_points.y+m_n_ghost_bins.y)
                                   *(m_mesh_points.z+m_n_ghost_bins.z);
     m_bin_idx = Index2D(m_cell_size,n_particle_bins);
+    m_scratch_idx = Index2D((2*m_radius+1)*(2*m_radius+1)*(2*m_radius+1), m_mesh_index.getNumElements());
     }
 
 OrderParameterMeshGPU::~OrderParameterMeshGPU()
@@ -113,6 +114,10 @@ void OrderParameterMeshGPU::initializeFFT()
         m_cell_overflowed.swap(cell_overflowed);
 
         m_cell_overflowed.resetFlags(0);
+
+        // allocate scratch space for density reduction
+        GPUArray<Scalar> mesh_scratch(m_scratch_idx.getNumElements(), m_exec_conf);
+        m_mesh_scratch.swap(mesh_scratch);
         }
     }
 
@@ -127,11 +132,11 @@ void OrderParameterMeshGPU::assignParticles()
     ArrayHandle<cufftComplex> d_mesh(m_mesh, access_location::device, access_mode::overwrite);
     ArrayHandle<Scalar> d_mode(m_mode, access_location::device, access_mode::read);
 
-    // reset particle mesh
-    cudaMemset(d_mesh.data, 0, sizeof(cufftComplex)*m_mesh.getNumElements());
-
     if (exec_conf->getComputeCapability() >= 300)
         {
+        // reset particle mesh
+        cudaMemset(d_mesh.data, 0, sizeof(cufftComplex)*m_mesh.getNumElements());
+
         // optimized for Kepler
         gpu_assign_particles_30(m_pdata->getN()+m_pdata->getNGhosts(),
                              d_postype.data,
@@ -192,14 +197,16 @@ void OrderParameterMeshGPU::assignParticles()
 
         // assign particles to mesh
         ArrayHandle<Scalar4> d_particle_bins(m_particle_bins, access_location::device, access_mode::read);
+        ArrayHandle<Scalar> d_mesh_scratch(m_mesh_scratch, access_location::device, access_mode::overwrite);
         
         gpu_assign_binned_particles_to_mesh(m_mesh_index,
                                             m_n_ghost_bins,
                                             d_particle_bins.data,
+                                            d_mesh_scratch.data,
                                             m_bin_idx,
+                                            m_scratch_idx,
                                             d_n_cell.data,
                                             d_mesh.data,
-                                            m_pdata->getBox(),
                                             m_local_fft);
 
         if (m_exec_conf->isCUDAErrorCheckingEnabled())

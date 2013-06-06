@@ -23,10 +23,11 @@ void gpu_bin_particles(const unsigned int N,
 void gpu_assign_binned_particles_to_mesh(const Index3D& mesh_idx,
                                          const uint3 n_ghost_bins,
                                          const Scalar4 *d_particle_bins,
+                                         Scalar *d_mesh_scratch,
                                          const Index2D& bin_idx,
+                                         const Index2D& scratch_idx,
                                          const unsigned int *d_n_cell,
                                          cufftComplex *d_mesh,
-                                         const BoxDim& box,
                                          const bool local_fft);
 
 void gpu_assign_particles_30(const unsigned int N,

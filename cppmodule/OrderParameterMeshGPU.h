@@ -66,6 +66,8 @@ class OrderParameterMeshGPU : public OrderParameterMesh
         uint3 m_n_ghost_bins;                      //!< Number of ghost bins in every direction
         Index2D m_bin_idx;                         //!< Total number of bins
         GPUArray<Scalar4> m_particle_bins;         //!< Cell list for particle positions and modes
+        GPUArray<Scalar> m_mesh_scratch;           //!< Mesh with scratch space for density reduction
+        Index2D m_scratch_idx;                     //!< Indexer for scratch space
         GPUArray<unsigned int> m_n_cell;           //!< Number of particles per cell
         unsigned int m_cell_size;                  //!< Current max. number of particles per cell
         GPUFlags<unsigned int> m_cell_overflowed;  //!< Flag set to 1 if a cell overflows

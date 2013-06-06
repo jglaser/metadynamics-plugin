@@ -92,6 +92,10 @@ OrderParameterMesh::OrderParameterMesh(boost::shared_ptr<SystemDefinition> sysde
         }
     #endif // ENABLE_MPI
 
+    m_mesh_index = Index3D(m_mesh_points.x,
+                           m_mesh_points.y,
+                           m_mesh_points.z);
+
     // reset virial
     ArrayHandle<Scalar> h_virial(m_virial, access_location::host, access_mode::overwrite);
     memset(h_virial.data, 0, sizeof(Scalar)*m_virial.getNumElements());
@@ -122,9 +126,6 @@ OrderParameterMesh::~OrderParameterMesh()
 
 void OrderParameterMesh::setupMesh()
     {
-    m_mesh_index = Index3D(m_mesh_points.x,
-                           m_mesh_points.y,
-                           m_mesh_points.z);
     m_force_mesh_index = Index3D(m_mesh_points.x+m_n_ghost_cells.x,
                            m_mesh_points.y+m_n_ghost_cells.y,
                            m_mesh_points.z+m_n_ghost_cells.z);
