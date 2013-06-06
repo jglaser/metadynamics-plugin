@@ -214,19 +214,18 @@ __global__ void gpu_bin_particles_kernel(const unsigned int N,
         {
         // overflow
         atomicMax(d_overflow, n+1);
+        return;
         }
-    else
-        {
-        // store distance to bin center in bin in units of bin size
-        Scalar3 f = box.makeFraction(pos);
-        f = f*make_scalar3(mesh_idx.getW(), mesh_idx.getH(), mesh_idx.getD());
-        Scalar3 c = make_scalar3((Scalar)bin_coord.x + Scalar(0.5) - Scalar(n_ghost_bins.x/2),
-                                 (Scalar)bin_coord.y + Scalar(0.5) - Scalar(n_ghost_bins.y/2),
-                                 (Scalar)bin_coord.z + Scalar(0.5) - Scalar(n_ghost_bins.z/2));
-        Scalar3 shift = f - c;
 
-        d_particle_bins[bin_idx(bin,n)] = make_scalar4(shift.x,shift.y,shift.z, mode);
-        }
+    // store distance to bin center in bin in units of bin size
+    Scalar3 f = box.makeFraction(pos);
+    f = f*make_scalar3(mesh_idx.getW(), mesh_idx.getH(), mesh_idx.getD());
+    Scalar3 c = make_scalar3((Scalar)bin_coord.x + Scalar(0.5) - Scalar(n_ghost_bins.x/2),
+                             (Scalar)bin_coord.y + Scalar(0.5) - Scalar(n_ghost_bins.y/2),
+                             (Scalar)bin_coord.z + Scalar(0.5) - Scalar(n_ghost_bins.z/2));
+    Scalar3 shift = f - c;
+
+    d_particle_bins[bin_idx(bin,n)] = make_scalar4(shift.x,shift.y,shift.z, mode);
     }
 
 void gpu_bin_particles(const unsigned int N,
@@ -710,20 +709,75 @@ __global__ void gpu_compute_forces_kernel(const unsigned int N,
                              (Scalar)cell_coord.z-(Scalar)(n_ghost_cells.z/2)+Scalar(0.5));
 
     Scalar3 p = box.makeFraction(pos)*make_scalar3(inner_dim.x, inner_dim.y, inner_dim.z);
-    Scalar3 shift = p-c;
+    Scalar3 shift_c = p-c;
 
     Scalar3 force = make_scalar3(0.0,0.0,0.0);
 
     // assign particle to cell and next neighbors
+    Scalar assign_x, assign_y, assign_z;
+    Scalar assign_x_deriv, assign_y_deriv, assign_z_deriv;
+    Scalar shift, shift_abs,shift_sq, fac;
+ 
     for (int i = -1; i <= 1 ; ++i)
+        {
+        // precalculate assignment factor
+        shift = shift_c.x - (Scalar)i;
+        shift_sq = shift*shift;
+        shift_abs = copysignf(shift,Scalar(1.0));
+        fac = (Scalar(3.0/2.0)-shift_abs);
+
+        if (!i)
+            {
+            assign_x = Scalar(3.0/4.0)-shift_sq;
+            assign_x_deriv = -Scalar(2.0)*shift;
+            }
+        else
+            {
+            assign_x = Scalar(1.0/2.0)*fac*fac;
+            assign_x_deriv = -fac*shift/shift_abs;
+            }
+ 
     	for (int j = -1; j <= 1; ++j)
+            {
+            shift = shift_c.y - (Scalar)j;
+            shift_sq = shift*shift;
+            shift_abs = copysignf(shift,Scalar(1.0));
+            fac = (Scalar(3.0/2.0)-shift_abs);
+
+            if (!j)
+                {
+                assign_y = Scalar(3.0/4.0)-shift_sq;
+                assign_y_deriv = -Scalar(2.0)*shift;
+                }
+            else
+                {
+                assign_y = Scalar(1.0/2.0)*fac*fac;
+                assign_y_deriv = -fac*shift/shift_abs;
+                }
+     
             for (int k = -1; k <= 1; ++k)
                 {
+                shift = shift_c.z - (Scalar)k;
+                shift_sq = shift*shift;
+                shift_abs = copysignf(shift,Scalar(1.0));
+                fac = (Scalar(3.0/2.0)-shift_abs);
+
+                if (!k)
+                    {
+                    assign_z = Scalar(3.0/4.0)-shift_sq;
+                    assign_z_deriv = -Scalar(2.0)*shift;
+                    }
+                else
+                    {
+                    assign_z = Scalar(1.0/2.0)*fac*fac;
+                    assign_z_deriv = -fac*shift/shift_abs;
+                    }
+
                 int neighi = (int) cell_coord.x + i;
                 int neighj = (int) cell_coord.y + j;
                 int neighk = (int) cell_coord.z + k;
 
-                if (! n_ghost_cells.x)
+                if (local_fft || ! n_ghost_cells.x)
                     {
                     if (neighi == inner_dim.x)
                         neighi = 0;
@@ -731,7 +785,7 @@ __global__ void gpu_compute_forces_kernel(const unsigned int N,
                         neighi += inner_dim.x;
                     }
 
-                if (! n_ghost_cells.y)
+                if (local_fft || ! n_ghost_cells.y)
                     {
                     if (neighj == inner_dim.y)
                         neighj = 0;
@@ -739,7 +793,7 @@ __global__ void gpu_compute_forces_kernel(const unsigned int N,
                         neighj += inner_dim.y;
                     }
 
-                if (! n_ghost_cells.z)
+                if (local_fft || ! n_ghost_cells.z)
                     {
                     if (neighk == inner_dim.z)
                         neighk = 0;
@@ -747,7 +801,6 @@ __global__ void gpu_compute_forces_kernel(const unsigned int N,
                         neighk += inner_dim.z;
                     } 
 
-                Scalar3 dx_frac = shift - make_scalar3((Scalar)i,(Scalar)j,(Scalar)k);
 
                 // compute fraction of particle density assigned to cell
                 unsigned int cell_idx;
@@ -759,10 +812,12 @@ __global__ void gpu_compute_forces_kernel(const unsigned int N,
 
                 cufftComplex inv_mesh = tex1Dfetch(inv_fourier_mesh_tex,cell_idx);
 
-                force += -(Scalar)inner_dim.x*b1*mode*assignTSCderiv(dx_frac.x)*assignTSC(dx_frac.y)*assignTSC(dx_frac.z)*inv_mesh.x;
-                force += -(Scalar)inner_dim.y*b2*mode*assignTSC(dx_frac.x)*assignTSCderiv(dx_frac.y)*assignTSC(dx_frac.z)*inv_mesh.x;
-                force += -(Scalar)inner_dim.z*b3*mode*assignTSC(dx_frac.x)*assignTSC(dx_frac.y)*assignTSCderiv(dx_frac.z)*inv_mesh.x;
+                force += -(Scalar)inner_dim.x*b1*mode*assign_x_deriv*assign_y*assign_z*inv_mesh.x;
+                force += -(Scalar)inner_dim.y*b2*mode*assign_x*assign_y_deriv*assign_z*inv_mesh.x;
+                force += -(Scalar)inner_dim.z*b3*mode*assign_x*assign_y*assign_z_deriv*inv_mesh.x;
                 }  
+            }
+        } // end neighbor cells loop
 
     // Normalization
     force *= Scalar(2.0)/(Scalar)n_global;
