@@ -388,14 +388,14 @@ __global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh
                     if (local_fft || ! n_ghost_bins.z)
                         neighk = 0;
                     else
-                        continue;
+                        ignore = true;
                     }
                 else if (neighk < (int)(n_ghost_bins.z/2))
                     {
                     if (local_fft || ! n_ghost_bins.z)
                         neighk += (int)bin_dim.z;
                     else
-                        continue;
+                        ignore = true;
                     } 
 
                 if (!ignore)
@@ -413,7 +413,6 @@ __global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh
                         cell_idx = mesh_idx(scratch_cell_coord.x,
                                             scratch_cell_coord.y,
                                             scratch_cell_coord.z);
-
 
                     d_mesh_scratch[scratch_idx(cell_idx,neigh_bin_idx)] =
                         scratch_neighbors[scratch_idx.getH()*threadIdx.x+neigh_bin_idx];
@@ -456,7 +455,7 @@ void gpu_assign_binned_particles_to_mesh(const Index3D& mesh_idx,
     {
     uint3 inner_dim = make_uint3(mesh_idx.getW(), mesh_idx.getH(), mesh_idx.getD());
 
-    unsigned int block_size = 64;
+    unsigned int block_size = 128;
     unsigned int n_blocks = bin_idx.getW()/block_size;
     if (bin_idx.getW()%block_size) n_blocks +=1;
 
