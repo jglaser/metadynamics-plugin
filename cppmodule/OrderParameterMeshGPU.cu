@@ -210,7 +210,7 @@ __global__ void gpu_bin_particles_kernel(const unsigned int N,
 
     unsigned int n = atomicInc(&d_n_cell[bin], 0xffffffff);
 
-    if (n >= bin_idx.getW())
+    if (n >= bin_idx.getH())
         {
         // overflow
         atomicMax(d_overflow, n+1);
@@ -225,7 +225,7 @@ __global__ void gpu_bin_particles_kernel(const unsigned int N,
                                  (Scalar)bin_coord.z + Scalar(0.5) - Scalar(n_ghost_bins.z/2));
         Scalar3 shift = f - c;
 
-        d_particle_bins[bin_idx(n,bin)] = make_scalar4(shift.x,shift.y,shift.z, mode);
+        d_particle_bins[bin_idx(bin,n)] = make_scalar4(shift.x,shift.y,shift.z, mode);
         }
     }
 
@@ -268,7 +268,7 @@ __global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh
 
     unsigned int bin = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (bin >= bin_idx.getH()) return;
+    if (bin >= bin_idx.getW()) return;
 
     int3 bin_dim = make_int3(mesh_idx.getW()+n_ghost_bins.x,
                              mesh_idx.getH()+n_ghost_bins.y,
@@ -281,15 +281,15 @@ __global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh
     k = bin % bin_dim.z;
 
     // reset shared memory
-    for (unsigned int sidx = 0; sidx < scratch_idx.getW(); ++sidx)
-        scratch_neighbors[scratch_idx.getW()*threadIdx.x+sidx] = Scalar(0.0);
+    for (unsigned int sidx = 0; sidx < scratch_idx.getH(); ++sidx)
+        scratch_neighbors[scratch_idx.getH()*threadIdx.x+sidx] = Scalar(0.0);
 
     // loop over particles in bin
     unsigned int n_bin = d_n_cell[bin];
 
     for (unsigned int idx = 0; idx < n_bin; ++idx)
         {
-        Scalar4 xyzm = d_particle_bins[bin_idx(idx,bin)];
+        Scalar4 xyzm = d_particle_bins[bin_idx(bin,idx)];
         
         int neigh_bin_idx = -1;
 
@@ -355,7 +355,7 @@ __global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh
                     // compute fraction of particle density assigned to cell from particles
                     // in this bin
                     Scalar mode = xyzm.w;
-                    scratch_neighbors[scratch_idx.getW()*threadIdx.x+neigh_bin_idx] += mode*assignTSC(shift_x)*assignTSC(shift_y)*assignTSC(shift_z);
+                    scratch_neighbors[scratch_idx.getH()*threadIdx.x+neigh_bin_idx] += mode*assignTSC(shift_x)*assignTSC(shift_y)*assignTSC(shift_z);
                     } // end of loop over neighboring bins
         } // end of ptl loop
 
@@ -431,8 +431,8 @@ __global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh
                                         scratch_cell_coord.z);
 
 
-                d_mesh_scratch[scratch_idx(neigh_bin_idx,cell_idx)] =
-                    scratch_neighbors[scratch_idx.getW()*threadIdx.x+neigh_bin_idx];
+                d_mesh_scratch[scratch_idx(cell_idx,neigh_bin_idx)] =
+                    scratch_neighbors[scratch_idx.getH()*threadIdx.x+neigh_bin_idx];
                 }
     }
 
@@ -447,8 +447,8 @@ __global__ void gpu_reduce_scratch_kernel(const Index3D mesh_idx,
 
     // simply add up contents of scratch cell
     Scalar grid_val(0.0);
-    for (unsigned int sidx = 0; sidx < scratch_idx.getW(); ++sidx)
-        grid_val += d_mesh_scratch[scratch_idx(sidx,cell_idx)];
+    for (unsigned int sidx = 0; sidx < scratch_idx.getH(); ++sidx)
+        grid_val += d_mesh_scratch[scratch_idx(cell_idx,sidx)];
 
     d_mesh[cell_idx].x = grid_val;
     d_mesh[cell_idx].y = Scalar(0.0);
@@ -467,10 +467,10 @@ void gpu_assign_binned_particles_to_mesh(const Index3D& mesh_idx,
     uint3 inner_dim = make_uint3(mesh_idx.getW(), mesh_idx.getH(), mesh_idx.getD());
 
     unsigned int block_size = 64;
-    unsigned int n_blocks = bin_idx.getH()/block_size;
-    if (bin_idx.getH()%block_size) n_blocks +=1;
+    unsigned int n_blocks = bin_idx.getW()/block_size;
+    if (bin_idx.getW()%block_size) n_blocks +=1;
 
-    unsigned int shared_size = block_size*scratch_idx.getW()*sizeof(Scalar);
+    unsigned int shared_size = block_size*scratch_idx.getH()*sizeof(Scalar);
 
     gpu_assign_binned_particles_to_scratch_kernel<<<n_blocks,block_size,shared_size>>>(
                                                                               mesh_idx,

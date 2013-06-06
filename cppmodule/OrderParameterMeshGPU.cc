@@ -49,8 +49,8 @@ OrderParameterMeshGPU::OrderParameterMeshGPU(boost::shared_ptr<SystemDefinition>
     unsigned int n_particle_bins = (m_mesh_points.x+m_n_ghost_bins.x)
                                   *(m_mesh_points.y+m_n_ghost_bins.y)
                                   *(m_mesh_points.z+m_n_ghost_bins.z);
-    m_bin_idx = Index2D(m_cell_size,n_particle_bins);
-    m_scratch_idx = Index2D((2*m_radius+1)*(2*m_radius+1)*(2*m_radius+1), m_mesh_index.getNumElements());
+    m_bin_idx = Index2D(n_particle_bins,m_cell_size);
+    m_scratch_idx = Index2D(m_mesh_index.getNumElements(),(2*m_radius+1)*(2*m_radius+1)*(2*m_radius+1));
     }
 
 OrderParameterMeshGPU::~OrderParameterMeshGPU()
@@ -107,7 +107,7 @@ void OrderParameterMeshGPU::initializeFFT()
         GPUArray<Scalar4> particle_bins(m_bin_idx.getNumElements(), m_exec_conf);
         m_particle_bins.swap(particle_bins);
 
-        GPUArray<unsigned int> n_cell(m_bin_idx.getH(), m_exec_conf);
+        GPUArray<unsigned int> n_cell(m_bin_idx.getW(), m_exec_conf);
         m_n_cell.swap(n_cell);
 
         GPUFlags<unsigned int> cell_overflowed(m_exec_conf);
@@ -184,7 +184,7 @@ void OrderParameterMeshGPU::assignParticles()
                 // reallocate particle bins array
                 m_cell_size = flags;
 
-                m_bin_idx = Index2D(m_cell_size,m_bin_idx.getH());
+                m_bin_idx = Index2D(m_bin_idx.getW(),m_cell_size);
                 GPUArray<Scalar4> particle_bins(m_bin_idx.getNumElements(),m_exec_conf);
                 m_particle_bins.swap(particle_bins);
                 m_cell_overflowed.resetFlags(0);
