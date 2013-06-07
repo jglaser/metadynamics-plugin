@@ -321,13 +321,9 @@ __global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh
 
                     // write out to global memory
                     unsigned int cell_idx;
-                    if (local_fft)
-                        // use cuFFT's memory layout
-                        cell_idx = scratch_cell_coord.z + mesh_idx.getD() * (scratch_cell_coord.y + mesh_idx.getH() * scratch_cell_coord.x);
-                    else
-                        cell_idx = mesh_idx(scratch_cell_coord.x,
-                                            scratch_cell_coord.y,
-                                            scratch_cell_coord.z);
+
+                    // use cuFFT's memory layout
+                    cell_idx = scratch_cell_coord.z + mesh_idx.getD() * (scratch_cell_coord.y + mesh_idx.getH() * scratch_cell_coord.x);
 
                     d_mesh_scratch[scratch_idx(cell_idx,neigh_bin_idx)] =
                         scratch_neighbors[scratch_idx.getH()*threadIdx.x+neigh_bin_idx];
@@ -523,7 +519,7 @@ __global__ void gpu_compute_forces_kernel(const unsigned int N,
                                           const Scalar4 *d_postype,
                                           Scalar4 *d_force,
                                           const Scalar bias,
-                                          const Index3D mesh_idx,
+                                          const Index3D force_mesh_idx,
                                           const uint3 n_ghost_cells,
                                           const Scalar *d_mode,
                                           const BoxDim box,
@@ -537,9 +533,9 @@ __global__ void gpu_compute_forces_kernel(const unsigned int N,
 
     if (idx >= N) return;
 
-    int3 inner_dim = make_int3(mesh_idx.getW()-n_ghost_cells.x,
-                               mesh_idx.getH()-n_ghost_cells.y,
-                               mesh_idx.getD()-n_ghost_cells.z);
+    int3 inner_dim = make_int3(force_mesh_idx.getW()-n_ghost_cells.x,
+                               force_mesh_idx.getH()-n_ghost_cells.y,
+                               force_mesh_idx.getD()-n_ghost_cells.z);
 
     Scalar4 postype = d_postype[idx];
 
@@ -651,11 +647,9 @@ __global__ void gpu_compute_forces_kernel(const unsigned int N,
 
                 // compute fraction of particle density assigned to cell
                 unsigned int cell_idx;
-                if (local_fft)
-                    // use cuFFT's memory layout
-                    cell_idx = neighk + inner_dim.z * (neighj + inner_dim.y * neighi);
-                else
-                    cell_idx = mesh_idx(neighi, neighj, neighk);
+
+                // use cuFFT's memory layout
+                cell_idx = neighk + force_mesh_idx.getD() * (neighj + force_mesh_idx.getH() * neighi);
 
                 cufftComplex inv_mesh = tex1Dfetch(inv_fourier_mesh_tex,cell_idx);
 
@@ -680,7 +674,7 @@ void gpu_compute_forces(const unsigned int N,
                         Scalar4 *d_force,
                         const Scalar bias,
                         const cufftComplex *d_inv_fourier_mesh,
-                        const Index3D& mesh_idx,
+                        const Index3D& force_mesh_idx,
                         const uint3 n_ghost_cells,
                         const Scalar *d_mode,
                         const BoxDim& box,
@@ -691,7 +685,7 @@ void gpu_compute_forces(const unsigned int N,
     const unsigned int block_size = 512;
 
     // force mesh includes ghost cells
-    unsigned int num_cells = mesh_idx.getNumElements();
+    unsigned int num_cells = force_mesh_idx.getNumElements();
     inv_fourier_mesh_tex.normalized = false;
     inv_fourier_mesh_tex.filterMode = cudaFilterModePoint;
     cudaBindTexture(0, inv_fourier_mesh_tex, d_inv_fourier_mesh, sizeof(Scalar4)*num_cells);
@@ -711,7 +705,7 @@ void gpu_compute_forces(const unsigned int N,
                                                                      d_postype,
                                                                      d_force,
                                                                      bias,
-                                                                     mesh_idx,
+                                                                     force_mesh_idx,
                                                                      n_ghost_cells,
                                                                      d_mode,
                                                                      box,
@@ -725,7 +719,7 @@ void gpu_compute_forces(const unsigned int N,
                                                                      d_postype,
                                                                      d_force,
                                                                      bias,
-                                                                     mesh_idx,
+                                                                     force_mesh_idx,
                                                                      n_ghost_cells,
                                                                      d_mode,
                                                                      box,
@@ -1042,10 +1036,6 @@ __global__ void gpu_compute_influence_function_kernel(const Index3D mesh_idx,
         }
 #endif
 
-    unsigned int ix = l;
-    unsigned int iy = m;
-    unsigned int iz = n;
-
     // compute Miller indices
     if (l >= (int)(global_dim.x/2 + global_dim.x%2))
         l -= (int) global_dim.x;
@@ -1066,12 +1056,6 @@ __global__ void gpu_compute_influence_function_kernel(const Index3D mesh_idx,
 
     Scalar val(0.0);
     Scalar3 kval = (Scalar)l*b1+(Scalar)m*b2+(Scalar)n*b3;
-    unsigned int cell_idx;
-    if (local_fft)
-        // use cuFFT's memory layout
-        cell_idx = iz + mesh_idx.getD() * (iy + mesh_idx.getH()* ix);
-    else
-        cell_idx = kidx;
 
     if (!zero)
         {
@@ -1080,8 +1064,8 @@ __global__ void gpu_compute_influence_function_kernel(const Index3D mesh_idx,
         }
 
     // write out result
-    d_inf_f[cell_idx] = val;
-    d_k[cell_idx] = kval;
+    d_inf_f[kidx] = val;
+    d_k[kidx] = kval;
     }
 
 void gpu_compute_influence_function(const Index3D& mesh_idx,

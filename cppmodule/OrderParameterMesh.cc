@@ -207,7 +207,11 @@ void OrderParameterMesh::initializeFFT()
         {
         // ghost cell exchanger for reverse direction
         m_mesh_comm = boost::shared_ptr<CommunicatorMesh<kiss_fft_cpx> >(
-            new CommunicatorMesh<kiss_fft_cpx>(m_sysdef, m_comm, m_n_ghost_cells, m_force_mesh_index, true));
+            new CommunicatorMesh<kiss_fft_cpx>(m_sysdef,
+                                               m_comm,
+                                               m_n_ghost_cells,
+                                               make_uint3(m_force_mesh_index.getW(),m_force_mesh_index.getH(),m_force_mesh_index.getD()),
+                                               true));
 
         // set up distributed FFTs
         m_kiss_dfft = boost::shared_ptr<DistributedKISSFFT>(

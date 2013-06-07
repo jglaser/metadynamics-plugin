@@ -67,16 +67,25 @@ void OrderParameterMeshGPU::initializeFFT()
         {
         // ghost cell exchanger 
         m_gpu_mesh_comm = boost::shared_ptr<CommunicatorMeshGPUComplex >(
-            new CommunicatorMeshGPUComplex(m_sysdef, m_comm, m_n_ghost_cells, m_force_mesh_index, true));
+            new CommunicatorMeshGPUComplex(m_sysdef,
+                                           m_comm, m_n_ghost_cells,
+                                           make_uint3(m_force_mesh_index.getW(), m_force_mesh_index.getH(), m_force_mesh_index.getD()),
+                                           true));
 
         // set up distributed FFT 
         m_gpu_dfft = boost::shared_ptr<DistributedFFTGPU>(
-            new DistributedFFTGPU(m_exec_conf, m_pdata->getDomainDecomposition(), m_mesh_index, make_uint3(0,0,0)));
+            new DistributedFFTGPU(m_exec_conf,
+                                  m_pdata->getDomainDecomposition(), 
+                                  make_uint3(m_mesh_index.getW(), m_mesh_index.getH(), m_mesh_index.getD()),
+                                  make_uint3(0,0,0)));
         m_gpu_dfft->setProfiler(m_prof);
 
         // set up inverse distributed FFT 
         m_gpu_idfft = boost::shared_ptr<DistributedFFTGPU>(
-            new DistributedFFTGPU(m_exec_conf, m_pdata->getDomainDecomposition(), m_force_mesh_index, m_n_ghost_cells));
+            new DistributedFFTGPU(m_exec_conf,
+                                  m_pdata->getDomainDecomposition(),
+                                  make_uint3(m_force_mesh_index.getW(), m_force_mesh_index.getH(), m_force_mesh_index.getD()),
+                                  m_n_ghost_cells));
         m_gpu_idfft->setProfiler(m_prof);
 
         }
