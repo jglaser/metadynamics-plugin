@@ -6,6 +6,7 @@ find_package(HOOMD)
 
 # find DFFT lib
 find_package(DFFT REQUIRED)
+find_package(MKL REQUIRED)
 
 # plugins must be built as shared libraries
 if (ENABLE_STATIC)

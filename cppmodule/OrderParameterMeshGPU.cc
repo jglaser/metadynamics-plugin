@@ -93,8 +93,13 @@ void OrderParameterMeshGPU::initializeFFT()
         pidx[1] = pcoord.y;
         pidx[2] = pcoord.z;
         int row_m = 1; /* Hoomd uses row-major process-id mapping */
+        #ifndef USE_MKL
         dfft_cuda_create_plan(&m_dfft_plan_forward, 3, gdim, NULL, NULL, pdim, pidx, row_m, 0, 1, m_exec_conf->getMPICommunicator());
         dfft_cuda_create_plan(&m_dfft_plan_inverse, 3, gdim, NULL, embed, pdim, pidx, row_m, 0, 1, m_exec_conf->getMPICommunicator());
+        #else
+        dfft_create_plan(&m_dfft_plan_forward, 3, gdim, NULL, NULL, pdim, pidx, row_m, 0, 1, m_exec_conf->getMPICommunicator());
+        dfft_create_plan(&m_dfft_plan_inverse, 3, gdim, NULL, embed, pdim, pidx, row_m, 0, 1, m_exec_conf->getMPICommunicator());
+        #endif
         }
     #endif // ENABLE_MPI
 
@@ -225,6 +230,7 @@ void OrderParameterMeshGPU::updateMeshes()
         {
         // perform a distributed FFT
         m_exec_conf->msg->notice(8) << "cv.mesh: Distributed FFT mesh" << std::endl;
+        #ifndef USE_MKL
         ArrayHandle<cufftComplex> d_mesh(m_mesh, access_location::device, access_mode::read);
         ArrayHandle<cufftComplex> d_fourier_mesh(m_fourier_mesh, access_location::device, access_mode::overwrite);
 
@@ -234,6 +240,12 @@ void OrderParameterMeshGPU::updateMeshes()
             dfft_cuda_check_errors(&m_dfft_plan_forward, 0);
 
         dfft_cuda_execute(d_mesh.data, d_fourier_mesh.data, 0,m_dfft_plan_forward);
+        #else
+        ArrayHandle<cufftComplex> h_mesh(m_mesh, access_location::host, access_mode::read);
+        ArrayHandle<cufftComplex> h_fourier_mesh(m_fourier_mesh, access_location::host, access_mode::overwrite);
+
+        dfft_execute((cpx_t *)h_mesh.data, (cpx_t *)h_fourier_mesh.data, 0,m_dfft_plan_forward);
+        #endif
         }
     #endif
     if (m_prof) m_prof->pop(m_exec_conf);
@@ -278,6 +290,7 @@ void OrderParameterMeshGPU::updateMeshes()
         {
         // Distributed inverse transform of force mesh
         m_exec_conf->msg->notice(8) << "cv.mesh: Distributed iFFT force mesh" << std::endl;
+        #ifndef USE_MKL
         ArrayHandle<cufftComplex> d_fourier_mesh_G(m_fourier_mesh_G, access_location::device, access_mode::read);
         ArrayHandle<cufftComplex> d_inv_fourier_mesh(m_inv_fourier_mesh, access_location::device, access_mode::overwrite);
         if (m_exec_conf->isCUDAErrorCheckingEnabled())
@@ -286,6 +299,11 @@ void OrderParameterMeshGPU::updateMeshes()
             dfft_cuda_check_errors(&m_dfft_plan_inverse, 0);
 
         dfft_cuda_execute(d_fourier_mesh_G.data, d_inv_fourier_mesh.data+m_ghost_offset, 1,m_dfft_plan_inverse);
+        #else
+        ArrayHandle<cufftComplex> h_fourier_mesh_G(m_fourier_mesh_G, access_location::host, access_mode::read);
+        ArrayHandle<cufftComplex> h_inv_fourier_mesh(m_inv_fourier_mesh, access_location::host, access_mode::overwrite);
+        dfft_execute((cpx_t *)h_fourier_mesh_G.data, (cpx_t *)(h_inv_fourier_mesh.data+m_ghost_offset), 1,m_dfft_plan_inverse);
+        #endif
         }
     #endif
 

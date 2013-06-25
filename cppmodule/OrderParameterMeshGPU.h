@@ -7,7 +7,13 @@
 
 #ifdef ENABLE_CUDA
 
+#define USE_MKL
+
+#ifndef USE_MKL
 #include <dfft_cuda.h>
+#else
+#include <dfft_host.h>
+#endif
 
 /*! Order parameter evaluated using the particle mesh method
  */
