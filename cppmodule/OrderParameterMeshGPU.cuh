@@ -81,10 +81,9 @@ void gpu_compute_influence_function(const Index3D& mesh_idx,
                                     const Scalar qstarsq,
                                     const int3 *d_zero_modes,
                                     const unsigned int n_zero_modes,
-#ifdef ENABLE_MPI
-                                    const DFFTIndex dffti,
-#endif
-                                    const bool local_fft);
+                                    const bool local_fft,
+                                    const uint3 pidx,
+                                    const uint3 pdim);
 
 void gpu_compute_q_max(unsigned int n_wave_vectors,
                    Scalar4 *d_max_partial,

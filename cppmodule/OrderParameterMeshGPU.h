@@ -6,6 +6,9 @@
 #define __ORDER_PARAMETER_MESH_GPU_H__
 
 #ifdef ENABLE_CUDA
+
+#include <dfft_cuda.h>
+
 /*! Order parameter evaluated using the particle mesh method
  */
 class OrderParameterMeshGPU : public OrderParameterMesh
@@ -52,10 +55,11 @@ class OrderParameterMeshGPU : public OrderParameterMesh
 
         #ifdef ENABLE_MPI
         typedef CommunicatorMeshGPU<cufftComplex, gpu_communicate_complex_mesh_map> CommunicatorMeshGPUComplex;
-
-        boost::shared_ptr<DistributedFFTGPU> m_gpu_dfft;  //!< Distributed FFT for forward transform
-        boost::shared_ptr<DistributedFFTGPU> m_gpu_idfft; //!< Distributed FFT for inverse transform
         boost::shared_ptr<CommunicatorMeshGPUComplex> m_gpu_mesh_comm; //!< Communicator for force mesh
+
+        dfft_plan m_dfft_plan_forward;     //!< Forward distributed FFT
+        dfft_plan m_dfft_plan_inverse;     //!< Forward distributed FFT
+        unsigned int m_ghost_offset;       //!< Offset in mesh due to ghost cells
         #endif
 
         GPUArray<cufftComplex> m_mesh;                 //!< The particle density mesh

@@ -73,21 +73,28 @@ void OrderParameterMeshGPU::initializeFFT()
                                            true));
 
         // set up distributed FFT 
-        m_gpu_dfft = boost::shared_ptr<DistributedFFTGPU>(
-            new DistributedFFTGPU(m_exec_conf,
-                                  m_pdata->getDomainDecomposition(), 
-                                  make_uint3(m_mesh_index.getW(), m_mesh_index.getH(), m_mesh_index.getD()),
-                                  make_uint3(0,0,0)));
-        m_gpu_dfft->setProfiler(m_prof);
-
-        // set up inverse distributed FFT 
-        m_gpu_idfft = boost::shared_ptr<DistributedFFTGPU>(
-            new DistributedFFTGPU(m_exec_conf,
-                                  m_pdata->getDomainDecomposition(),
-                                  make_uint3(m_force_mesh_index.getW(), m_force_mesh_index.getH(), m_force_mesh_index.getD()),
-                                  m_n_ghost_cells));
-        m_gpu_idfft->setProfiler(m_prof);
-
+        int gdim[3];
+        int pdim[3];
+        Index3D decomp_idx = m_pdata->getDomainDecomposition()->getDomainIndexer();
+        pdim[0] = decomp_idx.getW();
+        pdim[1] = decomp_idx.getH();
+        pdim[2] = decomp_idx.getD();
+        gdim[0] = m_mesh_points.x*pdim[0];
+        gdim[1] = m_mesh_points.y*pdim[1];
+        gdim[2] = m_mesh_points.z*pdim[2];
+        int embed[3];
+        embed[0] = m_mesh_points.x+m_n_ghost_cells.x;
+        embed[1] = m_mesh_points.y+m_n_ghost_cells.y;
+        embed[2] = m_mesh_points.z+m_n_ghost_cells.z;
+        m_ghost_offset = ((m_n_ghost_cells.x/2)*embed[1]+m_n_ghost_cells.y/2)*embed[2]+m_n_ghost_cells.z/2;
+        uint3 pcoord = m_pdata->getDomainDecomposition()->getDomainIndexer().getTriple(m_exec_conf->getRank());
+        std::cout << m_force_mesh_index.getNumElements() << std::endl;
+        int pidx[3];
+        pidx[0] = pcoord.x;
+        pidx[1] = pcoord.y;
+        pidx[2] = pcoord.z;
+        dfft_cuda_create_plan(&m_dfft_plan_forward, 3, gdim, NULL, NULL, pdim, pidx, 0, 1, m_exec_conf->getMPICommunicator());
+        dfft_cuda_create_plan(&m_dfft_plan_inverse, 3, gdim, NULL, embed, pdim, pidx, 0, 1, m_exec_conf->getMPICommunicator());
         }
     #endif // ENABLE_MPI
 
@@ -218,10 +225,20 @@ void OrderParameterMeshGPU::updateMeshes()
         {
         // perform a distributed FFT
         m_exec_conf->msg->notice(8) << "cv.mesh: Distributed FFT mesh" << std::endl;
-        m_gpu_dfft->FFT3D(m_mesh, m_fourier_mesh, false);
+        ArrayHandle<cufftComplex> d_mesh(m_mesh, access_location::device, access_mode::read);
+        ArrayHandle<cufftComplex> d_fourier_mesh(m_fourier_mesh, access_location::device, access_mode::overwrite);
+
+        if (m_exec_conf->isCUDAErrorCheckingEnabled())
+            dfft_cuda_check_errors(&m_dfft_plan_forward, 1);
+        else
+            dfft_cuda_check_errors(&m_dfft_plan_forward, 0);
+
+        dfft_cuda_execute(d_mesh.data, d_fourier_mesh.data, 0,m_dfft_plan_forward);
         }
     #endif
+    if (m_prof) m_prof->pop(m_exec_conf);
 
+    if (m_prof) m_prof->push(m_exec_conf,"update");
 
         {
         ArrayHandle<cufftComplex> d_fourier_mesh(m_fourier_mesh, access_location::device, access_mode::readwrite);
@@ -241,6 +258,10 @@ void OrderParameterMeshGPU::updateMeshes()
             CHECK_CUDA_ERROR();
         }
 
+    if (m_prof) m_prof->pop(m_exec_conf);
+
+    if (m_prof) m_prof->push(m_exec_conf, "FFT");
+
     if (m_local_fft)
         {
         // do local inverse transform of force mesh
@@ -257,7 +278,14 @@ void OrderParameterMeshGPU::updateMeshes()
         {
         // Distributed inverse transform of force mesh
         m_exec_conf->msg->notice(8) << "cv.mesh: Distributed iFFT force mesh" << std::endl;
-        m_gpu_idfft->FFT3D(m_fourier_mesh_G, m_inv_fourier_mesh, true);
+        ArrayHandle<cufftComplex> d_fourier_mesh_G(m_fourier_mesh_G, access_location::device, access_mode::read);
+        ArrayHandle<cufftComplex> d_inv_fourier_mesh(m_inv_fourier_mesh, access_location::device, access_mode::overwrite);
+        if (m_exec_conf->isCUDAErrorCheckingEnabled())
+            dfft_cuda_check_errors(&m_dfft_plan_inverse, 1);
+        else
+            dfft_cuda_check_errors(&m_dfft_plan_inverse, 0);
+
+        dfft_cuda_execute(d_fourier_mesh_G.data, d_inv_fourier_mesh.data+m_ghost_offset, 1,m_dfft_plan_inverse);
         }
     #endif
 
@@ -398,16 +426,17 @@ void OrderParameterMeshGPU::computeInfluenceFunction()
     ArrayHandle<int3> d_zero_modes(m_zero_modes, access_location::device, access_mode::read);
 
     uint3 global_dim = m_mesh_points;
+    uint3 pidx = make_uint3(0,0,0);
+    uint3 pdim = make_uint3(0,0,0);
     #ifdef ENABLE_MPI
-    DFFTIndex dffti;
     if (m_pdata->getDomainDecomposition())
         {
         const Index3D &didx = m_pdata->getDomainDecomposition()->getDomainIndexer();
         global_dim.x *= didx.getW();
         global_dim.y *= didx.getH();
         global_dim.z *= didx.getD();
-
-        dffti = m_gpu_dfft->getIndexer();
+        pidx = didx.getTriple(m_exec_conf->getRank());
+        pdim = make_uint3(didx.getW(), didx.getH(), didx.getD());
         }
     #endif
 
@@ -419,10 +448,9 @@ void OrderParameterMeshGPU::computeInfluenceFunction()
                                    m_qstarsq,
                                    d_zero_modes.data,
                                    m_zero_modes.getNumElements(),
-    #ifdef ENABLE_MPI
-                                   dffti,
-    #endif
-                                   m_local_fft);
+                                   m_local_fft,
+                                   pidx,
+                                   pdim);
   
     if (m_exec_conf->isCUDAErrorCheckingEnabled())
         CHECK_CUDA_ERROR();

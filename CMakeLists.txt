@@ -4,6 +4,9 @@ CMAKE_MINIMUM_REQUIRED(VERSION 2.6.2 FATAL_ERROR)
 set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_MODULE_PATH})
 find_package(HOOMD)
 
+# find DFFT lib
+find_package(DFFT REQUIRED)
+
 # plugins must be built as shared libraries
 if (ENABLE_STATIC)
     message(SEND_ERROR "Plugins cannot be built against a statically compiled hoomd")

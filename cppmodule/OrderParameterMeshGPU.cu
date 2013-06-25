@@ -1012,11 +1012,9 @@ __global__ void gpu_compute_influence_function_kernel(const Index3D mesh_idx,
                                           const Scalar3 b3,
                                           const Scalar qstarsq,
                                           const int3 *zero_modes,
-                                          const unsigned int n_zero_modes
-#ifdef ENABLE_MPI
-                                          , const DFFTIndex dffti
-#endif
-                                          )
+                                          const unsigned int n_zero_modes,
+                                          const uint3 pidx,
+                                          const uint3 pdim)
     {
     unsigned int kidx = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -1031,8 +1029,16 @@ __global__ void gpu_compute_influence_function_kernel(const Index3D mesh_idx,
 #ifdef ENABLE_MPI
     else
         {
-        uint3 nvec = dffti(kidx);
-        l = nvec.x; m = nvec.y; n = nvec.z;
+        // local layout: column major
+        int ny = mesh_idx.getH();
+        int nz = mesh_idx.getD();
+        int l_local = kidx/ny/nz;
+        int m_local = (kidx-l_local*ny*nz)/nz;
+        int n_local = kidx % nz;
+        // cyclic distribution
+        l = l_local*pdim.x + pidx.x;
+        m = m_local*pdim.y + pidx.y;
+        n = n_local*pdim.z + pidx.z;
         }
 #endif
 
@@ -1076,10 +1082,9 @@ void gpu_compute_influence_function(const Index3D& mesh_idx,
                                     const Scalar qstarsq,
                                     const int3 *d_zero_modes,
                                     const unsigned int n_zero_modes,
-#ifdef ENABLE_MPI
-                                    const DFFTIndex dffti,
-#endif
-                                    const bool local_fft) 
+                                    const bool local_fft,
+                                    const uint3 pidx,
+                                    const uint3 pdim) 
     { 
     // compute reciprocal lattice vectors
     Scalar3 a1 = global_box.getLatticeVector(0);
@@ -1108,12 +1113,9 @@ void gpu_compute_influence_function(const Index3D& mesh_idx,
                                                                               b3,
                                                                               qstarsq,
                                                                               d_zero_modes,
-                                                                              n_zero_modes
-#ifdef ENABLE_MPI
-                                                                              , dffti
-#endif
-   
-                                                                              );
+                                                                              n_zero_modes,
+                                                                              pidx,
+                                                                              pdim);
 #ifdef ENABLE_MPI
     else
         gpu_compute_influence_function_kernel<false><<<n_blocks,block_size>>>(mesh_idx,
@@ -1127,7 +1129,8 @@ void gpu_compute_influence_function(const Index3D& mesh_idx,
                                                                              qstarsq,
                                                                              d_zero_modes,
                                                                              n_zero_modes,
-                                                                             dffti);
+                                                                             pidx,
+                                                                             pdim);
 #endif 
     } 
 
