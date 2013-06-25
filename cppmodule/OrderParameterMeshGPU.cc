@@ -88,13 +88,13 @@ void OrderParameterMeshGPU::initializeFFT()
         embed[2] = m_mesh_points.z+m_n_ghost_cells.z;
         m_ghost_offset = ((m_n_ghost_cells.x/2)*embed[1]+m_n_ghost_cells.y/2)*embed[2]+m_n_ghost_cells.z/2;
         uint3 pcoord = m_pdata->getDomainDecomposition()->getDomainIndexer().getTriple(m_exec_conf->getRank());
-        std::cout << m_force_mesh_index.getNumElements() << std::endl;
         int pidx[3];
         pidx[0] = pcoord.x;
         pidx[1] = pcoord.y;
         pidx[2] = pcoord.z;
-        dfft_cuda_create_plan(&m_dfft_plan_forward, 3, gdim, NULL, NULL, pdim, pidx, 0, 1, m_exec_conf->getMPICommunicator());
-        dfft_cuda_create_plan(&m_dfft_plan_inverse, 3, gdim, NULL, embed, pdim, pidx, 0, 1, m_exec_conf->getMPICommunicator());
+        int row_m = 1; /* Hoomd uses row-major process-id mapping */
+        dfft_cuda_create_plan(&m_dfft_plan_forward, 3, gdim, NULL, NULL, pdim, pidx, row_m, 0, 1, m_exec_conf->getMPICommunicator());
+        dfft_cuda_create_plan(&m_dfft_plan_inverse, 3, gdim, NULL, embed, pdim, pidx, row_m, 0, 1, m_exec_conf->getMPICommunicator());
         }
     #endif // ENABLE_MPI
 
