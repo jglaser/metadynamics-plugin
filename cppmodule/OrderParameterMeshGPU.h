@@ -7,9 +7,9 @@
 
 #ifdef ENABLE_CUDA
 
-#define USE_MKL
+//#define USE_HOST_DFFT
 
-#ifndef USE_MKL
+#ifndef USE_HOST_DFFT
 #include <dfft_cuda.h>
 #else
 #include <dfft_host.h>
