@@ -239,7 +239,7 @@ void OrderParameterMeshGPU::updateMeshes()
         else
             dfft_cuda_check_errors(&m_dfft_plan_forward, 0);
 
-        dfft_cuda_execute(d_mesh.data, d_fourier_mesh.data, 0,m_dfft_plan_forward);
+        dfft_cuda_execute(d_mesh.data, d_fourier_mesh.data, 0, &m_dfft_plan_forward);
         #else
         ArrayHandle<cufftComplex> h_mesh(m_mesh, access_location::host, access_mode::read);
         ArrayHandle<cufftComplex> h_fourier_mesh(m_fourier_mesh, access_location::host, access_mode::overwrite);
@@ -298,7 +298,7 @@ void OrderParameterMeshGPU::updateMeshes()
         else
             dfft_cuda_check_errors(&m_dfft_plan_inverse, 0);
 
-        dfft_cuda_execute(d_fourier_mesh_G.data, d_inv_fourier_mesh.data+m_ghost_offset, 1,m_dfft_plan_inverse);
+        dfft_cuda_execute(d_fourier_mesh_G.data, d_inv_fourier_mesh.data+m_ghost_offset, 1, &m_dfft_plan_inverse);
         #else
         ArrayHandle<cufftComplex> h_fourier_mesh_G(m_fourier_mesh_G, access_location::host, access_mode::read);
         ArrayHandle<cufftComplex> h_inv_fourier_mesh(m_inv_fourier_mesh, access_location::host, access_mode::overwrite);

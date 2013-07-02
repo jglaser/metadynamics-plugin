@@ -1023,8 +1023,12 @@ __global__ void gpu_compute_influence_function_kernel(const Index3D mesh_idx,
     int l,m,n;
     if (local_fft)
         {
-        uint3 nvec = mesh_idx.getTriple(kidx);
-        l = nvec.x; m = nvec.y; n = nvec.z;
+        // use cuFFT's layout
+        int ny = mesh_idx.getH();
+        int nz = mesh_idx.getD();
+        l = kidx/ny/nz;
+        m = (kidx-l*ny*nz)/nz;
+        n = kidx % nz;
         }
 #ifdef ENABLE_MPI
     else
