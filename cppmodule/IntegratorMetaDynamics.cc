@@ -74,6 +74,14 @@ IntegratorMetaDynamics::IntegratorMetaDynamics(boost::shared_ptr<SystemDefinitio
     m_compute_histograms = false;
     m_walker_state = true;
     m_num_histogram_entries = 0;
+
+    #ifdef ENABLE_MPI
+    // create partition communicator
+    MPI_Comm_split(MPI_COMM_WORLD,
+        (m_exec_conf->getRank() == 0)
+            ? m_exec_conf->getPartition() : MPI_UNDEFINED,0,
+        &m_partition_comm);
+    #endif
     }
 
 void IntegratorMetaDynamics::openOutputFile()
@@ -448,13 +456,33 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
                 updateGrid(current_val, scal, reweight);
 #endif
 
+#ifdef ENABLE_MPI
+            if (m_multiple_walkers)
+                {
+                ArrayHandle<Scalar> h_grid(m_grid, access_location::host, access_mode::readwrite);
+                ArrayHandle<Scalar> h_reweighted_grid(m_reweighted_grid, access_location::host, access_mode::readwrite);
+                ArrayHandle<Scalar> h_sigma_grid(m_sigma_grid, access_location::host, access_mode::readwrite);
+                ArrayHandle<unsigned int> h_grid_hist(m_grid_hist, access_location::host, access_mode::readwrite);
+                ArrayHandle<Scalar> h_grid_hist_reweight(m_grid_hist_reweight, access_location::host, access_mode::readwrite);
+
+ 
+                MPI_Allreduce(h_grid.data, MPI_IN_PLACE, m_grid.getNumElements(), MPI_HOOMD_SCALAR, MPI_SUM, m_partition_comm);
+                MPI_Allreduce(h_reweighted_grid.data, MPI_IN_PLACE, m_grid.getNumElements(), MPI_HOOMD_SCALAR, MPI_SUM, m_partition_comm);
+                MPI_Allreduce(h_grid.data, MPI_IN_PLACE, m_grid.getNumElements(), MPI_HOOMD_SCALAR, MPI_SUM, m_partition_comm);
+                MPI_Allreduce(h_reweighted_grid.data, MPI_IN_PLACE, m_grid.getNumElements(), MPI_HOOMD_SCALAR, MPI_SUM, m_partition_comm);
+                MPI_Allreduce(h_sigma_grid.data, MPI_IN_PLACE, m_sigma_grid.getNumElements(), MPI_HOOMD_SCALAR, MPI_SUM, m_partition_comm);
+                MPI_Allreduce(h_grid_hist.data, MPI_IN_PLACE, m_grid_hist.getNumElements(), MPI_INT, MPI_SUM, m_partition_comm);
+                MPI_Allreduce(h_grid_hist_reweight.data, MPI_IN_PLACE, m_grid_hist_reweight.getNumElements(), MPI_HOOMD_SCALAR, MPI_SUM, m_partition_comm);
+                MPI_Allreduce(&m_num_histogram_entries, MPI_IN_PLACE,1, MPI_INT, MPI_SUM, m_partition_comm);
+                }
+#endif 
                 // reset statistics
                 if (m_mode == mode_flux_tempered)
                     {
                     resetHistograms();
                     m_num_label_change = 0;
                     }
-                }
+                } // end update
 
             // calculate partial derivatives numerically
             for (unsigned int cv_idx = 0; cv_idx < m_num_biased_variables; ++cv_idx)
@@ -574,7 +602,7 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
             // update sigma grid and histogram
             updateSigmaGrid(current_val,reweight);
             }
-
+ 
         // dump grid information if required using alternating scheme
         if (m_grid_period && (timestep % m_grid_period == 0))
             {

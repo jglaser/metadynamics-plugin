@@ -294,6 +294,14 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
             m_sigma_g = sigma_g;
             }
 
+        /*! Set multiple walker mode
+         * \param multiple Multiple walker flag
+         */
+        void setMultipleWalkers(bool multiple)
+            {
+            m_multiple_walkers = multiple;
+            }
+
         //! Reset the histograms
         void resetHistograms();
 
@@ -356,6 +364,11 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         unsigned int m_num_label_change;                  //!< Number of walker label changes since last bias potential update
         unsigned int m_min_label_change;                  //!< Minimum number of walker label changes between bias potential updates
         Scalar m_umbrella_energy;                         //!< Energy of umbrella potential
+
+        bool m_multiple_walkers;                          //!< True if multiple walkers are used
+#ifdef ENABLE_MPI
+        MPI_Comm m_partition_comm;                        //!< MPI communicator between partitions
+#endif
 
         //! Internal helper function to update the bias potential
         void updateBiasPotential(unsigned int timestep);
