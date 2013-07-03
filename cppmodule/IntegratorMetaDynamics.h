@@ -330,7 +330,9 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
 
         bool m_use_grid;                                  //!< True if we are using a grid
         GPUArray<Scalar> m_grid;                          //!< d-dimensional grid to store values of bias potential
+        GPUArray<Scalar> m_grid_delta;                    //!< d-dimensional grid to store increments of bias potential
         GPUArray<Scalar> m_reweighted_grid;               //!< d-dimensional grid to store values of reweighted bias potential
+        GPUArray<Scalar> m_reweighted_grid_delta;         //!< d-dimensional grid to store increments of reweightedbias potential
         IndexGrid m_grid_index;                           //!< Indexer for the d-dimensional grid
         unsigned int m_num_biased_variables;              //!< Number of variables biased by the Gaussian potential
 
@@ -347,8 +349,11 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         GPUArray<Scalar> m_cv_max;                        //!< Maximum grid values per CV
         GPUArray<Scalar> m_sigma_inv;                     //!< Square matrix of Gaussian standard deviations (inverse)
         GPUArray<Scalar> m_sigma_grid;                    //!< Gaussian volume as function of the collective ariables
+        GPUArray<Scalar> m_sigma_grid_delta;              //!< Gaussian volume as function of the collective ariables, increments
         GPUArray<unsigned int> m_grid_hist;               //!< Number of times a state has been visited
         GPUArray<Scalar> m_grid_hist_reweight;            //!< Umbrella-reweighted histogram
+        GPUArray<unsigned int> m_grid_hist_delta;         //!< Deltas of histogram
+        GPUArray<Scalar> m_grid_hist_reweight_delta;      //!< Deltas of reweighted histogram
         GPUArray<Scalar> m_current_val;                   //!< Current CV values array
         Scalar m_sigma_g;                                 //!< Estimated standard deviation of particle displacements
         bool m_adaptive;                                  //!< True if adaptive Gaussians should be used
