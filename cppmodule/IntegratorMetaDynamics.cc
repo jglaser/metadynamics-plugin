@@ -434,15 +434,11 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
             Scalar V = interpolateBiasPotential(current_val);
             m_curr_bias_potential = V;
 
-            if (m_use_grid)
-                {
-                // update sigma grid and histogram
-                updateSigmaGrid(current_val,reweight);
-                }
-
             if (m_add_bias && (m_num_update_steps % m_stride == 0)
                 && (! (m_mode == mode_flux_tempered) || m_num_label_change >= m_min_label_change))
                 {
+                // update sigma grid and histogram
+                updateSigmaGrid(current_val,reweight);
 
                 // add Gaussian to grid
                
@@ -1677,6 +1673,11 @@ int determinant_sign(const bnu::permutation_matrix<std ::size_t>& pm)
  
 Scalar IntegratorMetaDynamics::sigmaDeterminant()
     {
+    #ifdef ENABLE_MPI
+    if (m_pdata->getDomainDecomposition() && m_exec_conf->getRank())
+        return Scalar(0.0);
+    #endif
+
     ArrayHandle<Scalar> h_sigma_inv(m_sigma_inv, access_location::host, access_mode::read);
 
     unsigned int n_cv =m_num_biased_variables;

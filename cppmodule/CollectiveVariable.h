@@ -69,6 +69,8 @@ class CollectiveVariable : public ForceCompute
         void setUmbrella(umbrella_Enum umbrella)
             {
             m_umbrella = umbrella;
+            if (umbrella==no_umbrella)
+                m_bias=Scalar(0.0);
             }
 
         /*! Set spring constant for harmonic potential
