@@ -61,7 +61,8 @@ IntegratorMetaDynamics::IntegratorMetaDynamics(boost::shared_ptr<SystemDefinitio
       m_stride_multiply(1),
       m_num_label_change(0),
       m_min_label_change(0),
-      m_umbrella_energy(0.0)
+      m_umbrella_energy(0.0),
+      m_multiple_walkers(false)
     {
     assert(m_T_shift>0);
     assert(m_W > 0);
