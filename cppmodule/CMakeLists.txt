@@ -1,5 +1,7 @@
+if(ENABLE_MPI)
 # dfftlib includes
 include_directories(${DFFT_INCLUDE_DIR})
+endif(ENABLE_MPI)
 
 file(GLOB _SRCS ${CMAKE_CURRENT_SOURCE_DIR}/*.cc ${CMAKE_CURRENT_SOURCE_DIR}/*.h)
 file(GLOB _CUDA_SRCS ${CMAKE_CURRENT_SOURCE_DIR}/*.cu ${CMAKE_CURRENT_SOURCE_DIR}/*.cuh)
