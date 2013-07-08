@@ -249,7 +249,8 @@ class mode_metadynamics(_integrator):
 
                     self.cv_names.append(f.name)
                 else:
-                    globals.msg.warning("integrate.mode_metadynamics: Grid parameters not set. Ignoring CV "+f.name)
+                    if not f.umbrella:
+                        globals.msg.warning("integrate.mode_metadynamics: Grid parameters not set. Ignoring CV "+f.name)
 
         if len(self.cv_names) == 0:
             globals.msg.warning("integrate.mode_metadynamics: No collective variables defined. Continuing with simulation anyway.\n")

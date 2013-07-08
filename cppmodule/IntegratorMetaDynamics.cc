@@ -485,14 +485,14 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
                 {
                 // add deltas to grid
                 ArrayHandle<Scalar> h_grid(m_grid, access_location::host, access_mode::readwrite);
-                ArrayHandle<Scalar> h_grid_delta(m_grid_delta, access_location::host, access_mode::read);
+                ArrayHandle<Scalar> h_grid_delta(m_grid_delta, access_location::host, access_mode::readwrite);
                 ArrayHandle<Scalar> h_reweighted_grid(m_reweighted_grid, access_location::host, access_mode::readwrite);
-                ArrayHandle<Scalar> h_reweighted_grid_delta(m_reweighted_grid_delta, access_location::host, access_mode::read);
+                ArrayHandle<Scalar> h_reweighted_grid_delta(m_reweighted_grid_delta, access_location::host, access_mode::readwrite);
                 ArrayHandle<Scalar> h_sigma_grid(m_sigma_grid, access_location::host, access_mode::readwrite);
-                ArrayHandle<Scalar> h_sigma_grid_delta(m_sigma_grid_delta, access_location::host, access_mode::read);
+                ArrayHandle<Scalar> h_sigma_grid_delta(m_sigma_grid_delta, access_location::host, access_mode::readwrite);
                 ArrayHandle<unsigned int> h_grid_hist(m_grid_hist, access_location::host, access_mode::readwrite);
-                ArrayHandle<unsigned int> h_grid_hist_delta(m_grid_hist_delta, access_location::host, access_mode::read);
-                ArrayHandle<Scalar> h_grid_hist_reweight(m_grid_hist_reweight, access_location::host, access_mode::read);
+                ArrayHandle<unsigned int> h_grid_hist_delta(m_grid_hist_delta, access_location::host, access_mode::readwrite);
+                ArrayHandle<Scalar> h_grid_hist_reweight(m_grid_hist_reweight, access_location::host, access_mode::readwrite);
                 ArrayHandle<Scalar> h_grid_hist_reweight_delta(m_grid_hist_reweight_delta, access_location::host, access_mode::readwrite);
 
                 for (unsigned int i = 0; i < m_grid.getNumElements(); ++i)
