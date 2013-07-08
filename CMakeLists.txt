@@ -5,7 +5,9 @@ set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_MODULE_PATH})
 find_package(HOOMD)
 
 # find DFFT lib
+if(ENABLE_MPI)
 find_package(DFFT REQUIRED)
+endif(ENABLE_MPI)
 
 # plugins must be built as shared libraries
 if (ENABLE_STATIC)
