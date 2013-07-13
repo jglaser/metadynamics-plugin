@@ -66,7 +66,7 @@ IntegratorMetaDynamics::IntegratorMetaDynamics(boost::shared_ptr<SystemDefinitio
 
     m_log_names.push_back("bias_potential");
     m_log_names.push_back("det_sigma");
-    m_log_names.push_back("reweight");
+    m_log_names.push_back("weight");
 
     #ifdef ENABLE_MPI
     // create partition communicator
@@ -845,7 +845,7 @@ void IntegratorMetaDynamics::writeGrid(const std::string& filename)
     file << m_delimiter << "num_gaussians";
     file << m_delimiter << "hist";
     file << m_delimiter << "unbiased_hist";
-    file << m_delimiter << "hist_reweight";
+    file << m_delimiter << "weight";
 
     file << std::endl;
 
