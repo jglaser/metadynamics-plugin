@@ -341,15 +341,8 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
                 }
             }
 
-        // update biasing weights by summing up partial derivivatives of Gaussians deposited every m_stride steps
-        m_curr_bias_potential = 0.0;
-
         if (m_use_grid)
             {
-            // interpolate current value of bias potential
-            Scalar V = interpolateGrid(current_val,false);
-            m_curr_bias_potential = V;
-
             // update histogram
             updateHistogram(current_val);
 
@@ -358,12 +351,13 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
                 // update sigma grid 
                 updateSigmaGrid(current_val);
 
-                // add Gaussian to grid
-               
                 // scaling factor for well-tempered MetaD
                 Scalar scal = Scalar(1.0);
                 if (m_mode == mode_well_tempered)
+                    {
+                    Scalar V = interpolateGrid(current_val,false);
                     scal = exp(-V/m_T_shift);
+                    }
 
                 m_exec_conf->msg->notice(3) << "integrate.mode_metadynamics: Updating grid." << std::endl;
 
@@ -431,9 +425,18 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
             for (unsigned int cv_idx = 0; cv_idx < m_variables.size(); ++cv_idx)
                 bias[cv_idx] = biasPotentialDerivative(cv_idx, current_val);
 
+            // current bias potential
+            m_curr_bias_potential = interpolateGrid(current_val, false);
+
+            // current reweighting factor
+            m_curr_reweight = interpolateGrid(current_val, true);
             } 
         else  //!m_use_grid
             {
+            // update biasing weights by summing up partial derivivatives
+            // of Gaussians deposited every m_stride steps
+            m_curr_bias_potential = 0.0;
+
             if (m_adaptive)
                 {
                 m_exec_conf->msg->error() << "integrate.mode_metadynamics: Adaptive Gaussians only available in grid mode" << std::endl;
@@ -1029,41 +1032,37 @@ void IntegratorMetaDynamics::updateUnbiasedEstimator(std::vector<Scalar>& curren
     {
     if (m_prof) m_prof->push("update grid");
 
-        { //ArrayHandle scope
-        ArrayHandle<Scalar> h_grid_unbias(m_grid_unbias, access_location::host, access_mode::readwrite);
-        ArrayHandle<Scalar> h_grid_reweight(m_grid_reweight, access_location::host, access_mode::readwrite);
-        ArrayHandle<Scalar> h_grid_delta(m_grid_delta, access_location::host, access_mode::read);
-        ArrayHandle<unsigned int> h_grid_hist_delta(m_grid_hist_delta, access_location::host, access_mode::read);
+    ArrayHandle<Scalar> h_grid_unbias(m_grid_unbias, access_location::host, access_mode::readwrite);
+    ArrayHandle<Scalar> h_grid_reweight(m_grid_reweight, access_location::host, access_mode::readwrite);
+    ArrayHandle<Scalar> h_grid_delta(m_grid_delta, access_location::host, access_mode::read);
+    ArrayHandle<unsigned int> h_grid_hist_delta(m_grid_hist_delta, access_location::host, access_mode::read);
 
-        // loop over grid
-        unsigned int len = m_grid_index.getNumElements();
-        std::vector<unsigned int> coords(m_grid_index.getDimension()); 
+    // loop over grid
+    unsigned int len = m_grid_index.getNumElements();
+    std::vector<unsigned int> coords(m_grid_index.getDimension()); 
 
-        Scalar avg_delta_V(0.0);
-        Scalar norm(0.0);
+    Scalar avg_delta_V(0.0);
+    Scalar norm(0.0);
 
-        // compute ensemble-averaged temporal bias potential derivative
-        for (unsigned int grid_idx = 0; grid_idx < len; grid_idx++)
-            {
-            h_grid_unbias.data[grid_idx] += (Scalar) h_grid_hist_delta.data[grid_idx];
-            avg_delta_V += h_grid_unbias.data[grid_idx]*h_grid_delta.data[grid_idx];
-            norm += h_grid_unbias.data[grid_idx];
-            }
-
-        avg_delta_V /= norm; 
-
-        for (unsigned int grid_idx = 0; grid_idx < len; grid_idx++)
-            {
-            double delta_V = h_grid_delta.data[grid_idx];
-
-            // evolve estimator and grid of reweighting factors
-            Scalar fac = exp(-(delta_V-avg_delta_V)/m_temp);
-            h_grid_unbias.data[grid_idx] *= fac;
-            h_grid_reweight.data[grid_idx] /= fac;
-            }
+    // compute ensemble-averaged temporal bias potential derivative
+    for (unsigned int grid_idx = 0; grid_idx < len; grid_idx++)
+        {
+        h_grid_unbias.data[grid_idx] += (Scalar) h_grid_hist_delta.data[grid_idx];
+        avg_delta_V += h_grid_unbias.data[grid_idx]*h_grid_delta.data[grid_idx];
+        norm += h_grid_unbias.data[grid_idx];
         }
-    // current reweighting factor
-    m_curr_reweight = interpolateGrid(current_val, true);
+
+    avg_delta_V /= norm; 
+
+    for (unsigned int grid_idx = 0; grid_idx < len; grid_idx++)
+        {
+        double delta_V = h_grid_delta.data[grid_idx];
+
+        // evolve estimator and grid of reweighting factors
+        Scalar fac = exp(-(delta_V-avg_delta_V)/m_temp);
+        h_grid_unbias.data[grid_idx] *= fac;
+        h_grid_reweight.data[grid_idx] /= fac;
+        }
 
     if (m_prof) m_prof->pop();
     }
