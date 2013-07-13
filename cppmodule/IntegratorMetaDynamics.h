@@ -20,9 +20,6 @@ struct CollectiveVariableItem
     Scalar m_cv_min;                            //!< Minium value of collective variable (if using grid)
     Scalar m_cv_max;                            //!< Maximum value of collective variable (if using grid)
     Scalar m_num_points;                        //!< Number of grid points for this collective variable
-    Scalar m_ftm_min;                           //!< Location of lower boundary for flux-tempered metadynamics
-    Scalar m_ftm_max;                           //!< Location of upper boundary for flux-tempered metadynamics
-    bool m_umbrella;                            //!< True if this variable should be used in umbrella mode
     };
 
 //! Implements a metadynamics update scheme
@@ -73,7 +70,6 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         enum Enum {
             mode_standard,
             mode_well_tempered,
-            mode_flux_tempered
             };
 
         /*! Constructor
@@ -81,7 +77,7 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
            \param deltaT Time step
            \param W Weight of Gaussians (multiplicative factor)
            \param T_shift Temperature shift for well-tempered metadynamics
-           \param T Temperature for flux-tempered metadynamics
+           \param T Temperature for adaptive Gaussian metadynamics
            \param stride Number of time steps between deposition of Gaussians
            \param add_bias True if new Gaussians should be added during the simulation
            \param filename Name of file to output hill information to
@@ -122,10 +118,8 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
             \param cv_min Minimum value, if using grid
             \param cv_max Maximum value, if using grid
             \param num_points Number of grid points to use for interpolation
-            \param ftm_min Lower CV boundary for flux-tempered MetaD
-            \param ftm_max Upper CV boundary for flux-tempered MetaD
          */
-        void registerCollectiveVariable(boost::shared_ptr<CollectiveVariable> cv, Scalar sigma, Scalar cv_min=Scalar(0.0), Scalar cv_max=Scalar(0.0), int num_points=0, Scalar ftm_min=Scalar(0.0), Scalar ftm_max=Scalar(0.0), bool umbrella=false)
+        void registerCollectiveVariable(boost::shared_ptr<CollectiveVariable> cv, Scalar sigma, Scalar cv_min=Scalar(0.0), Scalar cv_max=Scalar(0.0), int num_points=0)
             {
             assert(cv);
             assert(sigma > 0);
@@ -139,13 +133,6 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
             cv_item.m_cv_max = cv_max;
             cv_item.m_num_points = (unsigned int) num_points;
 
-            cv_item.m_ftm_min = ftm_min;
-            cv_item.m_ftm_max = ftm_max;
-
-            cv_item.m_umbrella = umbrella;
-
-            if (!umbrella) m_num_biased_variables++;
-
             m_variables.push_back(cv_item);
             }
 
@@ -154,7 +141,6 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         void removeAllVariables()
             {
             m_variables.clear();
-            m_num_biased_variables = 0;
             }
 
         /*! Returns the names of log quantitites provided by this integrator
@@ -191,7 +177,7 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
                 }
             else if (quantity == m_log_names[2])
                 {
-                return m_umbrella_energy;
+                return m_curr_reweight;
                 }
             else
                 { 
@@ -207,18 +193,12 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
          */
         void setGrid(bool use_grid);
 
-        /*! Set up histogram calculation for flux-tempered metadynamics
-            \param compute_histograms True if histograms are to be calculated
-         */
-        void setHistograms(bool compute_histograms);
-
         /*! Set metadynamics mode
             \param mode The variant of metadynamics to be used
          */
         void setMode(Enum mode)
             {
             m_mode = mode;
-            m_num_update_steps = 0;
             }
 
         /*! Set bias deposition stride
@@ -227,22 +207,6 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         void setStride(unsigned int stride)
             {
             m_stride = stride;
-            }
-
-        /*! Set stride multiplication factor
-            \param factor The factor with which the bias deposition stride is multiplied after every deposition
-         */
-        void setStrideMultiply(unsigned int factor)
-            {
-            m_stride_multiply = factor;
-            }
-
-        /*! Set minimum number of label changes between bias potential updates for flux-tempered Metadynamics
-            \param min_label_change The threshold for the number of label changes
-         */
-        void setMinimumLabelChanges(unsigned min_label_change)
-            {
-            m_min_label_change = min_label_change;
             }
 
         /*! Returns true if the integration has been initialized (i.e.
@@ -302,8 +266,8 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
             m_multiple_walkers = multiple;
             }
 
-        //! Reset the histograms
-        void resetHistograms();
+        //! Reset the histogram
+        void resetHistogram();
 
     private:
         Scalar m_W;                                       //!< Height of Gaussians
@@ -314,6 +278,7 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         std::vector<std::vector<Scalar> > m_cv_values;    //!< History of CV values
 
         unsigned int m_num_update_steps;                  //!< Number of update steps performed in this run thus far
+        unsigned int m_num_gaussians;                     //!< Number of Gaussians deposited
 
         std::vector<std::string> m_log_names;             //!< Names of logging quantities
         std::string m_suffix;                             //!< Suffix for unbiased variables
@@ -331,10 +296,7 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         bool m_use_grid;                                  //!< True if we are using a grid
         GPUArray<Scalar> m_grid;                          //!< d-dimensional grid to store values of bias potential
         GPUArray<Scalar> m_grid_delta;                    //!< d-dimensional grid to store increments of bias potential
-        GPUArray<Scalar> m_reweighted_grid;               //!< d-dimensional grid to store values of reweighted bias potential
-        GPUArray<Scalar> m_reweighted_grid_delta;         //!< d-dimensional grid to store increments of reweightedbias potential
         IndexGrid m_grid_index;                           //!< Indexer for the d-dimensional grid
-        unsigned int m_num_biased_variables;              //!< Number of variables biased by the Gaussian potential
 
         bool m_add_bias;                                 //!< True if hills should be added during the simulation
         std::string m_restart_filename;                   //!< Name of file to read restart information from
@@ -350,30 +312,24 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         GPUArray<Scalar> m_sigma_inv;                     //!< Square matrix of Gaussian standard deviations (inverse)
         GPUArray<Scalar> m_sigma_grid;                    //!< Gaussian volume as function of the collective ariables
         GPUArray<Scalar> m_sigma_grid_delta;              //!< Gaussian volume as function of the collective ariables, increments
+        GPUArray<unsigned int> m_grid_hist_gauss;               //!< Number of Gaussians deposited at every grid point
+        GPUArray<unsigned int> m_grid_hist_gauss_delta;         //!< Increments in number of Gaussians
         GPUArray<unsigned int> m_grid_hist;               //!< Number of times a state has been visited
-        GPUArray<Scalar> m_grid_hist_reweight;            //!< Umbrella-reweighted histogram
         GPUArray<unsigned int> m_grid_hist_delta;         //!< Deltas of histogram
-        GPUArray<Scalar> m_grid_hist_reweight_delta;      //!< Deltas of reweighted histogram
         GPUArray<Scalar> m_current_val;                   //!< Current CV values array
         Scalar m_sigma_g;                                 //!< Estimated standard deviation of particle displacements
         bool m_adaptive;                                  //!< True if adaptive Gaussians should be used
 
-        Scalar m_temp;                                    //!< Temperature for histogram reweighting
-        bool m_compute_histograms;                        //!< True if histograms should be computed
-        unsigned int m_num_histogram_entries;             //!< Total number of times the histogram was updated
+        Scalar m_temp;                                    //!< Temperature for adaptive Gaussians
         Enum m_mode;                                      //!< The variant of metadynamics being used
-        bool m_walker_state;                              //!< Can be plus (true) or minus (false)
-        GPUArray<Scalar> m_ftm_histogram;                 //!< Histogram of CV values visited in either plus or minus state
-        GPUArray<Scalar> m_ftm_histogram_plus;            //!< Histogram of CV values visited in plus state
-        unsigned int m_stride_multiply;                   //!< Multiplication factor for m_stride applied after every grid update
-        unsigned int m_num_label_change;                  //!< Number of walker label changes since last bias potential update
-        unsigned int m_min_label_change;                  //!< Minimum number of walker label changes between bias potential updates
-        Scalar m_umbrella_energy;                         //!< Energy of umbrella potential
-
         bool m_multiple_walkers;                          //!< True if multiple walkers are used
+        Scalar m_curr_reweight;                           //!< Current weight to reconstruct unbiased Boltzmann distribution
 #ifdef ENABLE_MPI
         MPI_Comm m_partition_comm;                        //!< MPI communicator between partitions
 #endif
+
+        GPUArray<Scalar> m_grid_unbias;                   //!< Estimator for the unbiased CV distribution (up to reweighting factor)
+        GPUArray<Scalar> m_grid_reweight;                 //!< Accumulated reweighting factors
 
         //! Internal helper function to update the bias potential
         void updateBiasPotential(unsigned int timestep);
@@ -388,7 +344,9 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         void setupGrid();
 
         //! Helper function to get value of bias potential by multilinear interpolation
-        Scalar interpolateBiasPotential(const std::vector<Scalar>& val);
+        /* \param reweight If true, interpolate grid of reweighting factors
+         */
+        Scalar interpolateGrid(const std::vector<Scalar>& val, bool reweight);
 
         //! Helper function to calculate the partial derivative of the bias potential in direction cv
         Scalar biasPotentialDerivative(unsigned int cv, const std::vector<Scalar>& val);
@@ -400,28 +358,11 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         void writeGrid(const std::string& filename);
 
         //! Helper function to update the grid values
-        void updateGrid(std::vector<Scalar>& current_val, Scalar scal, Scalar reweight);
+        void updateGrid(std::vector<Scalar>& current_val, Scalar scal);
 
 #ifdef ENABLE_CUDA
-        void updateGridGPU(std::vector<Scalar>& current_val, Scalar scal, Scalar reweight);
+        void updateGridGPU(std::vector<Scalar>& current_val, Scalar scal);
 #endif
-
-        //! Setup histograms for flux-tempered MetaD
-        void setupHistograms();
-
-        //! Sample the histograms for flux-tempered MetaD
-        void sampleHistograms(Scalar val, bool state);
-
-#ifdef ENABLE_CUDA
-        //! Sample the histograms for flux-tempered MetaD
-        void sampleHistogramsGPU(Scalar val, bool state);
-#endif
-
-        //! Interpolate the relative fraction of time spent in plus state at a certain value of the CV
-        Scalar interpolateHistogram(Scalar val, bool fraction);
-
-        //! Derivative of fraction of time spent in state plus w.r.t. collective variable
-        Scalar fractionDerivative(Scalar val);
 
         //! Compute sigma matrix
         void computeSigma();
@@ -430,7 +371,13 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         Scalar sigmaDeterminant();
 
         //! Update the grid of sigma values
-        void updateSigmaGrid(std::vector<Scalar>& current_val, Scalar reweight);
+        void updateSigmaGrid(std::vector<Scalar>& current_val);
+
+        //! Update histogram of collective variable
+        void updateHistogram(std::vector<Scalar>& current_val);
+
+        //! Update estimator of unbiased CV histogram
+        void updateUnbiasedEstimator(std::vector<Scalar>& current_val);
     };
 
 //! Export to python

@@ -178,10 +178,10 @@ class mode_metadynamics(_integrator):
     ## Specifies the metadynamics integration mode
     # \param dt Each time step of the simulation run() will advance the real time of the system forward by \a dt (in time units) 
     # \param stride Interval (number of time steps) between depositions of Gaussians
-    # \param mode Metadynamics mode - "standard" (default), "well_tempered" or "flux_tempered"
+    # \param mode Metadynamics mode - "standard" (default) or "well_tempered"
     # \param W (only in mode="standard" or "well_tempered") Height of Gaussians (in energy units) deposited 
     # \param deltaT (only in mode="well_tempered") Temperature shift (in temperature units) for well-tempered metadynamics
-    # \param T (only in mode="flux_tempered") Temperature
+    # \param T (only for adaptive Gaussians) Temperature
     # \param filename (optional) Name of the log file to write hills information to
     # \param overwrite (optional) True if the hills file should be overwritten
     # \param add_hills (optional) True if Gaussians should be deposited during the simulation
@@ -196,8 +196,6 @@ class mode_metadynamics(_integrator):
             cpp_mode = _metadynamics.IntegratorMetaDynamics.mode.standard
         elif (mode == "well_tempered"):
             cpp_mode = _metadynamics.IntegratorMetaDynamics.mode.well_tempered
-        elif (mode == "flux_tempered"):
-            cpp_mode = _metadynamics.IntegratorMetaDynamics.mode.flux_tempered
         else:
             globals.msg.error("integrate.mode_metadynamics: Unsupported metadynamics mode.\n")
             raise RuntimeError('Error setting up Metadynamics.');
@@ -219,7 +217,7 @@ class mode_metadynamics(_integrator):
             num_cv = 0
             for f in globals.forces:
                 if isinstance(f, cv._collective_variable) and f.grid_set:
-                    if f.umbrella and not f.reweight:
+                    if f.umbrella:
                         continue
 
                     if f.name != self.cv_names[num_cv]:
@@ -237,15 +235,12 @@ class mode_metadynamics(_integrator):
         for f in globals.forces:
             if isinstance(f, cv._collective_variable):
 
-                if f.umbrella and not f.reweight:
+                if f.umbrella:
                     continue
 
                 # enable histograms if required
-                if f.ftm_parameters_set:
-                    self.cpp_integrator.setHistograms(True)
-
                 if f.grid_set is True:
-                    self.cpp_integrator.registerCollectiveVariable(f.cpp_force, f.sigma, f.cv_min, f.cv_max, f.num_points, f.ftm_min, f.ftm_max, f.umbrella)
+                    self.cpp_integrator.registerCollectiveVariable(f.cpp_force, f.sigma, f.cv_min, f.cv_max, f.num_points)
 
                     self.cv_names.append(f.name)
                 else:
@@ -289,23 +284,20 @@ class mode_metadynamics(_integrator):
 
         self.cpp_integrator.restartFromGridFile(filename)
 
-    ## Reset histograms
+    ## Reset histogram
     # This command resets the histogram of values of the collective variable visited.
-    # In flux-tempered mode, it also resets the non-labeled and labeled walker histograms.
-    def reset_histograms(self):
+    def reset_histogram(self):
         util.print_status_line();
 
-        self.cpp_integrator.resetHistograms()
+        self.cpp_integrator.resetHistogram()
 
     ## Set parameters of the integration
     # \param mode The variant of metadynamics to be used
     # \param add_hills True if new Gaussians should be added during the simulation
     # \param stride The stride for bias potential updates
-    # \param stride_multiply The factor with which the stride is multiplied after every update
-    # \param min_label_change The threshold for the number of walker label changes before the bias potential is updated
     # \param adaptive True if adaptive Gaussians should be used
     # \param sigma_g Estimated RMSD of particle positions for adapative Gaussian mode
-    def set_params(self, add_hills=None, mode=None, stride=None, stride_multiply=None, min_label_change=None, adaptive=None, sigma_g=None, multiple_walkers=None):
+    def set_params(self, add_hills=None, mode=None, stride=None, adaptive=None, sigma_g=None, multiple_walkers=None):
         util.print_status_line();
       
         if add_hills is not None:
@@ -316,8 +308,6 @@ class mode_metadynamics(_integrator):
                 cpp_mode = _metadynamics.IntegratorMetaDynamics.mode.standard
             elif (mode == "well_tempered"):
                 cpp_mode = _metadynamics.IntegratorMetaDynamics.mode.well_tempered
-            elif (mode == "flux_tempered"):
-                cpp_mode = _metadynamics.IntegratorMetaDynamics.mode.flux_tempered
             else:
                 globals.msg.error("integrate.mode_metadynamics: Unsupported metadynamics mode.\n")
                 raise RuntimeError('Error setting up Metadynamics.');
@@ -326,12 +316,6 @@ class mode_metadynamics(_integrator):
 
         if stride is not None:
             self.cpp_integrator.setStride(int(stride))
-
-        if stride_multiply is not None:
-            self.cpp_integrator.setStrideMultiply(int(stride_multiply))
-
-        if min_label_change is not None:
-            self.cpp_integrator.setMinimumLabelChanges(int(min_label_change))
 
         if adaptive is not None:
             self.cpp_integrator.setAdaptive(adaptive)

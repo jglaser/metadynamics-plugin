@@ -14,7 +14,7 @@ CollectiveVariable::CollectiveVariable(boost::shared_ptr<SystemDefinition> sysde
       m_cv_name(name),
       m_umbrella(no_umbrella),
       m_cv0(0.0),
-      m_kappa(0.0),
+      m_kappa(1.0),
       m_width_flat(0.0),
       m_scale(1.0)
     {

@@ -3,191 +3,65 @@
 
 extern __shared__ unsigned int coords[];
 
-__device__ Scalar gpu_interpolate_fraction(Scalar min,
-                                      Scalar delta,
-                                      unsigned int num_points,
-                                      Scalar val,
-                                      Scalar *histogram,
-                                      Scalar *histogram_plus)
-    {
-    int lower_bin = (int) ((val - min)/delta);
-    unsigned int upper_bin = lower_bin+1;
-
-    // need to handly boundary case
-    if (lower_bin < 0 || upper_bin >= num_points)
-        return 0;
-
-    Scalar rel_delta = (val - (Scalar)lower_bin*delta)/delta;
-
-    Scalar lower_val = histogram_plus[lower_bin]/histogram[lower_bin];
-    Scalar upper_val = histogram_plus[upper_bin]/histogram[upper_bin];
-
-    return lower_val + rel_delta*(upper_val - lower_val);
-    }
-
-__device__ Scalar gpu_fraction_derivative(Scalar min,
-                               Scalar max,
-                               Scalar delta,
-                               unsigned int num_points,
-                               Scalar val,
-                               Scalar *histogram,
-                               Scalar *histogram_plus)
-    {
-
-    if (val - delta < min) 
-        {
-        // forward difference
-        Scalar val2 = val + delta;
-
-        Scalar y2 = gpu_interpolate_fraction(min,
-                                             delta,
-                                             num_points,
-                                             val2,
-                                             histogram,
-                                             histogram_plus);
-        Scalar y1 = gpu_interpolate_fraction(min,
-                                             delta,
-                                             num_points,
-                                             val,
-                                             histogram,
-                                             histogram_plus);
-        return (y2-y1)/delta;
-        }
-    else if (val + delta > max)
-        {
-        // backward difference
-        Scalar val2 = val - delta;
-        Scalar y1 = gpu_interpolate_fraction(min,
-                                             delta,
-                                             num_points,
-                                             val2,
-                                             histogram,
-                                             histogram_plus);
-        Scalar y2 = gpu_interpolate_fraction(min,
-                                             delta,
-                                             num_points,
-                                             val,
-                                             histogram,
-                                             histogram_plus);
-        return (y2-y1)/delta;
-        }
-    else
-        {
-        // central difference
-        Scalar val2 = val + delta;
-        Scalar val1 = val - delta;
-        Scalar y1 = gpu_interpolate_fraction(min,
-                                             delta,
-                                             num_points,
-                                             val1,
-                                             histogram,
-                                             histogram_plus);
-        Scalar y2 = gpu_interpolate_fraction(min,
-                                             delta,
-                                             num_points,
-                                             val2,
-                                             histogram,
-                                             histogram_plus);
-        return (y2 - y1)/(Scalar(2.0)*delta);
-        }
-    } 
-
 __global__ void gpu_update_grid_kernel(unsigned int num_elements,
                                        unsigned int *lengths,
                                        unsigned int dim,
                                        Scalar *current_val,
                                        Scalar *grid,
-                                       Scalar *reweighted_grid,
                                        Scalar *cv_min,
                                        Scalar *cv_max,
                                        Scalar *cv_sigma_inv,
                                        Scalar scal,
-                                       Scalar reweight,
                                        Scalar W,
-                                       bool flux_tempered,
-                                       Scalar T,
-                                       Scalar *histogram,
-                                       Scalar *histogram_plus,
-                                       unsigned int num_histogram_entries,
-                                       Scalar ftm_min,
-                                       Scalar ftm_max)
+                                       Scalar T)
     {
     unsigned int grid_idx = blockIdx.x * blockDim.x + threadIdx.x;
     
     if (grid_idx >= num_elements) return;
 
-    if (! flux_tempered)
+    // obtain d-dimensional coordinates
+    unsigned int factor = 1;
+    for (int j = 1; j < dim; j++)
+        factor *= lengths[j-1];
+ 
+    unsigned int rest = grid_idx;
+    for (int i = dim-1; i >= 0; i--)
         {
-        // obtain d-dimensional coordinates
-        unsigned int factor = 1;
-        for (int j = 1; j < dim; j++)
-            factor *= lengths[j-1];
-     
-        unsigned int rest = grid_idx;
-        for (int i = dim-1; i >= 0; i--)
-            {
-            unsigned int c = rest/factor;
-            coords[i+dim*threadIdx.x] = c;
-            rest -= c*factor;
-            if (i >0) factor /= lengths[i-1];
-            }
-
-        Scalar gauss_exp = Scalar(0.0);
-
-        // evaluate Gaussian on grid point
-        for (unsigned int cv_i = 0; cv_i < dim; ++cv_i)
-            {
-            Scalar min_i = cv_min[cv_i];
-            Scalar max_i = cv_max[cv_i];
-            Scalar delta_i = (max_i - min_i)/(Scalar)(lengths[cv_i] - 1);
-            Scalar val_i = min_i + (Scalar)coords[cv_i+dim*threadIdx.x]*delta_i;
-            Scalar d_i = val_i - current_val[cv_i];
-
-            for (unsigned int cv_j = 0; cv_j < dim; ++cv_j)
-                {
-                Scalar min_j = cv_min[cv_j];
-                Scalar max_j = cv_max[cv_j];
-                Scalar delta_j = (max_j - min_j)/(Scalar)(lengths[cv_j] - 1);
-                Scalar val_j = min_j + (Scalar)coords[cv_j+dim*threadIdx.x]*delta_j;
-                Scalar d_j = val_j - current_val[cv_j];
-
-                Scalar sigma_inv_ij = cv_sigma_inv[cv_i*dim+cv_j];
-
-                gauss_exp -= d_i*d_j*Scalar(1.0/2.0)*(sigma_inv_ij*sigma_inv_ij);
-                }
-            }
-
-        Scalar gauss = expf(gauss_exp);
-
-        // add Gaussian to grid
-        grid[grid_idx] += W*scal*gauss;
-        reweighted_grid[grid_idx] += W*scal*reweight*gauss;
+        unsigned int c = rest/factor;
+        coords[i+dim*threadIdx.x] = c;
+        rest -= c*factor;
+        if (i >0) factor /= lengths[i-1];
         }
-    else // flux-tempered
+
+    Scalar gauss_exp = Scalar(0.0);
+
+    // evaluate Gaussian on grid point
+    for (unsigned int cv_i = 0; cv_i < dim; ++cv_i)
         {
-        Scalar min = cv_min[0];
-        Scalar max = cv_max[0];
-        unsigned int num_points = lengths[0];
-        Scalar grid_delta = (max - min)/ (Scalar)(num_points -1);
-        Scalar val = min + grid_idx*grid_delta;
-     
-        Scalar dfds = gpu_fraction_derivative(min,
-                                              max,
-                                              grid_delta,
-                                              num_points,
-                                              val,
-                                              histogram,
-                                              histogram_plus);
-                                               
-        Scalar hist = histogram[grid_idx];
+        Scalar min_i = cv_min[cv_i];
+        Scalar max_i = cv_max[cv_i];
+        Scalar delta_i = (max_i - min_i)/(Scalar)(lengths[cv_i] - 1);
+        Scalar val_i = min_i + (Scalar)coords[cv_i+dim*threadIdx.x]*delta_i;
+        Scalar d_i = val_i - current_val[cv_i];
 
-        // normalize histogram
-        hist /= num_histogram_entries; 
+        for (unsigned int cv_j = 0; cv_j < dim; ++cv_j)
+            {
+            Scalar min_j = cv_min[cv_j];
+            Scalar max_j = cv_max[cv_j];
+            Scalar delta_j = (max_j - min_j)/(Scalar)(lengths[cv_j] - 1);
+            Scalar val_j = min_j + (Scalar)coords[cv_j+dim*threadIdx.x]*delta_j;
+            Scalar d_j = val_j - current_val[cv_j];
 
-        Scalar del = -Scalar(1.0/2.0)*T*(logf(fabsf(dfds)) - logf(hist));
-        grid[grid_idx] += del;
-        reweighted_grid[grid_idx] += reweight*del;
-        } 
+            Scalar sigma_inv_ij = cv_sigma_inv[cv_i*dim+cv_j];
+
+            gauss_exp -= d_i*d_j*Scalar(1.0/2.0)*(sigma_inv_ij*sigma_inv_ij);
+            }
+        }
+
+    Scalar gauss = expf(gauss_exp);
+
+    // add Gaussian to grid
+    grid[grid_idx] += W*scal*gauss;
     }
 
 cudaError_t gpu_update_grid(unsigned int num_elements,
@@ -195,20 +69,12 @@ cudaError_t gpu_update_grid(unsigned int num_elements,
                      unsigned int dim,
                      Scalar *d_current_val,
                      Scalar *d_grid,
-                     Scalar *d_reweighted_grid,
                      Scalar *d_cv_min,
                      Scalar *d_cv_max,
                      Scalar *d_cv_sigma_inv,
                      Scalar scal,
-                     Scalar reweight,
                      Scalar W,
-                     bool flux_tempered,
-                     Scalar T,
-                     Scalar *d_histogram,
-                     Scalar *d_histogram_plus,
-                     unsigned int num_histogram_entries,
-                     Scalar ftm_min,
-                     Scalar ftm_max)
+                     Scalar T)
     {
     unsigned int block_size = 512;
     unsigned int smem_size = dim*sizeof(unsigned int)*block_size; 
@@ -217,20 +83,12 @@ cudaError_t gpu_update_grid(unsigned int num_elements,
                                                                                  dim,
                                                                                  d_current_val,
                                                                                  d_grid,
-                                                                                 d_reweighted_grid,
                                                                                  d_cv_min,
                                                                                  d_cv_max,
                                                                                  d_cv_sigma_inv,
                                                                                  scal,
-                                                                                 reweight,
                                                                                  W,
-                                                                                 flux_tempered,
-                                                                                 T,
-                                                                                 d_histogram,
-                                                                                 d_histogram_plus,
-                                                                                 num_histogram_entries,
-                                                                                 ftm_min,
-                                                                                 ftm_max);
+                                                                                 T);
     return cudaSuccess;
     }
 
