@@ -64,7 +64,7 @@ IntegratorMetaDynamics::IntegratorMetaDynamics(boost::shared_ptr<SystemDefinitio
     assert(m_T_shift>0);
     assert(m_W > 0);
 
-    m_log_names.push_back("bias_potential");
+    m_log_names.push_back("bias");
     m_log_names.push_back("det_sigma");
     m_log_names.push_back("weight");
 
