@@ -328,8 +328,8 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         MPI_Comm m_partition_comm;                        //!< MPI communicator between partitions
 #endif
 
-        GPUArray<Scalar> m_grid_unbias;                   //!< Estimator for the unbiased CV distribution (up to reweighting factor)
-        GPUArray<Scalar> m_grid_reweight;                 //!< Accumulated reweighting factors
+        GPUArray<Scalar> m_grid_reweighted;             //!< Reweighted estimator for the CV distribution 
+        GPUArray<Scalar> m_grid_weight;                 //!< Accumulated reweighting factors
 
         //! Internal helper function to update the bias potential
         void updateBiasPotential(unsigned int timestep);
@@ -376,8 +376,8 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         //! Update histogram of collective variable
         void updateHistogram(std::vector<Scalar>& current_val);
 
-        //! Update estimator of unbiased CV histogram
-        void updateUnbiasedEstimator(std::vector<Scalar>& current_val);
+        //! Update reweighted estimator CV histogram
+        void updateReweightedEstimator(std::vector<Scalar>& current_val);
     };
 
 //! Export to python
