@@ -847,7 +847,7 @@ void IntegratorMetaDynamics::writeGrid(const std::string& filename)
     file << m_delimiter << "det_sigma";
     file << m_delimiter << "num_gaussians";
     file << m_delimiter << "hist";
-    file << m_delimiter << "unbiased_hist";
+    file << m_delimiter << "hist_reweight";
     file << m_delimiter << "weight";
 
     file << std::endl;
