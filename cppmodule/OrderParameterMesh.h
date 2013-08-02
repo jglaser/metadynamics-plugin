@@ -87,6 +87,7 @@ class OrderParameterMesh : public CollectiveVariable
 
         unsigned int m_q_max_last_computed;        //!< Last time step at which q max was computed
         Scalar3 m_q_max;                           //!< Current wave vector with maximum amplitude
+        Scalar m_sq_max;                           //!< Maximum structure factor
 
         GPUArray<int3> m_zero_modes;        //!< Fourier modes that should be zeroed
 

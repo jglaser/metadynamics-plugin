@@ -106,6 +106,7 @@ OrderParameterMesh::OrderParameterMesh(boost::shared_ptr<SystemDefinition> sysde
     m_log_names.push_back("qx_max");
     m_log_names.push_back("qy_max");
     m_log_names.push_back("qz_max");
+    m_log_names.push_back("sq_max");
 
     // we need to compute the particle ghost layer before the first force calculation
     computeParticleGhostLayerWidth();
@@ -903,6 +904,11 @@ Scalar OrderParameterMesh::getLogValue(const std::string& quantity, unsigned int
         computeQmax(timestep);
         return m_q_max.z;
         }
+    else if (quantity == m_log_names[4])
+        {
+        computeQmax(timestep);
+        return m_sq_max;
+        }
     else
         {
         m_exec_conf->msg->error() << "cv.mesh: " << quantity << " is not a valid log quantity"
@@ -977,6 +983,11 @@ void OrderParameterMesh::computeQmax(unsigned int timestep)
     if (m_prof) m_prof->pop();
 
     m_q_max = q_max;
+    m_sq_max = max_amplitude;
+
+    // normalize with 1/V
+    unsigned int n_global = m_pdata->getNGlobal();
+    m_sq_max *= (Scalar)n_global*(Scalar)n_global/m_pdata->getGlobalBox().getVolume();
     }
 
 void export_OrderParameterMesh()

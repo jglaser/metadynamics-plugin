@@ -533,6 +533,11 @@ void OrderParameterMeshGPU::computeQmax(unsigned int timestep)
     if (m_prof) m_prof->pop();
 
     m_q_max = make_scalar3(q_max.x,q_max.y,q_max.z);
+    m_sq_max = q_max.w;
+
+    // normalize with 1/V
+    unsigned int n_global = m_pdata->getNGlobal();
+    m_sq_max *= (Scalar)n_global*(Scalar)n_global/m_pdata->getGlobalBox().getVolume();
     }
 
 
