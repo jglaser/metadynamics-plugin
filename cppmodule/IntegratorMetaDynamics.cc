@@ -39,7 +39,6 @@ IntegratorMetaDynamics::IntegratorMetaDynamics(boost::shared_ptr<SystemDefinitio
       m_W(W),
       m_T_shift(T_shift),
       m_stride(stride),
-      m_num_update_steps(0),
       m_num_gaussians(0),
       m_curr_bias_potential(0.0),
       m_is_initialized(false),
@@ -181,7 +180,6 @@ void IntegratorMetaDynamics::prepRun(unsigned int timestep)
                 h_lengths.data[cv_idx] = m_variables[cv_idx].m_num_points;
                 }
             
-            m_num_update_steps = 0;
             m_bias_potential.clear();
             }
 
@@ -311,7 +309,7 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
 
     bool is_root = true;
 
-    if (m_adaptive && (m_num_update_steps % m_stride == 0))
+    if (m_adaptive && (timestep % m_stride == 0))
         {
         // compute derivatives of collective variables
         for (unsigned int i = 0; i < m_variables.size(); ++i)
@@ -331,7 +329,7 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
     if (is_root)
 #endif
         {
-        if (! m_use_grid && (m_num_update_steps % m_stride == 0))
+        if (! m_use_grid && (timestep % m_stride == 0))
             {
             // record history of CV values every m_stride steps
             std::vector<CollectiveVariableItem>::iterator it;
@@ -346,7 +344,7 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
             // update histogram
             updateHistogram(current_val);
 
-            if (m_add_bias && (m_num_update_steps % m_stride == 0))
+            if (m_add_bias && (timestep % m_stride == 0))
                 {
                 // update sigma grid 
                 updateSigmaGrid(current_val);
@@ -502,7 +500,7 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
             }
 
         // write hills information
-        if (m_is_initialized && (m_num_update_steps % m_stride == 0) && m_add_bias && m_file.is_open())
+        if (m_is_initialized && (timestep % m_stride == 0) && m_add_bias && m_file.is_open())
             {
             ArrayHandle<Scalar> h_sigma_inv(m_sigma_inv, access_location::host, access_mode::read);
 
@@ -530,7 +528,7 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
             m_file << endl;
             }
        
-        if (m_add_bias && (! m_use_grid) && (m_num_update_steps % m_stride == 0))
+        if (m_add_bias && (! m_use_grid) && (timestep % m_stride == 0))
             m_bias_potential.push_back(m_curr_bias_potential);
 
         // dump grid information if required using alternating scheme
@@ -547,9 +545,6 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
 
     
         } // endif root processor
-
-    // increment number of updated steps
-    m_num_update_steps++;
 
 #ifdef ENABLE_MPI
     // broadcast bias factors
@@ -833,7 +828,6 @@ void IntegratorMetaDynamics::writeGrid(const std::string& filename)
 
     file << std::endl;
 
-    file << "#num_updates: " << m_num_update_steps << std::endl;
     file << "#num_gaussians: " << m_num_gaussians << std::endl;
 
     for (unsigned int i = 0; i < m_variables.size(); i++)
@@ -930,7 +924,6 @@ void IntegratorMetaDynamics::readGrid(const std::string& filename)
     getline(file, line);
     istringstream iss(line);
     std::string tmp;
-    iss >> tmp >> m_num_update_steps;
     iss >> tmp >> m_num_gaussians;
 
     // Skip last header line
