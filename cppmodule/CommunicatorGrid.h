@@ -12,7 +12,7 @@ class CommunicatorGrid
     public:
         //! Constructor
         CommunicatorGrid(boost::shared_ptr<SystemDefinition> sysdef, uint3 dim,
-            uint3 embed, uint3 offset);
+            uint3 embed, uint3 offset, bool add_outer_layer_to_inner);
 
         //! Communicate grid
         virtual void communicate(const GPUArray<T>& grid, unsigned int timestep);
@@ -26,6 +26,7 @@ class CommunicatorGrid
         uint3 m_dim;                                         //!< Dimensions of grid
         uint3 m_embed;                                       //!< Embedding dimensions
         uint3 m_offset;                                      //!< Offset of inner grid in array
+        bool m_add_outer;                                    //!< True if outer ghost layer is added to inner cells
 
         std::set<unsigned int> m_neighbors;                  //!< List of unique neighbor ranks
         GPUArray<T> m_send_buf;                              //!< Send buffer

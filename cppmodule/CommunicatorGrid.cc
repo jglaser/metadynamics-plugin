@@ -6,17 +6,19 @@
  *  \param dim Dimensions of 3dim grid
  *  \param embed Embedding dimensions
  *  \param offset Start offset of inner grid in array
+ *  \param add_outer_layer_to_inner True if outer ghost layer should be added to inner cells
  */
 template<typename T>
 CommunicatorGrid<T>::CommunicatorGrid(boost::shared_ptr<SystemDefinition> sysdef, uint3 dim,
-            uint3 embed, uint3 offset)
+            uint3 embed, uint3 offset, bool add_outer_layer_to_inner)
     : m_pdata(sysdef->getParticleData()),
       m_exec_conf(m_pdata->getExecConf()),
       m_dim(dim),
       m_embed(embed),
-      m_offset(offset)
+      m_offset(offset),
+      m_add_outer(add_outer_layer_to_inner)
     {
-    initGridComm(); 
+    initGridComm();
     }
 
 template<typename T>
@@ -88,18 +90,28 @@ void CommunicatorGrid<T>::initGridComm()
                 // add to neighbor set
                 m_neighbors.insert(neigh_rank);
 
-                // index of receiving cell
-                unsigned int ridx = nx + m_embed.x * (ny + m_embed.y* nz);
-                recv_idx.push_back(ridx);
+                // corresponding inner cell
+                unsigned int inner_nx = nx - ix * m_offset.x;
+                if (di.getW() <= 2) inner_nx -= ix*(m_dim.x-m_offset.x);
+                unsigned int inner_ny = ny - iy * m_offset.y;
+                if (di.getH() <= 2) inner_ny -= iy*(m_dim.y-m_offset.y);
+                unsigned int inner_nz = nz - iz * m_offset.z;
+                if (di.getD() <= 2) inner_nz -= iz*(m_dim.z-m_offset.z);
 
-                // index of sending cell
-                unsigned int send_nx = nx - ix * m_offset.x;
-                if (di.getW() <= 2) send_nx -= ix*(m_dim.x-m_offset.x);
-                unsigned int send_ny = ny - iy * m_offset.y;
-                if (di.getH() <= 2) send_ny -= iy*(m_dim.y-m_offset.y);
-                unsigned int send_nz = nz - iz * m_offset.z;
-                if (di.getD() <= 2) send_nz -= iz*(m_dim.z-m_offset.z);
-                unsigned int sidx = send_nx + m_embed.x * (send_ny + m_embed.y * send_nz);
+                // index of receiving cell
+                unsigned int ridx,sidx;
+                if (m_add_outer)
+                    {
+                    ridx = inner_nx + m_embed.x * (inner_ny + m_embed.y * inner_nz);
+                    sidx = nx + m_embed.x * (ny + m_embed.y* nz);
+                    }
+                else
+                    {
+                    ridx = nx + m_embed.x * (ny + m_embed.y* nz);
+                    sidx = inner_nx + m_embed.x * (inner_ny + m_embed.y * inner_nz);
+                    }
+
+                recv_idx.push_back(ridx);
                 send_idx.push_back(sidx);
 
                 idx_map.insert(std::make_pair(neigh_rank, n++));
@@ -195,12 +207,15 @@ void CommunicatorGrid<T>::communicate(const GPUArray<T>& grid, unsigned int time
 
         // scatter recv buf into grid
         unsigned int n = m_send_buf.getNumElements();
-        for (unsigned int i = 0; i < n; ++i)
-            h_grid.data[h_recv_idx.data[i]] = h_recv_buf.data[i];
+        if (m_add_outer)
+            for (unsigned int i = 0; i < n; ++i)
+                h_grid.data[h_recv_idx.data[i]] += h_recv_buf.data[i];
+        else
+            for (unsigned int i = 0; i < n; ++i)
+                h_grid.data[h_recv_idx.data[i]] = h_recv_buf.data[i];
         }
     }
 
 //! Explicit template instantiations
 template class CommunicatorGrid<Scalar>;
-template class CommunicatorGrid<uint3>;
 template class CommunicatorGrid<unsigned int>;

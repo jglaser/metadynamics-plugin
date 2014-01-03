@@ -2,9 +2,6 @@
 
 #undef ENABLE_MPI
 using namespace boost::python;
-//! Coefficients of f(x) = sin(x)/x = a_0 + a_2 * x^2 + a_4 * x^4 + a_6 * x^6 + a_8 * x^8 + a_10 * x^10
-const Scalar coeff[] = {Scalar(1.0), Scalar(-1.0/6.0), Scalar(1.0/120.0), Scalar(-1.0/5040.0),
-                        Scalar(1.0/362880.0), Scalar(-1.0/39916800.0)};
 
 /*! \param sysdef The system definition
     \param nx Number of cells along first axis
@@ -197,7 +194,7 @@ void OrderParameterMesh::computeParticleGhostLayerWidth()
     m_ghost_layer_width = m_ghost_layer_width > ghost_width.y ? m_ghost_layer_width : ghost_width.y;
     m_ghost_layer_width = m_ghost_layer_width > ghost_width.z ? m_ghost_layer_width : ghost_width.z;
     }
- 
+
 void OrderParameterMesh::initializeFFT()
     {
     bool local_fft = true;
@@ -385,7 +382,7 @@ void OrderParameterMesh::assignParticles()
 
     // set mesh to zero
     memset(h_mesh.data, 0, sizeof(kiss_fft_cpx)*m_mesh.getNumElements());
- 
+
     // inverse dimensions
     Scalar3 dim_inv = make_scalar3(Scalar(1.0)/(Scalar)m_mesh_points.x,
                                    Scalar(1.0)/(Scalar)m_mesh_points.y,
@@ -408,7 +405,7 @@ void OrderParameterMesh::assignParticles()
                                            f.y * (Scalar) m_mesh_points.y,
                                            f.z * (Scalar) m_mesh_points.z);
 
-        // find cell the particle is in
+        // find cell the particle is in (rounding downwards)
         int ix = ((reduced_pos.x >= 0) ? reduced_pos.x : (reduced_pos.x - Scalar(1.0)));
         int iy = ((reduced_pos.y >= 0) ? reduced_pos.y : (reduced_pos.y - Scalar(1.0)));
         int iz = ((reduced_pos.z >= 0) ? reduced_pos.z : (reduced_pos.z - Scalar(1.0)));
@@ -422,7 +419,7 @@ void OrderParameterMesh::assignParticles()
             iz = 0;
 
         // compute distance between particle and cell center
-        // in fractional coordinates 
+        // in fractional coordinates
         Scalar3 cell_center = make_scalar3((Scalar)ix + Scalar(0.5),
                                            (Scalar)iy + Scalar(0.5),
                                            (Scalar)iz + Scalar(0.5));
@@ -455,7 +452,6 @@ void OrderParameterMesh::assignParticles()
                         }
                     else if (neighj < 0 || neighj >= (int) m_mesh_points.y) continue;
 
-
                     if (! m_n_ghost_cells.z)
                         {
                         if (neighk == (int) m_mesh_points.z)
@@ -478,7 +474,7 @@ void OrderParameterMesh::assignParticles()
 
                     h_mesh.data[neigh_idx].r += h_mode.data[type]*density_fraction;
                     }
-                 
+
         }  // end of loop over particles
 
     if (m_prof) m_prof->pop();
@@ -510,7 +506,7 @@ void OrderParameterMesh::updateMeshes()
     #endif
 
     ArrayHandle<kiss_fft_cpx> h_fourier_mesh(m_fourier_mesh, access_location::host, access_mode::readwrite);
- 
+
     unsigned int N_global = m_pdata->getNGlobal();
 
         {
@@ -544,7 +540,7 @@ void OrderParameterMesh::updateMeshes()
     #ifdef ENABLE_MPI
     if (m_pdata->getDomainDecomposition())
         {
-        // Distributed inverse transform force on mesh points 
+        // Distributed inverse transform force on mesh points
         m_exec_conf->msg->notice(8) << "cv.mesh: Distributed iFFT" << std::endl;
         m_kiss_idfft->FFT3D(m_fourier_mesh_G, m_inv_fourier_mesh, true);
         }
@@ -675,13 +671,12 @@ void OrderParameterMesh::interpolateForces()
                     force += -(Scalar)m_mesh_points.y*b2*mode*assignTSC(dx_frac.x)*assignTSCderiv(dx_frac.y)*assignTSC(dx_frac.z)*inv_mesh.r;
                     force += -(Scalar)m_mesh_points.z*b3*mode*assignTSC(dx_frac.x)*assignTSC(dx_frac.y)*assignTSCderiv(dx_frac.z)*inv_mesh.r;
 
-                    }  
+                    }
 
         // Multiply with bias potential derivative
         force *= Scalar(2.0)/(Scalar)n_global*m_bias;
 
         h_force.data[idx] = make_scalar4(force.x,force.y,force.z,0.0);
-         
         }  // end of loop over particles
 
     if (m_prof) m_prof->pop();
@@ -757,7 +752,7 @@ Scalar OrderParameterMesh::getCurrentValue(unsigned int timestep)
         m_exec_conf->msg->notice(3) << "cv.mesh: Ghost layer " << m_n_ghost_cells.x << "x"
                                     << m_n_ghost_cells.y << "x"
                                     << m_n_ghost_cells.z << std::endl;
- 
+
         setupMesh();
 
         computeInfluenceFunction();
