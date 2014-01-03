@@ -144,5 +144,6 @@ include (HOOMDMPISetup)
 
 set(HOOMD_LIBRARIES ${HOOMD_LIB} ${HOOMD_COMMON_LIBS})
 include_directories(${HOOMD_INCLUDE_DIR})
+include_directories(${HOOMD_INCLUDE_DIR}/hoomd)
 
 endif (HOOMD_FOUND)

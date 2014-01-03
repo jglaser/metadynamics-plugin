@@ -1,5 +1,6 @@
 #include "OrderParameterMesh.h"
 
+#undef ENABLE_MPI
 using namespace boost::python;
 //! Coefficients of f(x) = sin(x)/x = a_0 + a_2 * x^2 + a_4 * x^4 + a_6 * x^6 + a_8 * x^8 + a_10 * x^10
 const Scalar coeff[] = {Scalar(1.0), Scalar(-1.0/6.0), Scalar(1.0/120.0), Scalar(-1.0/5040.0),
@@ -206,6 +207,7 @@ void OrderParameterMesh::initializeFFT()
 
     if (! local_fft)
         {
+#if 0
         // ghost cell exchanger for reverse direction
         m_mesh_comm = boost::shared_ptr<CommunicatorMesh<kiss_fft_cpx> >(
             new CommunicatorMesh<kiss_fft_cpx>(m_sysdef,
@@ -213,8 +215,9 @@ void OrderParameterMesh::initializeFFT()
                                                m_n_ghost_cells,
                                                make_uint3(m_force_mesh_index.getW(),m_force_mesh_index.getH(),m_force_mesh_index.getD()),
                                                true));
-
+#endif
         // set up distributed FFTs
+#if 0
         m_kiss_dfft = boost::shared_ptr<DistributedKISSFFT>(
             new DistributedKISSFFT(m_exec_conf, m_pdata->getDomainDecomposition(), m_mesh_index, make_uint3(0,0,0)));
         m_kiss_dfft->setProfiler(m_prof);
@@ -222,6 +225,7 @@ void OrderParameterMesh::initializeFFT()
         m_kiss_idfft = boost::shared_ptr<DistributedKISSFFT>(
             new DistributedKISSFFT(m_exec_conf, m_pdata->getDomainDecomposition(), m_force_mesh_index, m_n_ghost_cells));
         m_kiss_idfft->setProfiler(m_prof);
+#endif
         }
     #endif // ENABLE_MPI
 
@@ -554,7 +558,9 @@ void OrderParameterMesh::updateMeshes()
         // update outer cells of force mesh using ghost cells from neighboring processors
         if (m_prof) m_prof->push("ghost exchange");
         m_exec_conf->msg->notice(8) << "cv.mesh: Ghost cell update" << std::endl;
+#if 0
         m_mesh_comm->updateGhostCells(m_inv_fourier_mesh);
+#endif
         if (m_prof) m_prof->pop();
         }
     #endif

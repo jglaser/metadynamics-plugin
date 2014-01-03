@@ -61,7 +61,7 @@ class OrderParameterMeshGPU : public OrderParameterMesh
         cufftHandle m_cufft_plan;          //!< The FFT plan
         bool m_local_fft;                  //!< True if we are only doing local FFTs (not distributed)
 
-        #ifdef ENABLE_MPI
+        #ifdef ENABLE_MPII
         typedef CommunicatorMeshGPU<cufftComplex, gpu_communicate_complex_mesh_map> CommunicatorMeshGPUComplex;
         boost::shared_ptr<CommunicatorMeshGPUComplex> m_gpu_mesh_comm; //!< Communicator for force mesh
 

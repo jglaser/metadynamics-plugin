@@ -1,5 +1,6 @@
 #include "OrderParameterMeshGPU.h"
 
+#undef ENABLE_MPI
 #ifdef ENABLE_CUDA
 #include "OrderParameterMeshGPU.cuh"
 

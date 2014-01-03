@@ -5,7 +5,7 @@
 
 #include "CollectiveVariable.h"
 
-#include <boost/signals.hpp>
+#include <boost/signals2.hpp>
 #include <boost/bind.hpp>
 
 /*! Order parameter evaluated using the particle mesh method
@@ -37,26 +37,6 @@ class OrderParameterMesh : public CollectiveVariable
          * \param timestep The current value of the time step
          */
         Scalar getLogValue(const std::string& quantity, unsigned int timestep);
-
-#ifdef ENABLE_MPI
-        //! Set the communicator to use
-        /*! \param comm MPI communication class
-         */
-        virtual void setCommunicator(boost::shared_ptr<Communicator> comm)
-            {
-            CollectiveVariable::setCommunicator(comm);
-
-            m_ghost_layer_connection = comm->subscribeGhostLayer(boost::bind(&OrderParameterMesh::getGhostLayerWidth, this));
-            }
-
-        //! Get the ghost layer width
-        /*! \returns the requested value of the ghost layer width
-         */
-        Scalar getGhostLayerWidth()
-            {
-            return m_ghost_layer_width;
-            }
-#endif
 
     protected:
         /*! Compute the biased forces for this collective variable.
@@ -134,10 +114,10 @@ class OrderParameterMesh : public CollectiveVariable
         kiss_fftnd_cfg m_kiss_fft;         //!< The FFT configuration
         kiss_fftnd_cfg m_kiss_ifft;        //!< Inverse FFT configuration
 
-        #ifdef ENABLE_MPI
+        #ifdef ENABLE_MPII
         boost::shared_ptr<DistributedKISSFFT> m_kiss_dfft;  //!< Distributed FFT for forward transform
         boost::shared_ptr<DistributedKISSFFT> m_kiss_idfft;  //!< Distributed FFT for inverse transform
-        boost::shared_ptr<CommunicatorMesh<kiss_fft_cpx> > m_mesh_comm; //!< Communicator for force mesh
+//        boost::shared_ptr<CommunicatorMesh<kiss_fft_cpx> > m_mesh_comm; //!< Communicator for force mesh
         #endif
 
         bool m_kiss_fft_initialized;               //!< True if a local KISS FFT has been set up
@@ -147,8 +127,8 @@ class OrderParameterMesh : public CollectiveVariable
         GPUArray<kiss_fft_cpx> m_fourier_mesh_G;   //!< Fourier transformed mesh times the influence function
         GPUArray<kiss_fft_cpx> m_inv_fourier_mesh; //!< The inverse-Fourier transformed mesh
 
-        boost::signals::connection m_boxchange_connection; //!< Connection to ParticleData box change signal
-        boost::signals::connection m_ghost_layer_connection; //!< Requests a ghost layer width
+        boost::signals2::connection m_boxchange_connection; //!< Connection to ParticleData box change signal
+        boost::signals2::connection m_ghost_layer_connection; //!< Requests a ghost layer width
 
         std::vector<string> m_log_names;           //!< Name of the log quantity
 
@@ -157,21 +137,12 @@ class OrderParameterMesh : public CollectiveVariable
         //! Compute virial on mesh
         void computeVirialMesh();
 
-        //! Helper function to compute number of ghost cells 
+        //! Helper function to compute number of ghost cells
         uint3 computeNumGhostCells();
-    
+
         //! Helper function to compute width of ghost particl layer
         void computeParticleGhostLayerWidth();
     };
-
-//! Define plus operator for complex data type (needed by CommunicatorMesh)
-inline kiss_fft_cpx operator + (kiss_fft_cpx& lhs, kiss_fft_cpx& rhs)
-    {
-    kiss_fft_cpx res;
-    res.r = lhs.r + rhs.r;
-    res.i = lhs.i + rhs.i;
-    return res;
-    }
 
 void export_OrderParameterMesh();
 

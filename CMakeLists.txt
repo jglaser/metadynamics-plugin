@@ -20,6 +20,7 @@ set(BUILD_SHARED_LIBS on)
 add_subdirectory(cppmodule)
 add_subdirectory(pymodule)
 add_subdirectory(doc)
+add_subdirectory(test)
 
 # overide the CMAKE_INSTALL_PREFIX on the first run to the env HOOMD_PLUGINS_DIR if defined or ${HOOMD_ROOT}
 # ${HOOMD_ROOT} will likely be the most common installation directory, but users may want to override
