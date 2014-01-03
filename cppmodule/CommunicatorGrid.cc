@@ -156,7 +156,7 @@ void CommunicatorGrid<T>::initGridComm()
     }
 
 template<typename T>
-void CommunicatorGrid<T>::communicate(const GPUArray<T>& grid, unsigned int timestep)
+void CommunicatorGrid<T>::communicate(const GPUArray<T>& grid)
     {
     assert(grid.getNumElements() >= m_embed.x*m_embed.y*m_embed.z);
 
@@ -209,7 +209,7 @@ void CommunicatorGrid<T>::communicate(const GPUArray<T>& grid, unsigned int time
         unsigned int n = m_send_buf.getNumElements();
         if (m_add_outer)
             for (unsigned int i = 0; i < n; ++i)
-                h_grid.data[h_recv_idx.data[i]] += h_recv_buf.data[i];
+                h_grid.data[h_recv_idx.data[i]] = h_grid.data[h_recv_idx.data[i]] + h_recv_buf.data[i];
         else
             for (unsigned int i = 0; i < n; ++i)
                 h_grid.data[h_recv_idx.data[i]] = h_recv_buf.data[i];
@@ -219,3 +219,14 @@ void CommunicatorGrid<T>::communicate(const GPUArray<T>& grid, unsigned int time
 //! Explicit template instantiations
 template class CommunicatorGrid<Scalar>;
 template class CommunicatorGrid<unsigned int>;
+
+//! Define plus operator for complex data type (needed by CommunicatorMesh)
+inline kiss_fft_cpx operator + (kiss_fft_cpx& lhs, kiss_fft_cpx& rhs)
+    {
+    kiss_fft_cpx res;
+    res.r = lhs.r + rhs.r;
+    res.i = lhs.i + rhs.i;
+    return res;
+}
+
+template class CommunicatorGrid<kiss_fft_cpx>;

@@ -15,7 +15,7 @@ class CommunicatorGrid
             uint3 embed, uint3 offset, bool add_outer_layer_to_inner);
 
         //! Communicate grid
-        virtual void communicate(const GPUArray<T>& grid, unsigned int timestep);
+        virtual void communicate(const GPUArray<T>& grid);
 
     protected:
         boost::shared_ptr<SystemDefinition> m_sysdef;        //!< System definition

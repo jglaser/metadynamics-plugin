@@ -642,8 +642,7 @@ __global__ void gpu_compute_forces_kernel(const unsigned int N,
                         neighk = 0;
                     else if (neighk < 0)
                         neighk += inner_dim.z;
-                    } 
-
+                    }
 
                 // compute fraction of particle density assigned to cell
                 unsigned int cell_idx;

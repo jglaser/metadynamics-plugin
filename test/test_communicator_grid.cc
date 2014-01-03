@@ -128,7 +128,7 @@ void test_communicate_grid_basic(shared_ptr<ExecutionConfiguration> exec_conf)
         }
 
     // perform communication
-    grid_comm.communicate(grid,0);
+    grid_comm.communicate(grid);
 
     Index3D didx = decomposition->getDomainIndexer();
     uint3 grid_pos = didx.getTriple(rank);
@@ -211,7 +211,7 @@ void test_communicate_grid_basic(shared_ptr<ExecutionConfiguration> exec_conf)
 
 
     // perform communication
-    grid_comm_3.communicate(grid_3,0);
+    grid_comm_3.communicate(grid_3);
 
         {
         ArrayHandle<unsigned int> h_grid_3(grid_3, access_location::host, access_mode::read);
@@ -345,7 +345,7 @@ void test_communicate_grid_positions(shared_ptr<ExecutionConfiguration> exec_con
         }
 
     // perform communication
-    grid_comm_2.communicate(grid_2,0);
+    grid_comm_2.communicate(grid_2);
 
         {
         ArrayHandle<unsigned int> h_grid_2(grid_2, access_location::host, access_mode::read);

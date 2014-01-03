@@ -4,6 +4,9 @@
 #define __ORDER_PARAMETER_MESH_H__
 
 #include "CollectiveVariable.h"
+#include "CommunicatorGrid.h"
+
+#include <dfft_host.h>
 
 #include <boost/signals2.hpp>
 #include <boost/bind.hpp>
@@ -50,8 +53,9 @@ class OrderParameterMesh : public CollectiveVariable
         Scalar3 m_mesh_size;                //!< The dimensions of a single cell along every coordinate
         uint3 m_mesh_points;                //!< Number of sub-divisions along one coordinate
         uint3 m_n_ghost_cells;              //!< Number of ghost cells along every axis
-        Index3D m_mesh_index;               //!< Indexer for the particle mesh 
-        Index3D m_force_mesh_index;         //!< Indexer for the force mesh
+        uint3 m_grid_dim;                   //!< Grid dimensions (including ghost cells)
+        Scalar3 m_ghost_width;              //!< Dimensions of the ghost layer
+        unsigned int m_n_cells;             //!< Total number of inner cells
         unsigned int m_radius;              //!< Stencil radius (in units of mesh size)
         unsigned int m_n_inner_cells;       //!< Number of inner mesh points (without ghost cells)
         GPUArray<Scalar> m_mode;            //!< Per-type scalar multiplying density ("charges")
@@ -61,7 +65,7 @@ class OrderParameterMesh : public CollectiveVariable
         bool m_is_first_step;               //!< True if we have not yet computed the influence function
         unsigned int m_cv_last_updated;     //!< Timestep of last update of collective variable
         bool m_box_changed;                 //!< True if box has changed since last compute
-	    Scalar m_cv;			            //!< Current value of collective variable
+        Scalar m_cv;                        //!< Current value of collective variable
 
         GPUArray<Scalar> m_virial_mesh;     //!< k-space mesh of virial tensor values
 
@@ -85,7 +89,7 @@ class OrderParameterMesh : public CollectiveVariable
 
         //! Compute the optimal influence function
         virtual void computeInfluenceFunction();
- 
+
         //! The TSC (triangular-shaped cloud) charge assignment function
         Scalar assignTSC(Scalar x);
 
@@ -114,10 +118,12 @@ class OrderParameterMesh : public CollectiveVariable
         kiss_fftnd_cfg m_kiss_fft;         //!< The FFT configuration
         kiss_fftnd_cfg m_kiss_ifft;        //!< Inverse FFT configuration
 
-        #ifdef ENABLE_MPII
-        boost::shared_ptr<DistributedKISSFFT> m_kiss_dfft;  //!< Distributed FFT for forward transform
-        boost::shared_ptr<DistributedKISSFFT> m_kiss_idfft;  //!< Distributed FFT for inverse transform
-//        boost::shared_ptr<CommunicatorMesh<kiss_fft_cpx> > m_mesh_comm; //!< Communicator for force mesh
+        #ifdef ENABLE_MPI
+        dfft_plan m_dfft_plan_forward;     //!< Distributed FFT for forward transform
+        dfft_plan m_dfft_plan_inverse;     //!< Distributed FFT for inverse transform
+        unsigned int m_ghost_offset;       //!< Offset in mesh due to ghost cells
+        std::auto_ptr<CommunicatorGrid<kiss_fft_cpx> > m_grid_comm_forward; //!< Communicator for charge mesh
+        std::auto_ptr<CommunicatorGrid<kiss_fft_cpx> > m_grid_comm_reverse; //!< Communicator for inv fourier mesh
         #endif
 
         bool m_kiss_fft_initialized;               //!< True if a local KISS FFT has been set up
@@ -128,20 +134,14 @@ class OrderParameterMesh : public CollectiveVariable
         GPUArray<kiss_fft_cpx> m_inv_fourier_mesh; //!< The inverse-Fourier transformed mesh
 
         boost::signals2::connection m_boxchange_connection; //!< Connection to ParticleData box change signal
-        boost::signals2::connection m_ghost_layer_connection; //!< Requests a ghost layer width
 
         std::vector<string> m_log_names;           //!< Name of the log quantity
-
-        Scalar m_ghost_layer_width;                //!< The minimum width of the Communicator ghost layer
 
         //! Compute virial on mesh
         void computeVirialMesh();
 
-        //! Helper function to compute number of ghost cells
-        uint3 computeNumGhostCells();
-
-        //! Helper function to compute width of ghost particl layer
-        void computeParticleGhostLayerWidth();
+        //! Compute number of ghost cellso
+        uint3 computeGhostCellNum();
     };
 
 void export_OrderParameterMesh();

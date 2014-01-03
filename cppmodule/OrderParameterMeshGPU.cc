@@ -51,7 +51,7 @@ OrderParameterMeshGPU::OrderParameterMeshGPU(boost::shared_ptr<SystemDefinition>
                                   *(m_mesh_points.y+m_n_ghost_bins.y)
                                   *(m_mesh_points.z+m_n_ghost_bins.z);
     m_bin_idx = Index2D(n_particle_bins,m_cell_size);
-    m_scratch_idx = Index2D(m_mesh_index.getNumElements(),(2*m_radius+1)*(2*m_radius+1)*(2*m_radius+1));
+    m_scratch_idx = Index2D(m_n_inner_cells,(2*m_radius+1)*(2*m_radius+1)*(2*m_radius+1));
     }
 
 OrderParameterMeshGPU::~OrderParameterMeshGPU()
@@ -119,9 +119,7 @@ void OrderParameterMeshGPU::initializeFFT()
     GPUArray<cufftComplex> fourier_mesh_G(m_n_inner_cells, m_exec_conf);
     m_fourier_mesh_G.swap(fourier_mesh_G);
 
-    unsigned int num_cells = m_force_mesh_index.getNumElements();
-
-    GPUArray<cufftComplex> inv_fourier_mesh(num_cells, m_exec_conf);
+    GPUArray<cufftComplex> inv_fourier_mesh(m_n_cells, m_exec_conf);
     m_inv_fourier_mesh.swap(inv_fourier_mesh);
 
     GPUArray<Scalar4> particle_bins(m_bin_idx.getNumElements(), m_exec_conf);
@@ -159,6 +157,7 @@ void OrderParameterMeshGPU::assignParticles()
         cudaMemset(d_n_cell.data,0,sizeof(unsigned int)*m_n_cell.getNumElements());
 
             {
+            #if 0
             ArrayHandle<Scalar4> d_particle_bins(m_particle_bins, access_location::device, access_mode::overwrite);
             gpu_bin_particles(m_pdata->getN()+m_pdata->getNGhosts(),
                               d_postype.data,
@@ -166,11 +165,11 @@ void OrderParameterMeshGPU::assignParticles()
                               d_n_cell.data,
                               m_cell_overflowed.getDeviceFlags(),
                               m_bin_idx,
-                              m_mesh_index,
+                              m_n_inner_cells,
                               m_n_ghost_bins,
                               d_mode.data,
                               m_pdata->getBox());
-
+            #endif
             if (m_exec_conf->isCUDAErrorCheckingEnabled())
                 CHECK_CUDA_ERROR();
             }
@@ -195,7 +194,8 @@ void OrderParameterMeshGPU::assignParticles()
         // assign particles to mesh
         ArrayHandle<Scalar4> d_particle_bins(m_particle_bins, access_location::device, access_mode::read);
         ArrayHandle<Scalar> d_mesh_scratch(m_mesh_scratch, access_location::device, access_mode::overwrite);
-        
+       
+        #if 0
         gpu_assign_binned_particles_to_mesh(m_mesh_index,
                                             m_n_ghost_bins,
                                             d_particle_bins.data,
@@ -205,6 +205,7 @@ void OrderParameterMeshGPU::assignParticles()
                                             d_n_cell.data,
                                             d_mesh.data,
                                             m_local_fft);
+        #endif
 
         if (m_exec_conf->isCUDAErrorCheckingEnabled())
             CHECK_CUDA_ERROR();
@@ -333,6 +334,7 @@ void OrderParameterMeshGPU::interpolateForces()
 
     ArrayHandle<Scalar4> d_force(m_force, access_location::device, access_mode::overwrite);
 
+    #if 0
     gpu_compute_forces(m_pdata->getN(),
                        d_postype.data,
                        d_force.data,
@@ -345,6 +347,7 @@ void OrderParameterMeshGPU::interpolateForces()
                        m_pdata->getGlobalBox(),
                        m_local_fft,
                        m_pdata->getNGlobal());
+    #endif
 
     if (m_exec_conf->isCUDAErrorCheckingEnabled())
         CHECK_CUDA_ERROR();
@@ -403,6 +406,7 @@ Scalar OrderParameterMeshGPU::computeCV()
 
     ArrayHandle<Scalar> d_sum_partial(m_sum_partial, access_location::device, access_mode::overwrite);
 
+    #if 0
     gpu_compute_cv(m_n_inner_cells,
                    d_sum_partial.data,
                    m_sum.getDeviceFlags(),
@@ -411,6 +415,7 @@ Scalar OrderParameterMeshGPU::computeCV()
                    m_block_size,
                    m_mesh_index,
                    m_exec_conf->getRank() == 0);
+    #endif
  
     if (m_exec_conf->isCUDAErrorCheckingEnabled())
         CHECK_CUDA_ERROR();
@@ -459,6 +464,7 @@ void OrderParameterMeshGPU::computeInfluenceFunction()
         }
     #endif
 
+    #if 0
     gpu_compute_influence_function(m_mesh_index,
                                    global_dim,
                                    d_inf_f.data,
@@ -470,6 +476,7 @@ void OrderParameterMeshGPU::computeInfluenceFunction()
                                    m_local_fft,
                                    pidx,
                                    pdim);
+    #endif
   
     if (m_exec_conf->isCUDAErrorCheckingEnabled())
         CHECK_CUDA_ERROR();

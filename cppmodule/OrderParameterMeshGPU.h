@@ -67,7 +67,6 @@ class OrderParameterMeshGPU : public OrderParameterMesh
 
         dfft_plan m_dfft_plan_forward;     //!< Forward distributed FFT
         dfft_plan m_dfft_plan_inverse;     //!< Forward distributed FFT
-        unsigned int m_ghost_offset;       //!< Offset in mesh due to ghost cells
         #endif
 
         GPUArray<cufftComplex> m_mesh;                 //!< The particle density mesh

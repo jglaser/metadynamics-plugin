@@ -1,6 +1,5 @@
 #include "OrderParameterMesh.h"
 
-#undef ENABLE_MPI
 using namespace boost::python;
 
 /*! \param sysdef The system definition
@@ -19,6 +18,9 @@ OrderParameterMesh::OrderParameterMesh(boost::shared_ptr<SystemDefinition> sysde
                                             std::vector<int3> zero_modes)
     : CollectiveVariable(sysdef, "mesh"),
       m_n_ghost_cells(make_uint3(0,0,0)),
+      m_grid_dim(make_uint3(0,0,0)),
+      m_ghost_width(make_scalar3(0,0,0)),
+      m_n_cells(0),
       m_radius(1),
       m_n_inner_cells(0),
       m_is_first_step(true),
@@ -26,8 +28,7 @@ OrderParameterMesh::OrderParameterMesh(boost::shared_ptr<SystemDefinition> sysde
       m_box_changed(false),
       m_cv(Scalar(0.0)),
       m_q_max_last_computed(0),
-      m_kiss_fft_initialized(false),
-      m_ghost_layer_width(0.0)
+      m_kiss_fft_initialized(false)
     {
 
     if (mode.size() != m_pdata->getNTypes())
@@ -88,11 +89,9 @@ OrderParameterMesh::OrderParameterMesh(boost::shared_ptr<SystemDefinition> sysde
         m_mesh_points.y /= didx.getH();
         m_mesh_points.z /= didx.getD();
         }
-    #endif // ENABLE_MPI
 
-    m_mesh_index = Index3D(m_mesh_points.x,
-                           m_mesh_points.y,
-                           m_mesh_points.z);
+    m_ghost_offset = 0;
+    #endif // ENABLE_MPI
 
     // reset virial
     ArrayHandle<Scalar> h_virial(m_virial, access_location::host, access_mode::overwrite);
@@ -105,9 +104,6 @@ OrderParameterMesh::OrderParameterMesh(boost::shared_ptr<SystemDefinition> sysde
     m_log_names.push_back("qy_max");
     m_log_names.push_back("qz_max");
     m_log_names.push_back("sq_max");
-
-    // we need to compute the particle ghost layer before the first force calculation
-    computeParticleGhostLayerWidth();
     }
 
 OrderParameterMesh::~OrderParameterMesh()
@@ -118,17 +114,35 @@ OrderParameterMesh::~OrderParameterMesh()
         free(m_kiss_ifft);
         kiss_fft_cleanup();
         }
+    #ifdef ENABLE_MPI
+    else
+        {
+        dfft_destroy_plan(m_dfft_plan_forward);
+        dfft_destroy_plan(m_dfft_plan_inverse);
+        }
+    #endif
     m_boxchange_connection.disconnect();
-    if (m_ghost_layer_connection.connected())
-        m_ghost_layer_connection.disconnect();
     }
 
 void OrderParameterMesh::setupMesh()
     {
-    m_force_mesh_index = Index3D(m_mesh_points.x+m_n_ghost_cells.x,
-                           m_mesh_points.y+m_n_ghost_cells.y,
-                           m_mesh_points.z+m_n_ghost_cells.z);
- 
+    // update number of ghost cells
+    m_n_ghost_cells = computeGhostCellNum();
+    const BoxDim& box = m_pdata->getBox();
+    Scalar3 cell_width = box.getNearestPlaneDistance() /
+        make_scalar3(m_mesh_points.x, m_mesh_points.y, m_mesh_points.z);
+    m_ghost_width = cell_width*make_scalar3( m_n_ghost_cells.x, m_n_ghost_cells.y, m_n_ghost_cells.z);
+
+    m_exec_conf->msg->notice(6) << "cv.mesh: (Re-)allocating ghost layer ("
+                                 << m_n_ghost_cells.x << ","
+                                 << m_n_ghost_cells.y << ","
+                                 << m_n_ghost_cells.z << ")" << std::endl;
+
+    m_grid_dim = make_uint3(m_mesh_points.x+2*m_n_ghost_cells.x,
+                           m_mesh_points.y+2*m_n_ghost_cells.y,
+                           m_mesh_points.z+2*m_n_ghost_cells.z);
+
+    m_n_cells = m_grid_dim.x*m_grid_dim.y*m_grid_dim.z;
     m_n_inner_cells = m_mesh_points.x * m_mesh_points.y * m_mesh_points.z;
 
     // allocate memory for influence function and k values
@@ -142,57 +156,38 @@ void OrderParameterMesh::setupMesh()
     m_virial_mesh.swap(virial_mesh);
 
     initializeFFT();
-    } 
+    }
 
-uint3 OrderParameterMesh::computeNumGhostCells()
+uint3 OrderParameterMesh::computeGhostCellNum()
     {
+    // ghost cells
     uint3 n_ghost_cells = make_uint3(0,0,0);
     #ifdef ENABLE_MPI
     if (m_pdata->getDomainDecomposition())
         {
-        // particles can move a max distance of r_buff/2 outside the box between particle migration
-        Scalar d_max = m_comm->getRBuff()/Scalar(2.0);
-
-        const BoxDim& box = m_pdata->getBox();
-
-        // maximum fractional distance
-        Scalar3 d_max_frac = d_max/box.getNearestPlaneDistance();
-
-        uchar3 periodic = box.getPeriodic();
-        n_ghost_cells = make_uint3(periodic.x ? 0 : 2*m_radius,
-                                   periodic.y ? 0 : 2*m_radius,
-                                   periodic.z ? 0 : 2*m_radius);
-
-        // the ghost layer must have a width of the maximum distance in addition
-        // to one radius of ghost cells
-        if (!periodic.x) n_ghost_cells.x += 2*((unsigned int)(d_max_frac.x*(Scalar)m_mesh_points.x)+1);
-        if (!periodic.y) n_ghost_cells.y += 2*((unsigned int)(d_max_frac.y*(Scalar)m_mesh_points.y)+1);
-        if (!periodic.z) n_ghost_cells.z += 2*((unsigned int)(d_max_frac.z*(Scalar)m_mesh_points.z)+1);
+        Index3D di = m_pdata->getDomainDecomposition()->getDomainIndexer();
+        n_ghost_cells.x = (di.getW() > 1) ? m_radius : 0;
+        n_ghost_cells.y = (di.getH() > 1) ? m_radius : 0;
+        n_ghost_cells.z = (di.getD() > 1) ? m_radius : 0;
         }
     #endif
 
+    // extra ghost cells to accomodate skin layer
+    #ifdef ENABLE_MPI
+    if (m_comm)
+        {
+        Scalar r_buff = m_comm->getRBuff();
+
+        const BoxDim& box = m_pdata->getBox();
+        Scalar3 cell_width = box.getNearestPlaneDistance() /
+            make_scalar3(m_mesh_points.x, m_mesh_points.y, m_mesh_points.z);
+
+        if (n_ghost_cells.x) n_ghost_cells.x += r_buff/cell_width.x + 1;
+        if (n_ghost_cells.y) n_ghost_cells.y += r_buff/cell_width.y + 1;
+        if (n_ghost_cells.z) n_ghost_cells.z += r_buff/cell_width.z + 1;
+        }
+    #endif
     return n_ghost_cells;
-    }
-
-void OrderParameterMesh::computeParticleGhostLayerWidth()
-    {
-    const BoxDim& box = m_pdata->getBox();
-
-    // The width of the ghost layer for particles is the width of one cell times radius
-    Scalar3 ghost_width = box.getNearestPlaneDistance()*(Scalar)m_radius;
-    ghost_width = ghost_width / make_scalar3(m_mesh_points.x,m_mesh_points.y,m_mesh_points.z);
-
-    // ignore periodic directions
-    uchar3 periodic = box.getPeriodic();
-
-    if (periodic.x) ghost_width.x = Scalar(0.0);
-    if (periodic.y) ghost_width.y = Scalar(0.0);
-    if (periodic.z) ghost_width.z = Scalar(0.0);
-
-    // take max of all directions
-    m_ghost_layer_width = ghost_width.x;
-    m_ghost_layer_width = m_ghost_layer_width > ghost_width.y ? m_ghost_layer_width : ghost_width.y;
-    m_ghost_layer_width = m_ghost_layer_width > ghost_width.z ? m_ghost_layer_width : ghost_width.z;
     }
 
 void OrderParameterMesh::initializeFFT()
@@ -204,25 +199,43 @@ void OrderParameterMesh::initializeFFT()
 
     if (! local_fft)
         {
-#if 0
-        // ghost cell exchanger for reverse direction
-        m_mesh_comm = boost::shared_ptr<CommunicatorMesh<kiss_fft_cpx> >(
-            new CommunicatorMesh<kiss_fft_cpx>(m_sysdef,
-                                               m_comm,
-                                               m_n_ghost_cells,
-                                               make_uint3(m_force_mesh_index.getW(),m_force_mesh_index.getH(),m_force_mesh_index.getD()),
-                                               true));
-#endif
+        // ghost cell communicator for charge interpolation
+        m_grid_comm_forward = std::auto_ptr<CommunicatorGrid<kiss_fft_cpx> >(
+            new CommunicatorGrid<kiss_fft_cpx>(m_sysdef,
+               make_uint3(m_mesh_points.x, m_mesh_points.y, m_mesh_points.z),
+               make_uint3(m_grid_dim.x, m_grid_dim.y, m_grid_dim.z),
+               m_n_ghost_cells,
+               true));
+        // ghost cell communicator for force mesh
+        m_grid_comm_reverse = std::auto_ptr<CommunicatorGrid<kiss_fft_cpx> >(
+            new CommunicatorGrid<kiss_fft_cpx>(m_sysdef,
+               make_uint3(m_mesh_points.x, m_mesh_points.y, m_mesh_points.z),
+               make_uint3(m_grid_dim.x, m_grid_dim.y, m_grid_dim.z),
+               m_n_ghost_cells,
+               false));
         // set up distributed FFTs
-#if 0
-        m_kiss_dfft = boost::shared_ptr<DistributedKISSFFT>(
-            new DistributedKISSFFT(m_exec_conf, m_pdata->getDomainDecomposition(), m_mesh_index, make_uint3(0,0,0)));
-        m_kiss_dfft->setProfiler(m_prof);
-
-        m_kiss_idfft = boost::shared_ptr<DistributedKISSFFT>(
-            new DistributedKISSFFT(m_exec_conf, m_pdata->getDomainDecomposition(), m_force_mesh_index, m_n_ghost_cells));
-        m_kiss_idfft->setProfiler(m_prof);
-#endif
+        int gdim[3];
+        int pdim[3];
+        Index3D decomp_idx = m_pdata->getDomainDecomposition()->getDomainIndexer();
+        pdim[0] = decomp_idx.getD();
+        pdim[1] = decomp_idx.getH();
+        pdim[2] = decomp_idx.getW();
+        gdim[0] = m_mesh_points.z*pdim[0];
+        gdim[1] = m_mesh_points.y*pdim[1];
+        gdim[2] = m_mesh_points.x*pdim[2];
+        int embed[3];
+        embed[0] = m_mesh_points.z+2*m_n_ghost_cells.z;
+        embed[1] = m_mesh_points.y+2*m_n_ghost_cells.y;
+        embed[2] = m_mesh_points.x+2*m_n_ghost_cells.x;
+        m_ghost_offset = ((m_n_ghost_cells.z)*embed[1]+m_n_ghost_cells.y)*embed[0]+m_n_ghost_cells.x;
+        uint3 pcoord = m_pdata->getDomainDecomposition()->getDomainIndexer().getTriple(m_exec_conf->getRank());
+        int pidx[3];
+        pidx[0] = pcoord.z;
+        pidx[1] = pcoord.y;
+        pidx[2] = pcoord.x;
+        int row_m = 0; /* Hoomd uses row-major process-id mapping */
+        dfft_create_plan(&m_dfft_plan_forward, 3, gdim, NULL, embed, pdim, pidx, row_m, 0, 1, m_exec_conf->getMPICommunicator());
+        dfft_create_plan(&m_dfft_plan_inverse, 3, gdim, NULL, embed, pdim, pidx, row_m, 0, 1, m_exec_conf->getMPICommunicator());
         }
     #endif // ENABLE_MPI
 
@@ -249,9 +262,7 @@ void OrderParameterMesh::initializeFFT()
     GPUArray<kiss_fft_cpx> fourier_mesh_G(m_n_inner_cells, m_exec_conf);
     m_fourier_mesh_G.swap(fourier_mesh_G);
 
-    unsigned int num_cells = m_force_mesh_index.getNumElements();
-
-    GPUArray<kiss_fft_cpx> inv_fourier_mesh(num_cells, m_exec_conf);
+    GPUArray<kiss_fft_cpx> inv_fourier_mesh(m_n_cells, m_exec_conf);
     m_inv_fourier_mesh.swap(inv_fourier_mesh);
     }
 
@@ -278,21 +289,20 @@ void OrderParameterMesh::computeInfluenceFunction()
     Scalar3 b2 = Scalar(2.0*M_PI)*make_scalar3(a3.y*a1.z-a3.z*a1.y, a3.z*a1.x-a3.x*a1.z, a3.x*a1.y-a3.y*a1.x)/V_box;
     Scalar3 b3 = Scalar(2.0*M_PI)*make_scalar3(a1.y*a2.z-a1.z*a2.y, a1.z*a2.x-a1.x*a2.z, a1.x*a2.y-a1.y*a2.x)/V_box;
 
-    #ifdef ENABLE_MPI
-    DFFTIndex dfft_idx;
-    if (m_pdata->getDomainDecomposition())
-        dfft_idx = m_kiss_dfft->getIndexer();
-    #endif
     bool local_fft = m_kiss_fft_initialized;
 
     uint3 global_dim = m_mesh_points;
     #ifdef ENABLE_MPI
+    uint3 pdim=make_uint3(0,0,0);
+    uint3 pidx=make_uint3(0,0,0);
     if (m_pdata->getDomainDecomposition())
         {
         const Index3D &didx = m_pdata->getDomainDecomposition()->getDomainIndexer();
         global_dim.x *= didx.getW();
         global_dim.y *= didx.getH();
         global_dim.z *= didx.getD();
+        pidx = didx.getTriple(m_exec_conf->getRank());
+        pdim = make_uint3(didx.getW(), didx.getH(), didx.getD());
         }
     #endif
 
@@ -301,7 +311,18 @@ void OrderParameterMesh::computeInfluenceFunction()
         uint3 wave_idx;
         #ifdef ENABLE_MPI
         if (! local_fft)
-            wave_idx = dfft_idx(cell_idx);
+           {
+           // local layout: row major
+           int ny = m_mesh_points.y;
+           int nx = m_mesh_points.x;
+           int n_local = cell_idx/ny/nx;
+           int m_local = (cell_idx-n_local*ny*nx)/nx;
+           int l_local = cell_idx % nx;
+           // cyclic distribution
+           wave_idx.x = l_local*pdim.x + pidx.x;
+           wave_idx.y = m_local*pdim.y + pidx.y;
+           wave_idx.z = n_local*pdim.z + pidx.z;
+           }
         else
         #endif
             {
@@ -320,10 +341,10 @@ void OrderParameterMesh::computeInfluenceFunction()
             n.y -= (int) global_dim.y;
         if (n.z >= (int)(global_dim.z/2 + global_dim.z%2))
             n.z -= (int) global_dim.z;
-        
+
         Scalar3 k = (Scalar)n.x*b1+(Scalar)n.y*b2+(Scalar)n.z*b3;
         Scalar ksq = dot(k,k);
- 
+
         Scalar knorm = sqrtf(ksq);
         Scalar k_cut = sqrtf(m_qstarsq);
         Scalar val = Scalar(1.0)/(Scalar(1.0)+expf(Scalar(12.0)*(knorm/k_cut-Scalar(1.0))));
@@ -335,7 +356,6 @@ void OrderParameterMesh::computeInfluenceFunction()
 
     if (m_prof) m_prof->pop();
     }
-                             
 
 /*! \param x Distance on mesh in units of the mesh size
  */
@@ -383,16 +403,10 @@ void OrderParameterMesh::assignParticles()
     // set mesh to zero
     memset(h_mesh.data, 0, sizeof(kiss_fft_cpx)*m_mesh.getNumElements());
 
-    // inverse dimensions
-    Scalar3 dim_inv = make_scalar3(Scalar(1.0)/(Scalar)m_mesh_points.x,
-                                   Scalar(1.0)/(Scalar)m_mesh_points.y,
-                                   Scalar(1.0)/(Scalar)m_mesh_points.z); 
+    unsigned int nparticles = m_pdata->getN();
 
-    bool local_fft = m_kiss_fft_initialized;
-
-    unsigned int ntot = m_pdata->getN() + m_pdata->getNGhosts();
-
-    for (unsigned int idx = 0; idx < ntot; ++idx)
+    // loop over local particles
+    for (unsigned int idx = 0; idx < nparticles; ++idx)
         {
         Scalar4 postype = h_postype.data[idx];
 
@@ -400,22 +414,22 @@ void OrderParameterMesh::assignParticles()
         unsigned int type = __scalar_as_int(postype.w);
 
         // compute coordinates in units of the mesh size
-        Scalar3 f = box.makeFraction(pos);
-        Scalar3 reduced_pos = make_scalar3(f.x * (Scalar) m_mesh_points.x,
-                                           f.y * (Scalar) m_mesh_points.y,
-                                           f.z * (Scalar) m_mesh_points.z);
+        Scalar3 f = box.makeFraction(pos, m_ghost_width);
+        Scalar3 reduced_pos = make_scalar3(f.x * (Scalar) m_grid_dim.x,
+                                           f.y * (Scalar) m_grid_dim.y,
+                                           f.z * (Scalar) m_grid_dim.z);
 
         // find cell the particle is in (rounding downwards)
-        int ix = ((reduced_pos.x >= 0) ? reduced_pos.x : (reduced_pos.x - Scalar(1.0)));
-        int iy = ((reduced_pos.y >= 0) ? reduced_pos.y : (reduced_pos.y - Scalar(1.0)));
-        int iz = ((reduced_pos.z >= 0) ? reduced_pos.z : (reduced_pos.z - Scalar(1.0)));
+        int ix = reduced_pos.x;
+        int iy = reduced_pos.y;
+        int iz = reduced_pos.z;
 
         // handle particles on the boundary
-        if (ix == (int)m_mesh_points.x && !m_n_ghost_cells.x)
+        if (ix == (int)m_grid_dim.x && !m_n_ghost_cells.x)
             ix = 0;
-        if (iy == (int)m_mesh_points.y && !m_n_ghost_cells.y)
+        if (iy == (int)m_grid_dim.y && !m_n_ghost_cells.y)
             iy = 0;
-        if (iz == (int)m_mesh_points.z && !m_n_ghost_cells.z)
+        if (iz == (int)m_grid_dim.z && !m_n_ghost_cells.z)
             iz = 0;
 
         // compute distance between particle and cell center
@@ -436,41 +450,39 @@ void OrderParameterMesh::assignParticles()
 
                     if (! m_n_ghost_cells.x)
                         {
-                        if (neighi == (int) m_mesh_points.x)
+                        if (neighi == (int) m_grid_dim.x)
                             neighi = 0;
                         else if (neighi < 0)
-                            neighi += m_mesh_points.x;
+                            neighi += m_grid_dim.x;
                         }
-                    else if (neighi < 0 || neighi >= (int) m_mesh_points.x) continue;
+                    assert(neighi >= 0 && neighi < (int) m_grid_dim.x);
 
                     if (! m_n_ghost_cells.y)
                         {
-                        if (neighj == (int) m_mesh_points.y)
+                        if (neighj == (int) m_grid_dim.y)
                             neighj = 0;
                         else if (neighj < 0)
-                            neighj += m_mesh_points.y;
+                            neighj += m_grid_dim.y;
                         }
-                    else if (neighj < 0 || neighj >= (int) m_mesh_points.y) continue;
+                    assert(neighj >= 0 && neighj < (int) m_grid_dim.y);
 
                     if (! m_n_ghost_cells.z)
                         {
-                        if (neighk == (int) m_mesh_points.z)
+                        if (neighk == (int) m_grid_dim.z)
                             neighk = 0;
                         else if (neighk < 0)
-                            neighk += m_mesh_points.z;
+                            neighk += m_grid_dim.z;
                         }
-                    else if (neighk < 0 || neighk >= (int) m_mesh_points.z) continue;
+                    assert(neighk >= 0 && neighk < (int) m_mesh_point.z);
 
                     Scalar3 dx_frac = shift - make_scalar3(i,j,k);
 
                     // compute fraction of particle density assigned to cell
                     Scalar density_fraction = assignTSC(dx_frac.x)*assignTSC(dx_frac.y)*assignTSC(dx_frac.z);
                     unsigned int neigh_idx;
-                    if (local_fft)
-                        // store in row major order for kiss FFT
-                        neigh_idx = neighi + m_mesh_points.x * (neighj + m_mesh_points.y*neighk);
-                    else
-                        neigh_idx = m_mesh_index(neighi,neighj,neighk);
+
+                    // store in row major order
+                    neigh_idx = neighi + m_grid_dim.x * (neighj + m_grid_dim.y*neighk);
 
                     h_mesh.data[neigh_idx].r += h_mode.data[type]*density_fraction;
                     }
@@ -499,9 +511,19 @@ void OrderParameterMesh::updateMeshes()
     #ifdef ENABLE_MPI
     if (m_pdata->getDomainDecomposition())
         {
+        // update inner cells of particle mesh
+        if (m_prof) m_prof->push("ghost cell update");
+        m_exec_conf->msg->notice(8) << "cv.mesh: Ghost cell update" << std::endl;
+        m_grid_comm_forward->communicate(m_mesh);
+        if (m_prof) m_prof->pop();
+
         // perform a distributed FFT
         m_exec_conf->msg->notice(8) << "cv.mesh: Distributed FFT mesh" << std::endl;
-        m_kiss_dfft->FFT3D(m_mesh, m_fourier_mesh, false);
+
+        ArrayHandle<kiss_fft_cpx> h_mesh(m_mesh, access_location::host, access_mode::read);
+        ArrayHandle<kiss_fft_cpx> h_fourier_mesh(m_fourier_mesh, access_location::host, access_mode::overwrite);
+
+        dfft_execute((cpx_t *)h_mesh.data, (cpx_t *)h_fourier_mesh.data, 0,m_dfft_plan_forward);
         }
     #endif
 
@@ -542,7 +564,10 @@ void OrderParameterMesh::updateMeshes()
         {
         // Distributed inverse transform force on mesh points
         m_exec_conf->msg->notice(8) << "cv.mesh: Distributed iFFT" << std::endl;
-        m_kiss_idfft->FFT3D(m_fourier_mesh_G, m_inv_fourier_mesh, true);
+
+        ArrayHandle<kiss_fft_cpx> h_fourier_mesh_G(m_fourier_mesh_G, access_location::host, access_mode::read);
+        ArrayHandle<kiss_fft_cpx> h_inv_fourier_mesh(m_inv_fourier_mesh, access_location::host, access_mode::overwrite);
+        dfft_execute((cpx_t *)h_fourier_mesh_G.data, (cpx_t *)(h_inv_fourier_mesh.data+m_ghost_offset), 1,m_dfft_plan_inverse);
         }
     #endif
 
@@ -552,11 +577,9 @@ void OrderParameterMesh::updateMeshes()
     if (m_pdata->getDomainDecomposition())
         {
         // update outer cells of force mesh using ghost cells from neighboring processors
-        if (m_prof) m_prof->push("ghost exchange");
+        if (m_prof) m_prof->push("ghost cell update");
         m_exec_conf->msg->notice(8) << "cv.mesh: Ghost cell update" << std::endl;
-#if 0
-        m_mesh_comm->updateGhostCells(m_inv_fourier_mesh);
-#endif
+        m_grid_comm_reverse->communicate(m_inv_fourier_mesh);
         if (m_prof) m_prof->pop();
         }
     #endif
@@ -585,8 +608,6 @@ void OrderParameterMesh::interpolateForces()
     Scalar3 b3 = make_scalar3(a1.y*a2.z-a1.z*a2.y, a1.z*a2.x-a1.x*a2.z, a1.x*a2.y-a1.y*a2.x)/V_box;
 
     // particle number
-    bool local_fft = m_kiss_fft_initialized;
-
     unsigned int n_global = m_pdata->getNGlobal();
 
     for (unsigned int idx = 0; idx < m_pdata->getN(); ++idx)
@@ -604,16 +625,16 @@ void OrderParameterMesh::interpolateForces()
                                            f.z * (Scalar) m_mesh_points.z);
 
         // find cell of the force mesh the particle is in
-        unsigned int ix = (reduced_pos.x + (Scalar)(m_n_ghost_cells.x/2));
-        unsigned int iy = (reduced_pos.y + (Scalar)(m_n_ghost_cells.y/2));
-        unsigned int iz = (reduced_pos.z + (Scalar)(m_n_ghost_cells.z/2));
+        unsigned int ix = (reduced_pos.x + (Scalar)m_n_ghost_cells.x);
+        unsigned int iy = (reduced_pos.y + (Scalar)m_n_ghost_cells.y);
+        unsigned int iz = (reduced_pos.z + (Scalar)m_n_ghost_cells.z);
 
         // handle particles on the boundary
-        if (ix == m_mesh_points.x && !m_n_ghost_cells.x)
+        if (ix == m_grid_dim.x && !m_n_ghost_cells.x)
             ix = 0;
-        if (iy == m_mesh_points.y && !m_n_ghost_cells.y)
+        if (iy == m_grid_dim.y && !m_n_ghost_cells.y)
             iy = 0;
-        if (iz == m_mesh_points.z && !m_n_ghost_cells.z)
+        if (iz == m_grid_dim.z && !m_n_ghost_cells.z)
             iz = 0;
 
         // center of cell (in units of the mesh size)
@@ -634,37 +655,33 @@ void OrderParameterMesh::interpolateForces()
 
                     if (! m_n_ghost_cells.x)
                         {
-                        if (neighi == (int)m_mesh_points.x)
+                        if (neighi == (int)m_grid_dim.x)
                             neighi = 0;
                         else if (neighi < 0)
-                            neighi += m_mesh_points.x;
+                            neighi += m_grid_dim.x;
                         }
 
                     if (! m_n_ghost_cells.y)
                         {
-                        if (neighj == (int)m_mesh_points.y)
+                        if (neighj == (int)m_grid_dim.y)
                             neighj = 0;
                         else if (neighj < 0)
-                            neighj += m_mesh_points.y;
+                            neighj += m_grid_dim.y;
                         }
 
 
                     if (! m_n_ghost_cells.z)
                         {
-                        if (neighk == (int)m_mesh_points.z)
+                        if (neighk == (int)m_grid_dim.z)
                             neighk = 0;
                         else if (neighk < 0)
-                            neighk += m_mesh_points.z;
+                            neighk += m_grid_dim.z;
                         }
 
                     Scalar3 dx_frac = shift - make_scalar3(i,j,k);
 
                     unsigned int neigh_idx;
-                    if (local_fft)
-                        // use row major order for kiss FFT
-                        neigh_idx = neighi + m_mesh_points.x * (neighj + m_mesh_points.y*neighk);
-                    else
-                        neigh_idx = m_force_mesh_index(neighi,neighj,neighk);
+                    neigh_idx = neighi + m_grid_dim.x * (neighj + m_grid_dim.y*neighk);
 
                     kiss_fft_cpx inv_mesh = h_inv_fourier_mesh.data[neigh_idx];
                     force += -(Scalar)m_mesh_points.x*b1*mode*assignTSCderiv(dx_frac.x)*assignTSC(dx_frac.y)*assignTSC(dx_frac.z)*inv_mesh.r;
@@ -691,25 +708,17 @@ Scalar OrderParameterMesh::computeCV()
 
     Scalar sum(0.0);
 
-    bool local_fft = m_kiss_fft_initialized;
+    bool exclude_dc = true;
     #ifdef ENABLE_MPI
-    DFFTIndex dffti;
-    if (!local_fft) dffti = m_kiss_dfft->getIndexer();
+    exclude_dc = !m_pdata->getDomainDecomposition() || !m_exec_conf->getRank();
     #endif
 
     for (unsigned int k = 0; k < m_n_inner_cells; ++k)
         {
-        bool exclude;
-        if (local_fft)
+        bool exclude = false;
+        if (exclude_dc)
             // exclude DC bin
             exclude = (k == 0);
-        #ifdef ENABLE_MPI
-        else
-            {
-            uint3 n = dffti(k);
-            exclude = (n.x == 0 && n.y == 0 && n.z == 0);
-            }
-        #endif
 
         if (! exclude)
             {
@@ -748,36 +757,24 @@ Scalar OrderParameterMesh::getCurrentValue(unsigned int timestep)
     if (m_is_first_step)
         {
         // allocate memory and initialize arrays
-        m_n_ghost_cells = computeNumGhostCells();
-        m_exec_conf->msg->notice(3) << "cv.mesh: Ghost layer " << m_n_ghost_cells.x << "x"
-                                    << m_n_ghost_cells.y << "x"
-                                    << m_n_ghost_cells.z << std::endl;
-
         setupMesh();
 
         computeInfluenceFunction();
         m_is_first_step = false;
         }
 
-    if (m_box_changed)
+    bool ghost_cell_num_changed = false;
+    uint3 n_ghost_cells = computeGhostCellNum();
+
+    // do we need to reallocate?
+    if (m_n_ghost_cells.x != n_ghost_cells.x ||
+        m_n_ghost_cells.y != n_ghost_cells.y ||
+        m_n_ghost_cells.z != n_ghost_cells.z)
+        ghost_cell_num_changed = true;
+
+    if (m_box_changed || ghost_cell_num_changed)
         {
-        computeParticleGhostLayerWidth();
-
-        uint3 n_ghost_cells = computeNumGhostCells();
-
-        // do we need to reallocate?
-        if (m_n_ghost_cells.x != n_ghost_cells.x ||
-            m_n_ghost_cells.y != n_ghost_cells.y ||
-            m_n_ghost_cells.z != n_ghost_cells.z)
-            {
-            m_n_ghost_cells = n_ghost_cells;
-            m_exec_conf->msg->notice(3) << "cv.mesh: Reallocating ghost layer "
-                                         << m_n_ghost_cells.x << "x"
-                                         << m_n_ghost_cells.y << "x"
-                                         << m_n_ghost_cells.z << std::endl;
-            setupMesh();
-            }
-
+        if (ghost_cell_num_changed) setupMesh();
         computeInfluenceFunction();
         m_box_changed = false;
         }
@@ -809,25 +806,17 @@ void OrderParameterMesh::computeVirial()
     for (unsigned int i = 0; i < 6; ++i)
         virial[i] = Scalar(0.0);
 
-    bool local_fft = m_kiss_fft_initialized;
+    bool exclude_dc = true;
     #ifdef ENABLE_MPI
-    DFFTIndex dffti;
-    if (!local_fft) dffti = m_kiss_dfft->getIndexer();
+    exclude_dc = !m_pdata->getDomainDecomposition() || !m_exec_conf->getRank();
     #endif
 
     for (unsigned int kidx = 0; kidx < m_n_inner_cells; ++kidx)
         {
-        bool exclude;
-        if (local_fft)
+        bool exclude = false;
+        if (exclude_dc)
             // exclude DC bin
             exclude = (kidx == 0);
-        #ifdef ENABLE_MPI
-        else
-            {
-            uint3 n = dffti(kidx);
-            exclude = (n.x == 0 && n.y == 0 && n.z == 0);
-            }
-        #endif
 
         if (! exclude)
             {
@@ -850,14 +839,13 @@ void OrderParameterMesh::computeVirial()
             virial[4] += rhog*kfac*k.y*k.z; // yz
             virial[5] += rhog*kfac*k.z*k.z; // zz
             }
-        } 
+        }
 
     for (unsigned int i = 0; i < 6; ++i)
         m_external_virial[i] = m_bias*virial[i];
 
     if (m_prof) m_prof->pop();
     }
- 
 
 void OrderParameterMesh::computeBiasForces(unsigned int timestep)
     {
@@ -944,7 +932,7 @@ void OrderParameterMesh::computeQmax(unsigned int timestep)
             max_amplitude = a;
             }
         }
-    
+
     #ifdef ENABLE_MPI
     if (m_pdata->getDomainDecomposition())
         {
@@ -962,7 +950,7 @@ void OrderParameterMesh::computeQmax(unsigned int timestep)
         MPI_Allgather(&q_max,
                        sizeof(Scalar3),
                        MPI_BYTE,
-                       all_q_max, 
+                       all_q_max,
                        sizeof(Scalar3),
                        MPI_BYTE,
                        m_exec_conf->getMPICommunicator());
@@ -975,7 +963,7 @@ void OrderParameterMesh::computeQmax(unsigned int timestep)
                 q_max = all_q_max[i];
                 }
             }
-        
+
         delete [] all_amplitudes;
         delete [] all_q_max;
         }
