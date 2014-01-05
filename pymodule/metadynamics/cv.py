@@ -206,7 +206,7 @@ class lamellar(_collective_variable):
                 globals.msg.error("cv.lamellar: Mode amplitudes specified incorrectly.\n")
                 raise RuntimeEror('Error creating collective variable.')
 
-        cpp_mode = hoomd.std_vector_float()
+        cpp_mode = hoomd.std_vector_scalar()
         for i in range(0, globals.system_definition.getParticleData().getNTypes()):
             t = globals.system_definition.getParticleData().getNameByType(i)
 
@@ -293,7 +293,7 @@ class mesh(_collective_variable):
                 globals.msg.error("cv.mesh: Mode amplitudes specified incorrectly.\n")
                 raise RuntimeEror('Error creating collective variable.')
 
-        cpp_mode = hoomd.std_vector_float()
+        cpp_mode = hoomd.std_vector_scalar()
         for i in range(0, globals.system_definition.getParticleData().getNTypes()):
             t = globals.system_definition.getParticleData().getNameByType(i)
 

@@ -227,14 +227,14 @@ void OrderParameterMesh::initializeFFT()
         embed[0] = m_mesh_points.z+2*m_n_ghost_cells.z;
         embed[1] = m_mesh_points.y+2*m_n_ghost_cells.y;
         embed[2] = m_mesh_points.x+2*m_n_ghost_cells.x;
-        m_ghost_offset = ((m_n_ghost_cells.z)*embed[1]+m_n_ghost_cells.y)*embed[0]+m_n_ghost_cells.x;
+        m_ghost_offset = (m_n_ghost_cells.z*embed[1]+m_n_ghost_cells.y)*embed[2]+m_n_ghost_cells.x;
         uint3 pcoord = m_pdata->getDomainDecomposition()->getDomainIndexer().getTriple(m_exec_conf->getRank());
         int pidx[3];
         pidx[0] = pcoord.z;
         pidx[1] = pcoord.y;
         pidx[2] = pcoord.x;
         int row_m = 0; /* Hoomd uses row-major process-id mapping */
-        dfft_create_plan(&m_dfft_plan_forward, 3, gdim, NULL, embed, pdim, pidx, row_m, 0, 1, m_exec_conf->getMPICommunicator());
+        dfft_create_plan(&m_dfft_plan_forward, 3, gdim, embed, NULL, pdim, pidx, row_m, 0, 1, m_exec_conf->getMPICommunicator());
         dfft_create_plan(&m_dfft_plan_inverse, 3, gdim, NULL, embed, pdim, pidx, row_m, 0, 1, m_exec_conf->getMPICommunicator());
         }
     #endif // ENABLE_MPI
@@ -253,7 +253,7 @@ void OrderParameterMesh::initializeFFT()
         }
 
     // allocate mesh and transformed mesh
-    GPUArray<kiss_fft_cpx> mesh(m_n_inner_cells,m_exec_conf);
+    GPUArray<kiss_fft_cpx> mesh(m_n_cells,m_exec_conf);
     m_mesh.swap(mesh);
 
     GPUArray<kiss_fft_cpx> fourier_mesh(m_n_inner_cells, m_exec_conf);
@@ -473,7 +473,7 @@ void OrderParameterMesh::assignParticles()
                         else if (neighk < 0)
                             neighk += m_grid_dim.z;
                         }
-                    assert(neighk >= 0 && neighk < (int) m_mesh_point.z);
+                    assert(neighk >= 0 && neighk < (int) m_grid_dim.z);
 
                     Scalar3 dx_frac = shift - make_scalar3(i,j,k);
 
@@ -523,7 +523,7 @@ void OrderParameterMesh::updateMeshes()
         ArrayHandle<kiss_fft_cpx> h_mesh(m_mesh, access_location::host, access_mode::read);
         ArrayHandle<kiss_fft_cpx> h_fourier_mesh(m_fourier_mesh, access_location::host, access_mode::overwrite);
 
-        dfft_execute((cpx_t *)h_mesh.data, (cpx_t *)h_fourier_mesh.data, 0,m_dfft_plan_forward);
+        dfft_execute((cpx_t *)(h_mesh.data+m_ghost_offset), (cpx_t *)h_fourier_mesh.data, 0,m_dfft_plan_forward);
         }
     #endif
 
@@ -638,9 +638,9 @@ void OrderParameterMesh::interpolateForces()
             iz = 0;
 
         // center of cell (in units of the mesh size)
-        Scalar3 cell_center = make_scalar3((Scalar)ix - (Scalar)(m_n_ghost_cells.x/2) + Scalar(0.5),
-                                           (Scalar)iy - (Scalar)(m_n_ghost_cells.y/2) + Scalar(0.5),
-                                           (Scalar)iz - (Scalar)(m_n_ghost_cells.z/2) + Scalar(0.5));
+        Scalar3 cell_center = make_scalar3((Scalar)ix - (Scalar)(m_n_ghost_cells.x) + Scalar(0.5),
+                                           (Scalar)iy - (Scalar)(m_n_ghost_cells.y) + Scalar(0.5),
+                                           (Scalar)iz - (Scalar)(m_n_ghost_cells.z) + Scalar(0.5));
         Scalar3 shift = reduced_pos - cell_center;
 
         Scalar3 force = make_scalar3(0.0,0.0,0.0);
@@ -668,7 +668,6 @@ void OrderParameterMesh::interpolateForces()
                         else if (neighj < 0)
                             neighj += m_grid_dim.y;
                         }
-
 
                     if (! m_n_ghost_cells.z)
                         {
