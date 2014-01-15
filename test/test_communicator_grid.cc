@@ -66,12 +66,9 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <boost/shared_ptr.hpp>
 #include <boost/bind.hpp>
 
-#include "Communicator.h"
 #include "CommunicatorGrid.h"
 
-#undef ENABLE_CUDA
 #ifdef ENABLE_CUDA
-#include "CommunicatorGPU.h"
 #include "CommunicatorGridGPU.h"
 #endif
 
@@ -396,15 +393,17 @@ BOOST_AUTO_TEST_CASE( CommunicateGrid_test_positions )
 
 #ifdef ENABLE_CUDA
 //! Basic ghost grid exchange test on GPU
-BOOST_AUTO_TEST_CASE( CommunicateGrid_test_GPU_basic )
+BOOST_AUTO_TEST_CASE( CommunicateGrid_test_basic_GPU )
     {
-    test_communicate_grid_basic<CommunicatorGridGPU<unsigned int, gpu_communicate_uint_grid_map> > (communicator_creator_gpu, exec_conf_gpu);
+    test_communicate_grid_basic<CommunicatorGridGPU<unsigned int> >(
+        boost::shared_ptr<ExecutionConfiguration>(new ExecutionConfiguration(ExecutionConfiguration::GPU)));
     }
 
 //! Ghost grid exchange positions test on GPU
-BOOST_AUTO_TEST_CASE( CommunicateGrid_test_GPU_positions )
+BOOST_AUTO_TEST_CASE( CommunicateGrid_test_positions_GPU )
     {
-    test_communicate_grid_positions<CommunicatorGridGPU<uint3, gpu_communicate_uint3_grid_map> > (communicator_creator_gpu, exec_conf_gpu);
+    test_communicate_grid_positions<CommunicatorGridGPU<unsigned int> >(
+        boost::shared_ptr<ExecutionConfiguration>(new ExecutionConfiguration(ExecutionConfiguration::GPU)));
     }
 #endif
 

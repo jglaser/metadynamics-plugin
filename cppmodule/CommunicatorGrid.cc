@@ -227,6 +227,16 @@ inline kiss_fft_cpx operator + (kiss_fft_cpx& lhs, kiss_fft_cpx& rhs)
     res.r = lhs.r + rhs.r;
     res.i = lhs.i + rhs.i;
     return res;
-}
+    }
+
+//! Define plus operator for complex data type (needed by CommunicatorMesh)
+inline cufftComplex operator + (cufftComplex& lhs, cufftComplex& rhs)
+    {
+    cufftComplex res;
+    res.x = lhs.x + rhs.x;
+    res.y = lhs.y + rhs.y;
+    return res;
+    }
 
 template class CommunicatorGrid<kiss_fft_cpx>;
+template class CommunicatorGrid<cufftComplex>;

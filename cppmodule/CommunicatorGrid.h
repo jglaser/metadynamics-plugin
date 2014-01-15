@@ -37,7 +37,7 @@ class CommunicatorGrid
         std::map<unsigned int,unsigned int> m_end;           //!< End offset of every rank in send/recv buf
 
         //! Initialize grid communication
-        void initGridComm();
+        virtual void initGridComm();
     };
 
 #endif // ENABLE_MPI
