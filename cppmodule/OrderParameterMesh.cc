@@ -128,6 +128,8 @@ void OrderParameterMesh::setupMesh()
     {
     // update number of ghost cells
     m_n_ghost_cells = computeGhostCellNum();
+
+    // extra ghost cells are as wide as the inner cells
     const BoxDim& box = m_pdata->getBox();
     Scalar3 cell_width = box.getNearestPlaneDistance() /
         make_scalar3(m_mesh_points.x, m_mesh_points.y, m_mesh_points.z);
@@ -228,14 +230,18 @@ void OrderParameterMesh::initializeFFT()
         embed[1] = m_mesh_points.y+2*m_n_ghost_cells.y;
         embed[2] = m_mesh_points.x+2*m_n_ghost_cells.x;
         m_ghost_offset = (m_n_ghost_cells.z*embed[1]+m_n_ghost_cells.y)*embed[2]+m_n_ghost_cells.x;
-        uint3 pcoord = m_pdata->getDomainDecomposition()->getDomainIndexer().getTriple(m_exec_conf->getRank());
+        uint3 pcoord = m_pdata->getDomainDecomposition()->getGridPos();
         int pidx[3];
         pidx[0] = pcoord.z;
         pidx[1] = pcoord.y;
         pidx[2] = pcoord.x;
-        int row_m = 0; /* Hoomd uses row-major process-id mapping */
-        dfft_create_plan(&m_dfft_plan_forward, 3, gdim, embed, NULL, pdim, pidx, row_m, 0, 1, m_exec_conf->getMPICommunicator());
-        dfft_create_plan(&m_dfft_plan_inverse, 3, gdim, NULL, embed, pdim, pidx, row_m, 0, 1, m_exec_conf->getMPICommunicator());
+        int row_m = 0; /* both local grid and proc grid are row major, no transposition necessary */
+        ArrayHandle<unsigned int> h_cart_ranks(m_pdata->getDomainDecomposition()->getCartRanks(),
+            access_location::host, access_mode::read);
+        dfft_create_plan(&m_dfft_plan_forward, 3, gdim, embed, NULL, pdim, pidx,
+            row_m, 0, 1, m_exec_conf->getMPICommunicator(), (int *)h_cart_ranks.data);
+        dfft_create_plan(&m_dfft_plan_inverse, 3, gdim, NULL, embed, pdim, pidx,
+            row_m, 0, 1, m_exec_conf->getMPICommunicator(), (int *)h_cart_ranks.data);
         }
     #endif // ENABLE_MPI
 
@@ -301,7 +307,7 @@ void OrderParameterMesh::computeInfluenceFunction()
         global_dim.x *= didx.getW();
         global_dim.y *= didx.getH();
         global_dim.z *= didx.getD();
-        pidx = didx.getTriple(m_exec_conf->getRank());
+        pidx = m_pdata->getDomainDecomposition()->getGridPos();
         pdim = make_uint3(didx.getW(), didx.getH(), didx.getD());
         }
     #endif
@@ -494,18 +500,19 @@ void OrderParameterMesh::assignParticles()
 
 void OrderParameterMesh::updateMeshes()
     {
-    if (m_prof) m_prof->push("FFT");
 
     ArrayHandle<Scalar> h_inf_f(m_inf_f, access_location::host, access_mode::read);
     ArrayHandle<Scalar3> h_k(m_k, access_location::host, access_mode::read);
 
     if (m_kiss_fft_initialized)
         {
+        if (m_prof) m_prof->push("FFT");
         // transform the particle mesh locally (forward transform)
         ArrayHandle<kiss_fft_cpx> h_mesh(m_mesh, access_location::host, access_mode::read);
         ArrayHandle<kiss_fft_cpx> h_fourier_mesh(m_fourier_mesh, access_location::host, access_mode::overwrite);
 
         kiss_fftnd(m_kiss_fft, h_mesh.data, h_fourier_mesh.data);
+        if (m_prof) m_prof->pop();
         }
 
     #ifdef ENABLE_MPI
@@ -520,12 +527,16 @@ void OrderParameterMesh::updateMeshes()
         // perform a distributed FFT
         m_exec_conf->msg->notice(8) << "cv.mesh: Distributed FFT mesh" << std::endl;
 
+        if (m_prof) m_prof->push("FFT");
         ArrayHandle<kiss_fft_cpx> h_mesh(m_mesh, access_location::host, access_mode::read);
         ArrayHandle<kiss_fft_cpx> h_fourier_mesh(m_fourier_mesh, access_location::host, access_mode::overwrite);
 
         dfft_execute((cpx_t *)(h_mesh.data+m_ghost_offset), (cpx_t *)h_fourier_mesh.data, 0,m_dfft_plan_forward);
+        if (m_prof) m_prof->pop();
         }
     #endif
+
+    if (m_prof) m_prof->push("update");
 
     ArrayHandle<kiss_fft_cpx> h_fourier_mesh(m_fourier_mesh, access_location::host, access_mode::readwrite);
 
@@ -551,27 +562,31 @@ void OrderParameterMesh::updateMeshes()
             }
         }
 
+    if (m_prof) m_prof->pop();
+
     if (m_kiss_fft_initialized)
         {
+        if (m_prof) m_prof->push("FFT");
         // do a local inverse transform of the force mesh
         ArrayHandle<kiss_fft_cpx> h_inv_fourier_mesh(m_inv_fourier_mesh, access_location::host, access_mode::overwrite);
         ArrayHandle<kiss_fft_cpx> h_fourier_mesh_G(m_fourier_mesh_G, access_location::host, access_mode::read);
         kiss_fftnd(m_kiss_ifft, h_fourier_mesh_G.data, h_inv_fourier_mesh.data);
+        if (m_prof) m_prof->pop();
         }
 
     #ifdef ENABLE_MPI
     if (m_pdata->getDomainDecomposition())
         {
+        if (m_prof) m_prof->push("FFT");
         // Distributed inverse transform force on mesh points
         m_exec_conf->msg->notice(8) << "cv.mesh: Distributed iFFT" << std::endl;
 
         ArrayHandle<kiss_fft_cpx> h_fourier_mesh_G(m_fourier_mesh_G, access_location::host, access_mode::read);
         ArrayHandle<kiss_fft_cpx> h_inv_fourier_mesh(m_inv_fourier_mesh, access_location::host, access_mode::overwrite);
         dfft_execute((cpx_t *)h_fourier_mesh_G.data, (cpx_t *)(h_inv_fourier_mesh.data+m_ghost_offset), 1,m_dfft_plan_inverse);
+        if (m_prof) m_prof->pop();
         }
     #endif
-
-    if (m_prof) m_prof->pop();
 
     #ifdef ENABLE_MPI
     if (m_pdata->getDomainDecomposition())
@@ -709,7 +724,11 @@ Scalar OrderParameterMesh::computeCV()
 
     bool exclude_dc = true;
     #ifdef ENABLE_MPI
-    exclude_dc = !m_pdata->getDomainDecomposition() || !m_exec_conf->getRank();
+    if (m_pdata->getDomainDecomposition())
+        {
+        uint3 my_pos = m_pdata->getDomainDecomposition()->getGridPos();
+        exclude_dc = !my_pos.x && !my_pos.y && !my_pos.z;
+        }
     #endif
 
     for (unsigned int k = 0; k < m_n_inner_cells; ++k)
@@ -807,7 +826,11 @@ void OrderParameterMesh::computeVirial()
 
     bool exclude_dc = true;
     #ifdef ENABLE_MPI
-    exclude_dc = !m_pdata->getDomainDecomposition() || !m_exec_conf->getRank();
+    if (m_pdata->getDomainDecomposition())
+        {
+        uint3 my_pos = m_pdata->getDomainDecomposition()->getGridPos();
+        exclude_dc = !my_pos.x && !my_pos.y && !my_pos.z;
+        }
     #endif
 
     for (unsigned int kidx = 0; kidx < m_n_inner_cells; ++kidx)

@@ -9,6 +9,8 @@
 
 //#define USE_HOST_DFFT
 
+#include "CommunicatorGridGPU.h"
+
 #ifdef ENABLE_MPI
 #ifndef USE_HOST_DFFT
 #include <dfft_cuda.h>
@@ -61,9 +63,10 @@ class OrderParameterMeshGPU : public OrderParameterMesh
         cufftHandle m_cufft_plan;          //!< The FFT plan
         bool m_local_fft;                  //!< True if we are only doing local FFTs (not distributed)
 
-        #ifdef ENABLE_MPII
-        typedef CommunicatorMeshGPU<cufftComplex, gpu_communicate_complex_mesh_map> CommunicatorMeshGPUComplex;
-        boost::shared_ptr<CommunicatorMeshGPUComplex> m_gpu_mesh_comm; //!< Communicator for force mesh
+        #ifdef ENABLE_MPI
+        typedef CommunicatorGridGPU<cufftComplex> CommunicatorGridGPUComplex;
+        boost::shared_ptr<CommunicatorGridGPUComplex> m_gpu_grid_comm_forward; //!< Communicate mesh
+        boost::shared_ptr<CommunicatorGridGPUComplex> m_gpu_grid_comm_reverse; //!< Communicate fourier mesh
 
         dfft_plan m_dfft_plan_forward;     //!< Forward distributed FFT
         dfft_plan m_dfft_plan_inverse;     //!< Forward distributed FFT
@@ -74,7 +77,6 @@ class OrderParameterMeshGPU : public OrderParameterMesh
         GPUArray<cufftComplex> m_fourier_mesh_G;       //!< Fourier transformed mesh times the influence function
         GPUArray<cufftComplex> m_inv_fourier_mesh;     //!< The inverse-fourier transformed force mesh
 
-        uint3 m_n_ghost_bins;                      //!< Number of ghost bins in every direction
         Index2D m_bin_idx;                         //!< Total number of bins
         GPUArray<Scalar4> m_particle_bins;         //!< Cell list for particle positions and modes
         GPUArray<Scalar> m_mesh_scratch;           //!< Mesh with scratch space for density reduction

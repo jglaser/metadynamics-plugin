@@ -31,7 +31,10 @@ void CommunicatorGrid<T>::initGridComm()
 
     unsigned int n = 0;
     Index3D di = m_pdata->getDomainDecomposition()->getDomainIndexer();
-    uint3 my_pos = di.getTriple(m_exec_conf->getRank());
+    ArrayHandle<unsigned int> h_cart_ranks(m_pdata->getDomainDecomposition()->getCartRanks(),
+        access_location::host, access_mode::read);
+
+    uint3 my_pos = m_pdata->getDomainDecomposition()->getGridPos();
 
     std::vector<unsigned int> send_idx;
     std::vector<unsigned int> recv_idx;
@@ -85,7 +88,7 @@ void CommunicatorGrid<T>::initGridComm()
                 else if (k >= (int)di.getD())
                     k -= di.getD();
 
-                unsigned int neigh_rank = di(i,j,k);
+                unsigned int neigh_rank = h_cart_ranks.data[di(i,j,k)];
 
                 // add to neighbor set
                 m_neighbors.insert(neigh_rank);

@@ -1,6 +1,5 @@
 #include "OrderParameterMeshGPU.h"
 
-#undef ENABLE_MPI
 #ifdef ENABLE_CUDA
 #include "OrderParameterMeshGPU.cuh"
 
@@ -42,21 +41,19 @@ OrderParameterMeshGPU::OrderParameterMeshGPU(boost::shared_ptr<SystemDefinition>
 
     // initial value of number of particles per bin
     m_cell_size = 2;
-
-    uchar3 periodic = m_pdata->getBox().getPeriodic();
-    m_n_ghost_bins = make_uint3(periodic.x ? 0 : 2*m_radius,
-                                periodic.y ? 0 : 2*m_radius,
-                                periodic.z ? 0 : 2*m_radius);
-    unsigned int n_particle_bins = (m_mesh_points.x+m_n_ghost_bins.x)
-                                  *(m_mesh_points.y+m_n_ghost_bins.y)
-                                  *(m_mesh_points.z+m_n_ghost_bins.z);
-    m_bin_idx = Index2D(n_particle_bins,m_cell_size);
-    m_scratch_idx = Index2D(m_n_inner_cells,(2*m_radius+1)*(2*m_radius+1)*(2*m_radius+1));
     }
 
 OrderParameterMeshGPU::~OrderParameterMeshGPU()
     {
-    cufftDestroy(m_cufft_plan);
+    if (m_local_fft)
+        cufftDestroy(m_cufft_plan);
+    else
+    #ifdef ENABLE_MPI
+        {
+        dfft_destroy_plan(m_dfft_plan_forward);
+        dfft_destroy_plan(m_dfft_plan_inverse);
+        }
+    #endif
     }
 
 void OrderParameterMeshGPU::initializeFFT()
@@ -66,51 +63,69 @@ void OrderParameterMeshGPU::initializeFFT()
 
     if (! m_local_fft)
         {
-        // ghost cell exchanger 
-        m_gpu_mesh_comm = boost::shared_ptr<CommunicatorMeshGPUComplex >(
-            new CommunicatorMeshGPUComplex(m_sysdef,
-                                           m_comm, m_n_ghost_cells,
-                                           make_uint3(m_force_mesh_index.getW(), m_force_mesh_index.getH(), m_force_mesh_index.getD()),
-                                           true));
+        // ghost cell communicator for charge interpolation
+        m_gpu_grid_comm_forward = std::auto_ptr<CommunicatorGridGPUComplex>(
+            new CommunicatorGridGPUComplex(m_sysdef,
+               make_uint3(m_mesh_points.x, m_mesh_points.y, m_mesh_points.z),
+               make_uint3(m_grid_dim.x, m_grid_dim.y, m_grid_dim.z),
+               m_n_ghost_cells,
+               true));
+        // ghost cell communicator for force mesh
+        m_gpu_grid_comm_reverse = std::auto_ptr<CommunicatorGridGPUComplex >(
+            new CommunicatorGridGPUComplex(m_sysdef,
+               make_uint3(m_mesh_points.x, m_mesh_points.y, m_mesh_points.z),
+               make_uint3(m_grid_dim.x, m_grid_dim.y, m_grid_dim.z),
+               m_n_ghost_cells,
+               false));
 
-        // set up distributed FFT 
+        // set up distributed FFT
         int gdim[3];
         int pdim[3];
         Index3D decomp_idx = m_pdata->getDomainDecomposition()->getDomainIndexer();
-        pdim[0] = decomp_idx.getW();
+        pdim[0] = decomp_idx.getD();
         pdim[1] = decomp_idx.getH();
-        pdim[2] = decomp_idx.getD();
-        gdim[0] = m_mesh_points.x*pdim[0];
+        pdim[2] = decomp_idx.getW();
+        gdim[0] = m_mesh_points.z*pdim[0];
         gdim[1] = m_mesh_points.y*pdim[1];
-        gdim[2] = m_mesh_points.z*pdim[2];
+        gdim[2] = m_mesh_points.x*pdim[2];
         int embed[3];
-        embed[0] = m_mesh_points.x+m_n_ghost_cells.x;
-        embed[1] = m_mesh_points.y+m_n_ghost_cells.y;
-        embed[2] = m_mesh_points.z+m_n_ghost_cells.z;
-        m_ghost_offset = ((m_n_ghost_cells.x/2)*embed[1]+m_n_ghost_cells.y/2)*embed[2]+m_n_ghost_cells.z/2;
-        uint3 pcoord = m_pdata->getDomainDecomposition()->getDomainIndexer().getTriple(m_exec_conf->getRank());
+        embed[0] = m_mesh_points.z+2*m_n_ghost_cells.z;
+        embed[1] = m_mesh_points.y+2*m_n_ghost_cells.y;
+        embed[2] = m_mesh_points.x+2*m_n_ghost_cells.x;
+        m_ghost_offset = (m_n_ghost_cells.z*embed[1]+m_n_ghost_cells.y)*embed[2]+m_n_ghost_cells.x;
+        uint3 pcoord = m_pdata->getDomainDecomposition()->getGridPos();
         int pidx[3];
-        pidx[0] = pcoord.x;
+        pidx[0] = pcoord.z;
         pidx[1] = pcoord.y;
-        pidx[2] = pcoord.z;
-        int row_m = 1; /* Hoomd uses row-major process-id mapping */
+        pidx[2] = pcoord.x;
+        int row_m = 0; /* both local grid and proc grid are row major, no transposition necessary */
+        ArrayHandle<unsigned int> h_cart_ranks(m_pdata->getDomainDecomposition()->getCartRanks(),
+            access_location::host, access_mode::read);
         #ifndef USE_HOST_DFFT
-        dfft_cuda_create_plan(&m_dfft_plan_forward, 3, gdim, NULL, NULL, pdim, pidx, row_m, 0, 1, m_exec_conf->getMPICommunicator());
-        dfft_cuda_create_plan(&m_dfft_plan_inverse, 3, gdim, NULL, embed, pdim, pidx, row_m, 0, 1, m_exec_conf->getMPICommunicator());
+        dfft_cuda_create_plan(&m_dfft_plan_forward, 3, gdim, embed, NULL, pdim, pidx,
+            row_m, 0, 1, m_exec_conf->getMPICommunicator(), (int *) h_cart_ranks.data);
+        dfft_cuda_create_plan(&m_dfft_plan_inverse, 3, gdim, NULL, embed, pdim, pidx,
+            row_m, 0, 1, m_exec_conf->getMPICommunicator(), (int *)h_cart_ranks.data);
         #else
-        dfft_create_plan(&m_dfft_plan_forward, 3, gdim, NULL, NULL, pdim, pidx, row_m, 0, 1, m_exec_conf->getMPICommunicator());
-        dfft_create_plan(&m_dfft_plan_inverse, 3, gdim, NULL, embed, pdim, pidx, row_m, 0, 1, m_exec_conf->getMPICommunicator());
+        dfft_create_plan(&m_dfft_plan_forward, 3, gdim, embed, NULL, pdim, pidx,
+            row_m, 0, 1, m_exec_conf->getMPICommunicator(), (int *) h_cart_ranks.data);
+        dfft_create_plan(&m_dfft_plan_inverse, 3, gdim, NULL, embed, pdim, pidx,
+            row_m, 0, 1, m_exec_conf->getMPICommunicator(), (int *) h_cart_ranks.data);
         #endif
         }
     #endif // ENABLE_MPI
 
     if (m_local_fft)
         {
-        cufftPlan3d(&m_cufft_plan, m_mesh_points.x, m_mesh_points.y, m_mesh_points.z, CUFFT_C2C);
+        cufftPlan3d(&m_cufft_plan, m_mesh_points.z, m_mesh_points.y, m_mesh_points.x, CUFFT_C2C);
         }
 
+    unsigned int n_particle_bins = m_grid_dim.x*m_grid_dim.y*m_grid_dim.z;
+    m_bin_idx = Index2D(n_particle_bins,m_cell_size);
+    m_scratch_idx = Index2D(n_particle_bins,(2*m_radius+1)*(2*m_radius+1)*(2*m_radius+1));
+
     // allocate mesh and transformed mesh
-    GPUArray<cufftComplex> mesh(m_n_inner_cells,m_exec_conf);
+    GPUArray<cufftComplex> mesh(m_n_cells,m_exec_conf);
     m_mesh.swap(mesh);
 
     GPUArray<cufftComplex> fourier_mesh(m_n_inner_cells, m_exec_conf);
@@ -150,32 +165,32 @@ void OrderParameterMeshGPU::assignParticles()
     ArrayHandle<Scalar> d_mode(m_mode, access_location::device, access_mode::read);
 
     ArrayHandle<unsigned int> d_n_cell(m_n_cell, access_location::device, access_mode::overwrite);
-  
+
     bool cont = true;
     while (cont)
         {
         cudaMemset(d_n_cell.data,0,sizeof(unsigned int)*m_n_cell.getNumElements());
 
             {
-            #if 0
             ArrayHandle<Scalar4> d_particle_bins(m_particle_bins, access_location::device, access_mode::overwrite);
-            gpu_bin_particles(m_pdata->getN()+m_pdata->getNGhosts(),
+
+            gpu_bin_particles(m_pdata->getN(),
                               d_postype.data,
                               d_particle_bins.data,
                               d_n_cell.data,
                               m_cell_overflowed.getDeviceFlags(),
                               m_bin_idx,
-                              m_n_inner_cells,
-                              m_n_ghost_bins,
+                              m_mesh_points,
+                              m_n_ghost_cells,
                               d_mode.data,
                               m_pdata->getBox());
-            #endif
+
             if (m_exec_conf->isCUDAErrorCheckingEnabled())
                 CHECK_CUDA_ERROR();
             }
 
         unsigned int flags = m_cell_overflowed.readFlags();
-        
+
         if (flags)
             {
             // reallocate particle bins array
@@ -194,18 +209,16 @@ void OrderParameterMeshGPU::assignParticles()
         // assign particles to mesh
         ArrayHandle<Scalar4> d_particle_bins(m_particle_bins, access_location::device, access_mode::read);
         ArrayHandle<Scalar> d_mesh_scratch(m_mesh_scratch, access_location::device, access_mode::overwrite);
-       
-        #if 0
-        gpu_assign_binned_particles_to_mesh(m_mesh_index,
-                                            m_n_ghost_bins,
+
+        gpu_assign_binned_particles_to_mesh(m_mesh_points,
+                                            m_n_ghost_cells,
+                                            m_grid_dim,
                                             d_particle_bins.data,
                                             d_mesh_scratch.data,
                                             m_bin_idx,
                                             m_scratch_idx,
                                             d_n_cell.data,
-                                            d_mesh.data,
-                                            m_local_fft);
-        #endif
+                                            d_mesh.data);
 
         if (m_exec_conf->isCUDAErrorCheckingEnabled())
             CHECK_CUDA_ERROR();
@@ -216,22 +229,28 @@ void OrderParameterMeshGPU::assignParticles()
 
 void OrderParameterMeshGPU::updateMeshes()
     {
-
-    if (m_prof) m_prof->push(m_exec_conf,"FFT");
-
     if (m_local_fft)
         {
+        if (m_prof) m_prof->push(m_exec_conf,"FFT");
         // locally transform the particle mesh
         ArrayHandle<cufftComplex> d_mesh(m_mesh, access_location::device, access_mode::read);
         ArrayHandle<cufftComplex> d_fourier_mesh(m_fourier_mesh, access_location::device, access_mode::overwrite);
- 
+
         cufftExecC2C(m_cufft_plan, d_mesh.data, d_fourier_mesh.data, CUFFT_FORWARD);
+        if (m_prof) m_prof->pop(m_exec_conf);
         }
     #ifdef ENABLE_MPI
     else
         {
+        // update inner cells of particle mesh
+        if (m_prof) m_prof->push(m_exec_conf,"ghost cell update");
+        m_exec_conf->msg->notice(8) << "cv.mesh: Ghost cell update" << std::endl;
+        m_gpu_grid_comm_forward->communicate(m_mesh);
+        if (m_prof) m_prof->pop(m_exec_conf);
+
         // perform a distributed FFT
         m_exec_conf->msg->notice(8) << "cv.mesh: Distributed FFT mesh" << std::endl;
+        if (m_prof) m_prof->push(m_exec_conf,"FFT");
         #ifndef USE_HOST_DFFT
         ArrayHandle<cufftComplex> d_mesh(m_mesh, access_location::device, access_mode::read);
         ArrayHandle<cufftComplex> d_fourier_mesh(m_fourier_mesh, access_location::device, access_mode::overwrite);
@@ -241,16 +260,16 @@ void OrderParameterMeshGPU::updateMeshes()
         else
             dfft_cuda_check_errors(&m_dfft_plan_forward, 0);
 
-        dfft_cuda_execute(d_mesh.data, d_fourier_mesh.data, 0, &m_dfft_plan_forward);
+        dfft_cuda_execute(d_mesh.data+m_ghost_offset, d_fourier_mesh.data, 0, &m_dfft_plan_forward);
         #else
         ArrayHandle<cufftComplex> h_mesh(m_mesh, access_location::host, access_mode::read);
         ArrayHandle<cufftComplex> h_fourier_mesh(m_fourier_mesh, access_location::host, access_mode::overwrite);
 
-        dfft_execute((cpx_t *)h_mesh.data, (cpx_t *)h_fourier_mesh.data, 0,m_dfft_plan_forward);
+        dfft_execute((cpx_t *)(h_mesh.data+m_ghost_offset), (cpx_t *)h_fourier_mesh.data, 0,m_dfft_plan_forward);
         #endif
+        if (m_prof) m_prof->pop(m_exec_conf);
         }
     #endif
-    if (m_prof) m_prof->pop(m_exec_conf);
 
     if (m_prof) m_prof->push(m_exec_conf,"update");
 
@@ -274,10 +293,10 @@ void OrderParameterMeshGPU::updateMeshes()
 
     if (m_prof) m_prof->pop(m_exec_conf);
 
-    if (m_prof) m_prof->push(m_exec_conf, "FFT");
-
     if (m_local_fft)
         {
+        if (m_prof) m_prof->push(m_exec_conf, "FFT");
+
         // do local inverse transform of force mesh
         ArrayHandle<cufftComplex> d_fourier_mesh_G(m_fourier_mesh_G, access_location::device, access_mode::read);
         ArrayHandle<cufftComplex> d_inv_fourier_mesh(m_inv_fourier_mesh, access_location::device, access_mode::overwrite);
@@ -286,12 +305,14 @@ void OrderParameterMeshGPU::updateMeshes()
                      d_fourier_mesh_G.data,
                      d_inv_fourier_mesh.data,
                      CUFFT_INVERSE);
+        if (m_prof) m_prof->pop(m_exec_conf);
         }
     #ifdef ENABLE_MPI
     else
         {
+        if (m_prof) m_prof->push(m_exec_conf, "FFT");
         // Distributed inverse transform of force mesh
-        m_exec_conf->msg->notice(8) << "cv.mesh: Distributed iFFT force mesh" << std::endl;
+        m_exec_conf->msg->notice(8) << "cv.mesh: Distributed iFFT" << std::endl;
         #ifndef USE_HOST_DFFT
         ArrayHandle<cufftComplex> d_fourier_mesh_G(m_fourier_mesh_G, access_location::device, access_mode::read);
         ArrayHandle<cufftComplex> d_inv_fourier_mesh(m_inv_fourier_mesh, access_location::device, access_mode::overwrite);
@@ -304,24 +325,22 @@ void OrderParameterMeshGPU::updateMeshes()
         #else
         ArrayHandle<cufftComplex> h_fourier_mesh_G(m_fourier_mesh_G, access_location::host, access_mode::read);
         ArrayHandle<cufftComplex> h_inv_fourier_mesh(m_inv_fourier_mesh, access_location::host, access_mode::overwrite);
-        dfft_execute((cpx_t *)h_fourier_mesh_G.data, (cpx_t *)(h_inv_fourier_mesh.data+m_ghost_offset), 1,m_dfft_plan_inverse);
+        dfft_execute((cpx_t *)h_fourier_mesh_G.data, (cpx_t *)h_inv_fourier_mesh.data+m_ghost_offset, 1, m_dfft_plan_inverse);
         #endif
+        if (m_prof) m_prof->pop(m_exec_conf);
         }
     #endif
-
-    if (m_prof) m_prof->pop(m_exec_conf);
 
     #ifdef ENABLE_MPI
     if (! m_local_fft)
         {
         // update outer cells of inverse Fourier mesh using ghost cells from neighboring processors
-        if (m_prof) m_prof->push("ghost exchange");
+        if (m_prof) m_prof->push("ghost cell update");
         m_exec_conf->msg->notice(8) << "cv.mesh: Ghost cell update" << std::endl;
-        m_gpu_mesh_comm->updateGhostCells(m_inv_fourier_mesh);
+        m_gpu_grid_comm_reverse->communicate(m_inv_fourier_mesh);
         if (m_prof) m_prof->pop();
         }
     #endif
-
     }
 
 void OrderParameterMeshGPU::interpolateForces()
@@ -334,20 +353,17 @@ void OrderParameterMeshGPU::interpolateForces()
 
     ArrayHandle<Scalar4> d_force(m_force, access_location::device, access_mode::overwrite);
 
-    #if 0
     gpu_compute_forces(m_pdata->getN(),
                        d_postype.data,
                        d_force.data,
                        m_bias,
                        d_inv_fourier_mesh.data,
-                       m_force_mesh_index,
+                       m_grid_dim,
                        m_n_ghost_cells,
                        d_mode.data,
                        m_pdata->getBox(),
                        m_pdata->getGlobalBox(),
-                       m_local_fft,
                        m_pdata->getNGlobal());
-    #endif
 
     if (m_exec_conf->isCUDAErrorCheckingEnabled())
         CHECK_CUDA_ERROR();
@@ -364,13 +380,22 @@ void OrderParameterMeshGPU::computeVirial()
     ArrayHandle<Scalar3> d_k(m_k, access_location::device, access_mode::read);
     ArrayHandle<Scalar> d_virial_mesh(m_virial_mesh, access_location::device, access_mode::overwrite);
 
+    bool exclude_dc = true;
+    #ifdef ENABLE_MPI
+    if (m_pdata->getDomainDecomposition())
+        {
+        uint3 my_pos = m_pdata->getDomainDecomposition()->getGridPos();
+        exclude_dc = !my_pos.x && !my_pos.y && !my_pos.z;
+        }
+    #endif
+
     gpu_compute_mesh_virial(m_n_inner_cells,
                             d_fourier_mesh.data,
                             d_fourier_mesh_G.data,
                             d_virial_mesh.data,
                             d_k.data,
                             m_qstarsq,
-                            m_exec_conf->getRank() == 0);
+                            exclude_dc);
 
     if (m_exec_conf->isCUDAErrorCheckingEnabled())
         CHECK_CUDA_ERROR();
@@ -388,7 +413,7 @@ void OrderParameterMeshGPU::computeVirial()
         if (m_exec_conf->isCUDAErrorCheckingEnabled())
             CHECK_CUDA_ERROR();
         }
-     
+
     ArrayHandle<Scalar> h_sum_virial(m_sum_virial, access_location::host, access_mode::read);
 
     for (unsigned int i = 0; i<6; ++i)
@@ -406,17 +431,24 @@ Scalar OrderParameterMeshGPU::computeCV()
 
     ArrayHandle<Scalar> d_sum_partial(m_sum_partial, access_location::device, access_mode::overwrite);
 
-    #if 0
+    bool exclude_dc = true;
+    #ifdef ENABLE_MPI
+    if (m_pdata->getDomainDecomposition())
+        {
+        uint3 my_pos = m_pdata->getDomainDecomposition()->getGridPos();
+        exclude_dc = !my_pos.x && !my_pos.y && !my_pos.z;
+        }
+    #endif
+
     gpu_compute_cv(m_n_inner_cells,
                    d_sum_partial.data,
                    m_sum.getDeviceFlags(),
                    d_fourier_mesh.data,
                    d_fourier_mesh_G.data,
                    m_block_size,
-                   m_mesh_index,
-                   m_exec_conf->getRank() == 0);
-    #endif
- 
+                   m_mesh_points,
+                   exclude_dc);
+
     if (m_exec_conf->isCUDAErrorCheckingEnabled())
         CHECK_CUDA_ERROR();
 
@@ -459,13 +491,12 @@ void OrderParameterMeshGPU::computeInfluenceFunction()
         global_dim.x *= didx.getW();
         global_dim.y *= didx.getH();
         global_dim.z *= didx.getD();
-        pidx = didx.getTriple(m_exec_conf->getRank());
+        pidx = m_pdata->getDomainDecomposition()->getGridPos();
         pdim = make_uint3(didx.getW(), didx.getH(), didx.getD());
         }
     #endif
 
-    #if 0
-    gpu_compute_influence_function(m_mesh_index,
+    gpu_compute_influence_function(m_mesh_points,
                                    global_dim,
                                    d_inf_f.data,
                                    d_k.data,
@@ -476,8 +507,7 @@ void OrderParameterMeshGPU::computeInfluenceFunction()
                                    m_local_fft,
                                    pidx,
                                    pdim);
-    #endif
-  
+
     if (m_exec_conf->isCUDAErrorCheckingEnabled())
         CHECK_CUDA_ERROR();
 
@@ -486,7 +516,6 @@ void OrderParameterMeshGPU::computeInfluenceFunction()
 
 void OrderParameterMeshGPU::computeQmax(unsigned int timestep)
     {
-
     // compute Fourier grid
     getCurrentValue(timestep);
 
@@ -501,11 +530,11 @@ void OrderParameterMeshGPU::computeQmax(unsigned int timestep)
     ArrayHandle<Scalar4> d_max_partial(m_max_partial, access_location::device, access_mode::overwrite);
 
     gpu_compute_q_max(m_n_inner_cells,
-                     d_max_partial.data,
-                     m_gpu_q_max.getDeviceFlags(),
-                     d_k.data,
-                     d_fourier_mesh.data,
-                     m_block_size);
+                      d_max_partial.data,
+                      m_gpu_q_max.getDeviceFlags(),
+                      d_k.data,
+                      d_fourier_mesh.data,
+                      m_block_size);
 
     if (m_exec_conf->isCUDAErrorCheckingEnabled())
         CHECK_CUDA_ERROR();
@@ -521,7 +550,7 @@ void OrderParameterMeshGPU::computeQmax(unsigned int timestep)
         MPI_Allgather(&q_max,
                      sizeof(Scalar4),
                      MPI_BYTE,
-                     all_q_max, 
+                     all_q_max,
                      sizeof(Scalar4),
                      MPI_BYTE,
                      m_exec_conf->getMPICommunicator());
@@ -533,7 +562,7 @@ void OrderParameterMeshGPU::computeQmax(unsigned int timestep)
                 q_max = all_q_max[i];
                 }
             }
-        
+
         delete[] all_q_max;
         }
     #endif

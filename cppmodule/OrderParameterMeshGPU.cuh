@@ -3,10 +3,6 @@
 #include <hoomd/Index1D.h>
 #include <hoomd/BoxDim.h>
 
-#ifdef ENABLE_MPI
-#include <hoomd/DFFTIndex.h>
-#endif
-
 #include <cufft.h>
 
 void gpu_bin_particles(const unsigned int N,
@@ -15,20 +11,20 @@ void gpu_bin_particles(const unsigned int N,
                        unsigned int *d_n_cell,
                        unsigned int *d_overflow,
                        const Index2D& bin_idx,
-                       const Index3D& mesh_idx,
+                       const uint3 mesh_dim,
                        const uint3 n_ghost_bins,
                        const Scalar *d_mode,
                        const BoxDim& box);
 
-void gpu_assign_binned_particles_to_mesh(const Index3D& mesh_idx,
+void gpu_assign_binned_particles_to_mesh(const uint3 mesh_dim,
                                          const uint3 n_ghost_bins,
+                                         const uint3 grid_dim,
                                          const Scalar4 *d_particle_bins,
                                          Scalar *d_mesh_scratch,
                                          const Index2D& bin_idx,
                                          const Index2D& scratch_idx,
                                          const unsigned int *d_n_cell,
-                                         cufftComplex *d_mesh,
-                                         const bool local_fft);
+                                         cufftComplex *d_mesh);
 
 void gpu_compute_mesh_virial(const unsigned int n_wave_vectors,
                              cufftComplex *d_fourier_mesh,
@@ -46,17 +42,16 @@ void gpu_update_meshes(const unsigned int n_wave_vectors,
                          const unsigned int N_global);
 
 void gpu_compute_forces(const unsigned int N,
-                            const Scalar4 *d_postype,
-                            Scalar4 *d_force,
-                            const Scalar bias,
-                            const cufftComplex *d_inv_fourier_mesh,
-                            const Index3D& force_mesh_idx,
-                            const uint3 n_ghost_cells,
-                            const Scalar *d_mode,
-                            const BoxDim& box,
-                            const BoxDim& global_box,
-                            const bool local_fft,
-                            const unsigned int n_global);
+                        const Scalar4 *d_postype,
+                        Scalar4 *d_force,
+                        const Scalar bias,
+                        const cufftComplex *d_inv_fourier_mesh,
+                        const uint3 grid_dim,
+                        const uint3 n_ghost_cells,
+                        const Scalar *d_mode,
+                        const BoxDim& box,
+                        const BoxDim& global_box,
+                        const unsigned int n_global);
 
 void gpu_compute_cv(unsigned int n_wave_vectors,
                    Scalar *d_sum_partial,
@@ -64,7 +59,7 @@ void gpu_compute_cv(unsigned int n_wave_vectors,
                    const cufftComplex *d_fourier_mesh,
                    const cufftComplex *d_fourier_mesh_G,
                    const unsigned int block_size,
-                   const Index3D& mesh_idx,
+                   const uint3 mesh_dim,
                    const bool exclude_dc);
 
 void gpu_compute_virial(unsigned int n_wave_vectors,
@@ -73,7 +68,7 @@ void gpu_compute_virial(unsigned int n_wave_vectors,
                    const Scalar *d_mesh_virial,
                    const unsigned int block_size);
 
-void gpu_compute_influence_function(const Index3D& mesh_idx,
+void gpu_compute_influence_function(const uint3 mesh_dim,
                                     const uint3 global_dim,
                                     Scalar *d_inf_f,
                                     Scalar3 *d_k,

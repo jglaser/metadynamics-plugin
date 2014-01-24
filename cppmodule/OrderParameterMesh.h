@@ -55,6 +55,7 @@ class OrderParameterMesh : public CollectiveVariable
         uint3 m_n_ghost_cells;              //!< Number of ghost cells along every axis
         uint3 m_grid_dim;                   //!< Grid dimensions (including ghost cells)
         Scalar3 m_ghost_width;              //!< Dimensions of the ghost layer
+        unsigned int m_ghost_offset;       //!< Offset in mesh due to ghost cells
         unsigned int m_n_cells;             //!< Total number of inner cells
         unsigned int m_radius;              //!< Stencil radius (in units of mesh size)
         unsigned int m_n_inner_cells;       //!< Number of inner mesh points (without ghost cells)
@@ -121,7 +122,6 @@ class OrderParameterMesh : public CollectiveVariable
         #ifdef ENABLE_MPI
         dfft_plan m_dfft_plan_forward;     //!< Distributed FFT for forward transform
         dfft_plan m_dfft_plan_inverse;     //!< Distributed FFT for inverse transform
-        unsigned int m_ghost_offset;       //!< Offset in mesh due to ghost cells
         std::auto_ptr<CommunicatorGrid<kiss_fft_cpx> > m_grid_comm_forward; //!< Communicator for charge mesh
         std::auto_ptr<CommunicatorGrid<kiss_fft_cpx> > m_grid_comm_reverse; //!< Communicator for inv fourier mesh
         #endif

@@ -67,10 +67,10 @@ __device__ int3 find_cell(const Scalar3& pos,
     Scalar3 reduced_pos = make_scalar3(f.x * (Scalar)inner_nx,
                                        f.y * (Scalar)inner_ny,
                                        f.z * (Scalar)inner_nz);
-    
-    reduced_pos += make_scalar3(n_ghost_cells.x/2, n_ghost_cells.y/2, n_ghost_cells.z/2);
 
-    // find cell the particle is in
+    reduced_pos += make_scalar3(n_ghost_cells.x, n_ghost_cells.y, n_ghost_cells.z);
+
+    // find cell the particle is in (rounding up/down)
     int ix = ((reduced_pos.x >= 0) ? reduced_pos.x : (reduced_pos.x - Scalar(1.0)));
     int iy = ((reduced_pos.y >= 0) ? reduced_pos.y : (reduced_pos.y - Scalar(1.0)));
     int iz = ((reduced_pos.z >= 0) ? reduced_pos.z : (reduced_pos.z - Scalar(1.0)));
@@ -80,7 +80,7 @@ __device__ int3 find_cell(const Scalar3& pos,
         ix = 0;
     if (periodic.y && iy == (int)inner_ny)
         iy = 0;
-    if (periodic.z && iz == (int)inner_nz) 
+    if (periodic.z && iz == (int)inner_nz)
         iz = 0;
 
     return make_int3(ix, iy, iz);
@@ -92,7 +92,7 @@ __global__ void gpu_bin_particles_kernel(const unsigned int N,
                                          unsigned int *d_n_cell,
                                          unsigned int *d_overflow,
                                          const Index2D bin_idx,
-                                         const Index3D mesh_idx,
+                                         const uint3 mesh_dim,
                                          const uint3 n_ghost_bins,
                                          const Scalar *d_mode,
                                          const BoxDim box)
@@ -100,27 +100,29 @@ __global__ void gpu_bin_particles_kernel(const unsigned int N,
     unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (idx >= N) return;
-    
+
     Scalar4 postype = d_postype[idx];
 
     Scalar3 pos = make_scalar3(postype.x, postype.y, postype.z);
     unsigned int type = __float_as_int(postype.w);
     Scalar mode = d_mode[type];
 
-    int3 bin_dim = make_int3(mesh_idx.getW()+n_ghost_bins.x,
-                             mesh_idx.getH()+n_ghost_bins.y,
-                             mesh_idx.getD()+n_ghost_bins.z);
+    int3 bin_dim = make_int3(mesh_dim.x+2*n_ghost_bins.x,
+                             mesh_dim.y+2*n_ghost_bins.y,
+                             mesh_dim.z+2*n_ghost_bins.z);
 
     // compute coordinates in units of the cell size
-    int3 bin_coord = find_cell(pos, mesh_idx.getW(), mesh_idx.getH(), mesh_idx.getD(), n_ghost_bins, box);
+    int3 bin_coord = find_cell(pos, mesh_dim.x, mesh_dim.y, mesh_dim.z, n_ghost_bins, box);
 
-    // ignore ghost particles that are not within our domain
+    // ignore particles that are not within our domain (the error should be caught by HOOMD's cell list)
     if (bin_coord.x < 0 || bin_coord.x >= bin_dim.x ||
         bin_coord.y < 0 || bin_coord.y >= bin_dim.y ||
         bin_coord.z < 0 || bin_coord.z >= bin_dim.z) return;
 
-    unsigned int bin = bin_coord.z + bin_dim.z * (bin_coord.y + bin_dim.y * bin_coord.x);
+    // row-major mapping of bins onto array
+    unsigned int bin = bin_coord.x + bin_dim.x * (bin_coord.y + bin_dim.y * bin_coord.z);
 
+    // we bin non-deterministically here
     unsigned int n = atomicInc(&d_n_cell[bin], 0xffffffff);
 
     if (n >= bin_idx.getH())
@@ -132,10 +134,10 @@ __global__ void gpu_bin_particles_kernel(const unsigned int N,
 
     // store distance to bin center in bin in units of bin size
     Scalar3 f = box.makeFraction(pos);
-    f = f*make_scalar3(mesh_idx.getW(), mesh_idx.getH(), mesh_idx.getD());
-    Scalar3 c = make_scalar3((Scalar)bin_coord.x + Scalar(0.5) - Scalar(n_ghost_bins.x/2),
-                             (Scalar)bin_coord.y + Scalar(0.5) - Scalar(n_ghost_bins.y/2),
-                             (Scalar)bin_coord.z + Scalar(0.5) - Scalar(n_ghost_bins.z/2));
+    f = f*make_scalar3(mesh_dim.x, mesh_dim.y, mesh_dim.z);
+    Scalar3 c = make_scalar3((Scalar)(bin_coord.x - (int)n_ghost_bins.x) + Scalar(0.5),
+                             (Scalar)(bin_coord.y - (int)n_ghost_bins.y) + Scalar(0.5),
+                             (Scalar)(bin_coord.z - (int)n_ghost_bins.z) + Scalar(0.5));
     Scalar3 shift = f - c;
 
     d_particle_bins[bin_idx(bin,n)] = make_scalar4(shift.x,shift.y,shift.z, mode);
@@ -147,7 +149,7 @@ void gpu_bin_particles(const unsigned int N,
                        unsigned int *d_n_cell,
                        unsigned int *d_overflow,
                        const Index2D& bin_idx,
-                       const Index3D& mesh_idx,
+                       const uint3 mesh_dim,
                        const uint3 n_ghost_bins,
                        const Scalar *d_mode,
                        const BoxDim& box)
@@ -155,19 +157,18 @@ void gpu_bin_particles(const unsigned int N,
     unsigned int block_size = 512;
 
     gpu_bin_particles_kernel<<<N/block_size+1, block_size>>>(N,
-                                                             d_postype,
-                                                             d_particle_bins,
-                                                             d_n_cell,
-                                                             d_overflow,
-                                                             bin_idx,
-                                                             mesh_idx,
-                                                             n_ghost_bins,
-                                                             d_mode,
-                                                             box);
+             d_postype,
+             d_particle_bins,
+             d_n_cell,
+             d_overflow,
+             bin_idx,
+             mesh_dim,
+             n_ghost_bins,
+             d_mode,
+             box);
     }
 
-template<bool local_fft>
-__global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh_idx,
+__global__ void gpu_assign_binned_particles_to_scratch_kernel(const uint3 mesh_dim,
                                                            const uint3 n_ghost_bins,
                                                            const Scalar4 *d_particle_bins,
                                                            const unsigned int *d_n_cell,
@@ -181,15 +182,15 @@ __global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh
 
     if (bin >= bin_idx.getW()) return;
 
-    int3 bin_dim = make_int3(mesh_idx.getW()+n_ghost_bins.x,
-                             mesh_idx.getH()+n_ghost_bins.y,
-                             mesh_idx.getD()+n_ghost_bins.z);
+    int3 bin_dim = make_int3(mesh_dim.x+2*n_ghost_bins.x,
+                             mesh_dim.y+2*n_ghost_bins.y,
+                             mesh_dim.z+2*n_ghost_bins.z);
 
-    // grid coordinates of bin
+    // grid coordinates of bin (row-major)
     int i,j,k;
-    i = bin /bin_dim.y / bin_dim.z;
-    j = (bin - i * bin_dim.y*bin_dim.z)/bin_dim.z;
-    k = bin % bin_dim.z;
+    k = bin /bin_dim.y / bin_dim.x;
+    j = (bin - k * bin_dim.y*bin_dim.x)/bin_dim.x;
+    i = bin % bin_dim.x;
 
     // reset shared memory
     for (unsigned int sidx = 0; sidx < scratch_idx.getH(); ++sidx)
@@ -204,7 +205,7 @@ __global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh
     for (unsigned int idx = 0; idx < n_bin; ++idx)
         {
         Scalar4 xyzm = d_particle_bins[bin_idx(bin,idx)];
-        
+
         neigh_bin_idx = 0;
 
         // loop over neighboring bins
@@ -219,7 +220,7 @@ __global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh
                 assign_x = Scalar(3.0/4.0)-shift_sq;
             else
                 assign_x = Scalar(1.0/2.0)*fac*fac;
- 
+
             for (int m = -1; m <= 1; ++m)
                 {
                 shift = xyzm.y - (Scalar)m;
@@ -230,7 +231,7 @@ __global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh
                     assign_y = Scalar(3.0/4.0)-shift_sq;
                 else
                     assign_y = Scalar(1.0/2.0)*fac*fac;
-     
+
                 for (int n = -1; n <= 1; ++n)
                     {
                     shift = xyzm.z - (Scalar)n;
@@ -241,7 +242,7 @@ __global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh
                         assign_z = Scalar(3.0/4.0)-shift_sq;
                     else
                         assign_z = Scalar(1.0/2.0)*fac*fac;
-     
+
                     // compute fraction of particle density assigned to cell
                     // from particles in this bin
                     Scalar mode = xyzm.w;
@@ -261,16 +262,16 @@ __global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh
     for (int l = -1; l <= 1 ; ++l)
         {
         int neighi = i + l;
-        if (neighi >= (int)(bin_dim.x-n_ghost_bins.x/2))
+        if (neighi >= (int)bin_dim.x)
             {
-            if (local_fft || ! n_ghost_bins.x)
+            if (! n_ghost_bins.x)
                 neighi = 0;
             else
                 ignore_x = true;
             }
-        else if (neighi < (int)(n_ghost_bins.x/2))
+        else if (neighi < 0)
             {
-            if (local_fft || ! n_ghost_bins.x)
+            if (! n_ghost_bins.x)
                 neighi += (int)bin_dim.x;
             else
                 ignore_x = true;
@@ -279,16 +280,16 @@ __global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh
         for (int m = -1; m <= 1; ++m)
             {
             int neighj = j + m;
-            if (neighj >= (int)(bin_dim.y-n_ghost_bins.y/2))
+            if (neighj >= (int) bin_dim.y)
                 {
-                if (local_fft || ! n_ghost_bins.y)
+                if (! n_ghost_bins.y)
                     neighj = 0;
                 else
                     ignore_y = true;
                 }
-            else if (neighj < (int)(n_ghost_bins.y/2))
+            else if (neighj < 0)
                 {
-                if (local_fft || ! n_ghost_bins.y)
+                if (! n_ghost_bins.y)
                     neighj += (int)bin_dim.y;
                 else
                     ignore_y = true;
@@ -298,32 +299,30 @@ __global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh
                 {
                 int neighk = k + n;
 
-                if (neighk >= (int)(bin_dim.z-n_ghost_bins.z/2))
+                if (neighk >= (int)bin_dim.z)
                     {
-                    if (local_fft || ! n_ghost_bins.z)
+                    if (! n_ghost_bins.z)
                         neighk = 0;
                     else
                         ignore_z = true;
                     }
-                else if (neighk < (int)(n_ghost_bins.z/2))
+                else if (neighk < 0)
                     {
-                    if (local_fft || ! n_ghost_bins.z)
+                    if (! n_ghost_bins.z)
                         neighk += (int)bin_dim.z;
                     else
                         ignore_z = true;
-                    } 
+                    }
 
-                if (! (ignore_x || ignore_y || ignore_z))
+                if (!ignore_x && !ignore_y && !ignore_z)
                     {
-                    uint3 scratch_cell_coord = make_uint3(neighi - n_ghost_bins.x/2,
-                                                          neighj - n_ghost_bins.y/2,
-                                                          neighk - n_ghost_bins.z/2);
+                    uint3 scratch_cell_coord = make_uint3(neighi, neighj, neighk);
 
                     // write out to global memory
                     unsigned int cell_idx;
 
-                    // use cuFFT's memory layout
-                    cell_idx = scratch_cell_coord.z + mesh_idx.getD() * (scratch_cell_coord.y + mesh_idx.getH() * scratch_cell_coord.x);
+                    // use row-major layout
+                    cell_idx = scratch_cell_coord.x + bin_dim.x * (scratch_cell_coord.y + bin_dim.y * scratch_cell_coord.z);
 
                     d_mesh_scratch[scratch_idx(cell_idx,neigh_bin_idx)] =
                         scratch_neighbors[scratch_idx.getH()*threadIdx.x+neigh_bin_idx];
@@ -338,14 +337,14 @@ __global__ void gpu_assign_binned_particles_to_scratch_kernel(const Index3D mesh
         }
     }
 
-__global__ void gpu_reduce_scratch_kernel(const Index3D mesh_idx,
+__global__ void gpu_reduce_scratch_kernel(const uint3 grid_dim,
                                const Scalar *d_mesh_scratch,
                                const Index2D scratch_idx,
                                cufftComplex *d_mesh)
     {
     unsigned int cell_idx = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (cell_idx >= mesh_idx.getNumElements()) return;
+    if (cell_idx >= grid_dim.x*grid_dim.y*grid_dim.z) return;
 
     // simply add up contents of scratch cell
     Scalar grid_val(0.0);
@@ -356,48 +355,35 @@ __global__ void gpu_reduce_scratch_kernel(const Index3D mesh_idx,
     d_mesh[cell_idx].y = Scalar(0.0);
     }
 
-void gpu_assign_binned_particles_to_mesh(const Index3D& mesh_idx,
+void gpu_assign_binned_particles_to_mesh(const uint3 mesh_dim,
                                          const uint3 n_ghost_bins,
+                                         const uint3 grid_dim,
                                          const Scalar4 *d_particle_bins,
                                          Scalar *d_mesh_scratch,
                                          const Index2D& bin_idx,
                                          const Index2D& scratch_idx,
                                          const unsigned int *d_n_cell,
-                                         cufftComplex *d_mesh,
-                                         const bool local_fft)
+                                         cufftComplex *d_mesh)
     {
-    uint3 inner_dim = make_uint3(mesh_idx.getW(), mesh_idx.getH(), mesh_idx.getD());
-
     unsigned int block_size = 128;
     unsigned int n_blocks = bin_idx.getW()/block_size;
     if (bin_idx.getW()%block_size) n_blocks +=1;
 
     unsigned int shared_size = block_size*scratch_idx.getH()*sizeof(Scalar);
 
-    if (local_fft)
-        gpu_assign_binned_particles_to_scratch_kernel<true><<<n_blocks,block_size,shared_size>>>(
-                                                                                  mesh_idx,
-                                                                                  n_ghost_bins,
-                                                                                  d_particle_bins,
-                                                                                  d_n_cell,
-                                                                                  d_mesh_scratch,
-                                                                                  bin_idx,
-                                                                                  scratch_idx);
-    else
-        gpu_assign_binned_particles_to_scratch_kernel<false><<<n_blocks,block_size,shared_size>>>(
-                                                                                  mesh_idx,
-                                                                                  n_ghost_bins,
-                                                                                  d_particle_bins,
-                                                                                  d_n_cell,
-                                                                                  d_mesh_scratch,
-                                                                                  bin_idx,
-                                                                                  scratch_idx);
+    gpu_assign_binned_particles_to_scratch_kernel<<<n_blocks,block_size,shared_size>>>(
+          mesh_dim,
+          n_ghost_bins,
+          d_particle_bins,
+          d_n_cell,
+          d_mesh_scratch,
+          bin_idx,
+          scratch_idx);
 
-        
     block_size = 512;
-    n_blocks = mesh_idx.getNumElements()/block_size;
-    if (mesh_idx.getNumElements()%block_size) n_blocks +=1;
-    gpu_reduce_scratch_kernel<<<n_blocks, block_size>>>(mesh_idx,
+    n_blocks = grid_dim.x*grid_dim.y*grid_dim.z/block_size;
+    if ((grid_dim.x*grid_dim.y*grid_dim.z)%block_size) n_blocks +=1;
+    gpu_reduce_scratch_kernel<<<n_blocks, block_size>>>(grid_dim,
                                                         d_mesh_scratch,
                                                         scratch_idx,
                                                         d_mesh);
@@ -423,7 +409,7 @@ __global__ void gpu_compute_mesh_virial_kernel(const unsigned int n_wave_vectors
 
         Scalar rhog = f_g.x * f.x + f_g.y * f.y;
         Scalar3 k = d_k[idx];
-        
+
         Scalar ksq = dot(k,k);
         Scalar knorm = sqrtf(ksq);
         Scalar k_cut = sqrtf(qstarsq);
@@ -445,7 +431,7 @@ __global__ void gpu_compute_mesh_virial_kernel(const unsigned int n_wave_vectors
         d_virial_mesh[3*n_wave_vectors+idx] = Scalar(0.0);
         d_virial_mesh[4*n_wave_vectors+idx] = Scalar(0.0);
         d_virial_mesh[5*n_wave_vectors+idx] = Scalar(0.0);
-        } 
+        }
     }
 
 void gpu_compute_mesh_virial(const unsigned int n_wave_vectors,
@@ -466,7 +452,7 @@ void gpu_compute_mesh_virial(const unsigned int n_wave_vectors,
                                                                           qstarsq,
                                                                           exclude_dc);
     }
- 
+
 __global__ void gpu_update_meshes_kernel(const unsigned int n_wave_vectors,
                                          cufftComplex *d_fourier_mesh,
                                          cufftComplex *d_fourier_mesh_G,
@@ -514,12 +500,11 @@ void gpu_update_meshes(const unsigned int n_wave_vectors,
 //! Texture for reading particle positions
 texture<cufftComplex, 1, cudaReadModeElementType> inv_fourier_mesh_tex;
 
-template<bool local_fft>
 __global__ void gpu_compute_forces_kernel(const unsigned int N,
                                           const Scalar4 *d_postype,
                                           Scalar4 *d_force,
                                           const Scalar bias,
-                                          const Index3D force_mesh_idx,
+                                          const uint3 grid_dim,
                                           const uint3 n_ghost_cells,
                                           const Scalar *d_mode,
                                           const BoxDim box,
@@ -533,9 +518,9 @@ __global__ void gpu_compute_forces_kernel(const unsigned int N,
 
     if (idx >= N) return;
 
-    int3 inner_dim = make_int3(force_mesh_idx.getW()-n_ghost_cells.x,
-                               force_mesh_idx.getH()-n_ghost_cells.y,
-                               force_mesh_idx.getD()-n_ghost_cells.z);
+    int3 inner_dim = make_int3(grid_dim.x-2*n_ghost_cells.x,
+                               grid_dim.y-2*n_ghost_cells.y,
+                               grid_dim.z-2*n_ghost_cells.z);
 
     Scalar4 postype = d_postype[idx];
 
@@ -547,9 +532,9 @@ __global__ void gpu_compute_forces_kernel(const unsigned int N,
     int3 cell_coord = find_cell(pos, inner_dim.x, inner_dim.y, inner_dim.z, n_ghost_cells, box);
 
     // center of cell (in units of the cell size)
-    Scalar3 c = make_scalar3((Scalar)cell_coord.x-(Scalar)(n_ghost_cells.x/2)+Scalar(0.5),
-                             (Scalar)cell_coord.y-(Scalar)(n_ghost_cells.y/2)+Scalar(0.5),
-                             (Scalar)cell_coord.z-(Scalar)(n_ghost_cells.z/2)+Scalar(0.5));
+    Scalar3 c = make_scalar3((Scalar)(cell_coord.x-(int)n_ghost_cells.x)+Scalar(0.5),
+                             (Scalar)(cell_coord.y-(int)n_ghost_cells.y)+Scalar(0.5),
+                             (Scalar)(cell_coord.z-(int)n_ghost_cells.z)+Scalar(0.5));
 
     Scalar3 p = box.makeFraction(pos)*make_scalar3(inner_dim.x, inner_dim.y, inner_dim.z);
     Scalar3 shift_c = p-c;
@@ -560,7 +545,7 @@ __global__ void gpu_compute_forces_kernel(const unsigned int N,
     Scalar assign_x, assign_y, assign_z;
     Scalar assign_x_deriv, assign_y_deriv, assign_z_deriv;
     Scalar shift, shift_abs,shift_sq, fac;
- 
+
     for (int i = -1; i <= 1 ; ++i)
         {
         // precalculate assignment factor
@@ -579,8 +564,8 @@ __global__ void gpu_compute_forces_kernel(const unsigned int N,
             assign_x = Scalar(1.0/2.0)*fac*fac;
             assign_x_deriv = -fac*shift/shift_abs;
             }
- 
-    	for (int j = -1; j <= 1; ++j)
+
+        for (int j = -1; j <= 1; ++j)
             {
             shift = shift_c.y - (Scalar)j;
             shift_sq = shift*shift;
@@ -597,7 +582,7 @@ __global__ void gpu_compute_forces_kernel(const unsigned int N,
                 assign_y = Scalar(1.0/2.0)*fac*fac;
                 assign_y_deriv = -fac*shift/shift_abs;
                 }
-     
+
             for (int k = -1; k <= 1; ++k)
                 {
                 shift = shift_c.z - (Scalar)k;
@@ -620,42 +605,42 @@ __global__ void gpu_compute_forces_kernel(const unsigned int N,
                 int neighj = (int) cell_coord.y + j;
                 int neighk = (int) cell_coord.z + k;
 
-                if (local_fft || ! n_ghost_cells.x)
+                if (! n_ghost_cells.x)
                     {
-                    if (neighi == inner_dim.x)
+                    if (neighi == grid_dim.x)
                         neighi = 0;
                     else if (neighi < 0)
-                        neighi += inner_dim.x;
+                        neighi += grid_dim.x;
                     }
 
-                if (local_fft || ! n_ghost_cells.y)
+                if (! n_ghost_cells.y)
                     {
-                    if (neighj == inner_dim.y)
+                    if (neighj == grid_dim.y)
                         neighj = 0;
                     else if (neighj < 0)
-                        neighj += inner_dim.y;
+                        neighj += grid_dim.y;
                     }
 
-                if (local_fft || ! n_ghost_cells.z)
+                if (! n_ghost_cells.z)
                     {
-                    if (neighk == inner_dim.z)
+                    if (neighk == grid_dim.z)
                         neighk = 0;
                     else if (neighk < 0)
-                        neighk += inner_dim.z;
+                        neighk += grid_dim.z;
                     }
 
                 // compute fraction of particle density assigned to cell
                 unsigned int cell_idx;
 
-                // use cuFFT's memory layout
-                cell_idx = neighk + force_mesh_idx.getD() * (neighj + force_mesh_idx.getH() * neighi);
+                // use row-major layout
+                cell_idx = neighi + grid_dim.x * (neighj + grid_dim.y * neighk);
 
                 cufftComplex inv_mesh = tex1Dfetch(inv_fourier_mesh_tex,cell_idx);
 
                 force += -(Scalar)inner_dim.x*b1*mode*assign_x_deriv*assign_y*assign_z*inv_mesh.x;
                 force += -(Scalar)inner_dim.y*b2*mode*assign_x*assign_y_deriv*assign_z*inv_mesh.x;
                 force += -(Scalar)inner_dim.z*b3*mode*assign_x*assign_y*assign_z_deriv*inv_mesh.x;
-                }  
+                }
             }
         } // end neighbor cells loop
 
@@ -673,18 +658,17 @@ void gpu_compute_forces(const unsigned int N,
                         Scalar4 *d_force,
                         const Scalar bias,
                         const cufftComplex *d_inv_fourier_mesh,
-                        const Index3D& force_mesh_idx,
+                        const uint3 grid_dim,
                         const uint3 n_ghost_cells,
                         const Scalar *d_mode,
                         const BoxDim& box,
                         const BoxDim& global_box,
-                        const bool local_fft,
                         const unsigned int n_global)
     {
     const unsigned int block_size = 512;
 
     // force mesh includes ghost cells
-    unsigned int num_cells = force_mesh_idx.getNumElements();
+    unsigned int num_cells = grid_dim.x*grid_dim.y*grid_dim.z;
     inv_fourier_mesh_tex.normalized = false;
     inv_fourier_mesh_tex.filterMode = cudaFilterModePoint;
     cudaBindTexture(0, inv_fourier_mesh_tex, d_inv_fourier_mesh, sizeof(Scalar4)*num_cells);
@@ -699,34 +683,19 @@ void gpu_compute_forces(const unsigned int N,
     Scalar3 b2 = make_scalar3(a3.y*a1.z-a3.z*a1.y, a3.z*a1.x-a3.x*a1.z, a3.x*a1.y-a3.y*a1.x)/V_box;
     Scalar3 b3 = make_scalar3(a1.y*a2.z-a1.z*a2.y, a1.z*a2.x-a1.x*a2.z, a1.x*a2.y-a1.y*a2.x)/V_box;
 
-    if (local_fft)
-        gpu_compute_forces_kernel<true><<<N/block_size+1,block_size>>>(N,
-                                                                     d_postype,
-                                                                     d_force,
-                                                                     bias,
-                                                                     force_mesh_idx,
-                                                                     n_ghost_cells,
-                                                                     d_mode,
-                                                                     box,
-                                                                     global_box.getVolume(),
-                                                                     n_global,
-                                                                     b1,
-                                                                     b2,
-                                                                     b3);
-    else
-        gpu_compute_forces_kernel<false><<<N/block_size+1,block_size>>>(N,
-                                                                     d_postype,
-                                                                     d_force,
-                                                                     bias,
-                                                                     force_mesh_idx,
-                                                                     n_ghost_cells,
-                                                                     d_mode,
-                                                                     box,
-                                                                     global_box.getVolume(),
-                                                                     n_global,
-                                                                     b1,
-                                                                     b2,
-                                                                     b3);
+    gpu_compute_forces_kernel<<<N/block_size+1,block_size>>>(N,
+             d_postype,
+             d_force,
+             bias,
+             grid_dim,
+             n_ghost_cells,
+             d_mode,
+             box,
+             global_box.getVolume(),
+             n_global,
+             b1,
+             b2,
+             b3);
 
     cudaUnbindTexture(inv_fourier_mesh_tex);
     }
@@ -814,7 +783,7 @@ void gpu_compute_cv(unsigned int n_wave_vectors,
                    const cufftComplex *d_fourier_mesh,
                    const cufftComplex *d_fourier_mesh_G,
                    const unsigned int block_size,
-                   const Index3D& mesh_idx,
+                   const uint3 mesh_dim,
                    const bool exclude_dc)
     {
     unsigned int n_blocks = n_wave_vectors/block_size + 1;
@@ -1001,7 +970,7 @@ __device__ Scalar convolution_kernel(Scalar ksq, Scalar qstarsq)
     }
 
 template<bool local_fft>
-__global__ void gpu_compute_influence_function_kernel(const Index3D mesh_idx,
+__global__ void gpu_compute_influence_function_kernel(const uint3 mesh_dim,
                                           const unsigned int n_wave_vectors,
                                           const uint3 global_dim,
                                           Scalar *d_inf_f,
@@ -1022,22 +991,23 @@ __global__ void gpu_compute_influence_function_kernel(const Index3D mesh_idx,
     int l,m,n;
     if (local_fft)
         {
-        // use cuFFT's layout
-        int ny = mesh_idx.getH();
-        int nz = mesh_idx.getD();
-        l = kidx/ny/nz;
-        m = (kidx-l*ny*nz)/nz;
-        n = kidx % nz;
+        // use row-major layout
+        int ny = mesh_dim.y;
+        int nx = mesh_dim.x;
+        n = kidx/ny/nx;
+        m = (kidx-n*ny*nx)/nx;
+        l = kidx % nx;
         }
 #ifdef ENABLE_MPI
     else
         {
-        // local layout: column major
-        int ny = mesh_idx.getH();
-        int nz = mesh_idx.getD();
-        int l_local = kidx/ny/nz;
-        int m_local = (kidx-l_local*ny*nz)/nz;
-        int n_local = kidx % nz;
+        // local layout: row-major
+        int ny = mesh_dim.y;
+        int nx = mesh_dim.x;
+        int n_local = kidx/ny/nx;
+        int m_local = (kidx-n_local*ny*nx)/nx;
+        int l_local = kidx % nx;
+
         // cyclic distribution
         l = l_local*pdim.x + pidx.x;
         m = m_local*pdim.y + pidx.y;
@@ -1052,7 +1022,7 @@ __global__ void gpu_compute_influence_function_kernel(const Index3D mesh_idx,
         m -= (int) global_dim.y;
     if (n >= (int)(global_dim.z/2 + global_dim.z%2))
         n -= (int) global_dim.z;
-    
+
     bool zero = false;
     for (unsigned int i = 0; i < n_zero_modes; ++i)
         {
@@ -1077,7 +1047,7 @@ __global__ void gpu_compute_influence_function_kernel(const Index3D mesh_idx,
     d_k[kidx] = kval;
     }
 
-void gpu_compute_influence_function(const Index3D& mesh_idx,
+void gpu_compute_influence_function(const uint3 mesh_dim,
                                     const uint3 global_dim,
                                     Scalar *d_inf_f,
                                     Scalar3 *d_k,
@@ -1087,8 +1057,8 @@ void gpu_compute_influence_function(const Index3D& mesh_idx,
                                     const unsigned int n_zero_modes,
                                     const bool local_fft,
                                     const uint3 pidx,
-                                    const uint3 pdim) 
-    { 
+                                    const uint3 pdim)
+    {
     // compute reciprocal lattice vectors
     Scalar3 a1 = global_box.getLatticeVector(0);
     Scalar3 a2 = global_box.getLatticeVector(1);
@@ -1099,14 +1069,14 @@ void gpu_compute_influence_function(const Index3D& mesh_idx,
     Scalar3 b2 = Scalar(2.0*M_PI)*make_scalar3(a3.y*a1.z-a3.z*a1.y, a3.z*a1.x-a3.x*a1.z, a3.x*a1.y-a3.y*a1.x)/V_box;
     Scalar3 b3 = Scalar(2.0*M_PI)*make_scalar3(a1.y*a2.z-a1.z*a2.y, a1.z*a2.x-a1.x*a2.z, a1.x*a2.y-a1.y*a2.x)/V_box;
 
-    unsigned int num_wave_vectors = mesh_idx.getW()*mesh_idx.getH()*mesh_idx.getD();
+    unsigned int num_wave_vectors = mesh_dim.x*mesh_dim.y*mesh_dim.z;
 
     unsigned int block_size = 512;
     unsigned int n_blocks = num_wave_vectors/block_size;
     if (num_wave_vectors % block_size) n_blocks += 1;
 
     if (local_fft)
-        gpu_compute_influence_function_kernel<true><<<n_blocks, block_size>>>(mesh_idx,
+        gpu_compute_influence_function_kernel<true><<<n_blocks, block_size>>>(mesh_dim,
                                                                               num_wave_vectors,
                                                                               global_dim,
                                                                               d_inf_f,
@@ -1119,9 +1089,9 @@ void gpu_compute_influence_function(const Index3D& mesh_idx,
                                                                               n_zero_modes,
                                                                               pidx,
                                                                               pdim);
-#ifdef ENABLE_MPI
+    #ifdef ENABLE_MPI
     else
-        gpu_compute_influence_function_kernel<false><<<n_blocks,block_size>>>(mesh_idx,
+        gpu_compute_influence_function_kernel<false><<<n_blocks,block_size>>>(mesh_dim,
                                                                              num_wave_vectors,
                                                                              global_dim,
                                                                              d_inf_f,
@@ -1134,8 +1104,8 @@ void gpu_compute_influence_function(const Index3D& mesh_idx,
                                                                              n_zero_modes,
                                                                              pidx,
                                                                              pdim);
-#endif 
-    } 
+    #endif
+    }
 
 __global__ void gpu_compute_qmax_partial_kernel(
             int n_wave_vectors,
@@ -1239,5 +1209,3 @@ void gpu_compute_q_max(unsigned int n_wave_vectors,
                                                                 n_blocks,
                                                                 d_q_max);
     }
-
-
