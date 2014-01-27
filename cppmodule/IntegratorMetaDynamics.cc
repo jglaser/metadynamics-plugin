@@ -68,11 +68,14 @@ IntegratorMetaDynamics::IntegratorMetaDynamics(boost::shared_ptr<SystemDefinitio
     m_log_names.push_back("weight");
 
     #ifdef ENABLE_MPI
-    // create partition communicator
-    MPI_Comm_split(MPI_COMM_WORLD,
-        (m_exec_conf->getRank() == 0) ? 0 : MPI_UNDEFINED,
-         m_exec_conf->getPartition(),
-        &m_partition_comm);
+    if (m_exec_conf->getNPartitions() > 1)
+        {
+        // create partition communicator
+        MPI_Comm_split(MPI_COMM_WORLD,
+            (m_exec_conf->getRank() == 0) ? 0 : MPI_UNDEFINED,
+             m_exec_conf->getPartition(),
+            &m_partition_comm);
+        }
     #endif
     }
 
