@@ -66,6 +66,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <boost/shared_ptr.hpp>
 #include <boost/bind.hpp>
 
+#include <hoomd/hoomd.h>
 #include "CommunicatorGrid.h"
 
 #ifdef ENABLE_CUDA
@@ -74,14 +75,12 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <algorithm>
 
-using namespace boost;
-
 // first test, to ensure that all the ghost cells are updated from the correct neighbors
 template< class CG_uint >
-void test_communicate_grid_basic(shared_ptr<ExecutionConfiguration> exec_conf)
+void test_communicate_grid_basic(boost::shared_ptr<ExecutionConfiguration> exec_conf)
     {
     // create a system with eight particles
-    shared_ptr<SystemDefinition> sysdef(new SystemDefinition(8,           // number of particles
+    boost::shared_ptr<SystemDefinition> sysdef(new SystemDefinition(8,           // number of particles
                                                              BoxDim(2.0), // box dimensions
                                                              1,           // number of particle types
                                                              0,           // number of bond types
@@ -298,10 +297,10 @@ void test_communicate_grid_basic(shared_ptr<ExecutionConfiguration> exec_conf)
 
 //! Test to check that all elements are received and updated in correct order
 template<class CG_uint >
-void test_communicate_grid_positions(shared_ptr<ExecutionConfiguration> exec_conf)
+void test_communicate_grid_positions(boost::shared_ptr<ExecutionConfiguration> exec_conf)
     {
     // create a system with eight particles
-    shared_ptr<SystemDefinition> sysdef(new SystemDefinition(8,           // number of particles
+    boost::shared_ptr<SystemDefinition> sysdef(new SystemDefinition(8,           // number of particles
                                                              BoxDim(2.0), // box dimensions
                                                              1,           // number of particle types
                                                              0,           // number of bond types
