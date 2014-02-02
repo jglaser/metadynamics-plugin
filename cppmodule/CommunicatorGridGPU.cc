@@ -88,11 +88,14 @@ void CommunicatorGridGPU<T>::communicate(const GPUArray<T>& grid)
         }
 
         {
-        #if defined(ENABLE_MPI_CUDA) && 0
-        #else
         // access send and recv buffers
-        ArrayHandle<T> h_send_buf(this->m_send_buf, access_location::host, access_mode::read);
-        ArrayHandle<T> h_recv_buf(this->m_recv_buf, access_location::host, access_mode::overwrite);
+        #ifdef ENABLE_MPI_CUDA
+        ArrayHandle<T> send_buf_handle(this->m_send_buf, access_location::device, access_mode::read);
+        ArrayHandle<T> recv_buf_handle(this->m_recv_buf, access_location::device, access_mode::overwrite);
+        #else
+        ArrayHandle<T> send_buf_handle(this->m_send_buf, access_location::host, access_mode::read);
+        ArrayHandle<T> recv_buf_handle(this->m_recv_buf, access_location::host, access_mode::overwrite);
+        #endif
 
         typedef std::map<unsigned int, unsigned int>::iterator it_t;
         std::vector<MPI_Request> reqs(2*this->m_neighbors.size());
@@ -108,15 +111,14 @@ void CommunicatorGridGPU<T>::communicate(const GPUArray<T>& grid)
             unsigned int offs = b->second;
             unsigned int n_elem = e->second - b->second;
 
-            MPI_Isend(&h_send_buf.data[offs], n_elem*sizeof(T), MPI_BYTE, *it, 0,
+            MPI_Isend(&send_buf_handle.data[offs], n_elem*sizeof(T), MPI_BYTE, *it, 0,
                 this->m_exec_conf->getMPICommunicator(), &reqs[n++]);
-            MPI_Irecv(&h_recv_buf.data[offs], n_elem*sizeof(T), MPI_BYTE, *it, 0,
+            MPI_Irecv(&recv_buf_handle.data[offs], n_elem*sizeof(T), MPI_BYTE, *it, 0,
                 this->m_exec_conf->getMPICommunicator(), &reqs[n++]);
             }
 
         std::vector<MPI_Status> stat(reqs.size());
         MPI_Waitall(reqs.size(), &reqs.front(), &stat.front());
-        #endif
         }
 
         {
