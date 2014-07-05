@@ -2,6 +2,13 @@
 
 using namespace boost::python;
 
+bool is_pow2(unsigned int n)
+    {
+    while (n && n%2 == 0) { n/=2; }
+
+    return (n == 1);
+    };
+
 /*! \param sysdef The system definition
     \param nx Number of cells along first axis
     \param ny Number of cells along second axis
@@ -59,6 +66,13 @@ OrderParameterMesh::OrderParameterMesh(boost::shared_ptr<SystemDefinition> sysde
     if (m_pdata->getDomainDecomposition())
         {
         const Index3D& didx = m_pdata->getDomainDecomposition()->getDomainIndexer();
+
+        if (!is_pow2(m_mesh_points.x) || !is_pow2(m_mesh_points.y) || !is_pow2(m_mesh_points.z))
+            {
+            m_exec_conf->msg->error()
+                << "The number of mesh points along the every direction must be a power of two!" << std::endl;
+            throw std::runtime_error("Error initializing cv.mesh");
+            }
 
         if (nx % didx.getW())
             {
