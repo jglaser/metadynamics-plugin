@@ -188,11 +188,11 @@ uint3 OrderParameterMesh::computeGhostCellNum()
         }
     #endif
 
-    // extra ghost cells to accomodate skin layer
+    // extra ghost cells to accomodate skin layer (max 1/2 ghost layer width)
     #ifdef ENABLE_MPI
     if (m_comm)
         {
-        Scalar r_buff = m_comm->getRBuff();
+        Scalar r_buff = m_comm->getGhostLayerWidth();
 
         const BoxDim& box = m_pdata->getBox();
         Scalar3 cell_width = box.getNearestPlaneDistance() /
