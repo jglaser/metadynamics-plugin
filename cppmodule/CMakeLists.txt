@@ -1,4 +1,5 @@
 if(ENABLE_MPI)
+
 # dfftlib includes
 include_directories(${DFFT_INCLUDE_DIR})
 endif(ENABLE_MPI)
@@ -13,6 +14,9 @@ if (ENABLE_CUDA)
     list(APPEND PLUGIN_SRC ${_CUDA_GENERATED_FILES})
 endif (ENABLE_CUDA)
 
+# Need to define NO_IMPORT_ARRAY in every file
+set_source_files_properties(${_SRCS} ${_CUDA_SRCS} PROPERTIES COMPILE_DEFINITIONS NO_IMPORT_ARRAY)
+
 # build the C++ python module
 set(LIB_TARGET "_${PROJECT_NAME}")
 add_library(${LIB_TARGET} ${PLUGIN_SRC} ${PYMODULE_BUILD})
@@ -23,6 +27,7 @@ if(APPLE)
     set_target_properties(${LIB_TARGET} PROPERTIES SUFFIX ".so")
 endif(APPLE)
 fix_cudart_rpath(${LIB_TARGET})
+fix_hoomd_rpath(${LIB_TARGET})
 
 # install the library to the hoomd_plugins directory
 install(TARGETS ${LIB_TARGET}

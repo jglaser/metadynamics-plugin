@@ -1,6 +1,17 @@
 project(metadynamics)
 CMAKE_MINIMUM_REQUIRED(VERSION 2.6.2 FATAL_ERROR)
 
+# remove rpath from unit tests and exes
+macro(fix_hoomd_rpath target)
+if (APPLE)
+get_target_property(_target_exe ${target} LOCATION)
+add_custom_command(TARGET ${target} POST_BUILD
+                          COMMAND install_name_tool ARGS -change @executable_path/../lib/hoomd/python-module/hoomd.so ${HOOMD_LIB} ${_target_exe})
+endif (APPLE)
+endmacro()
+
+
+SET(CMAKE_MACOSX_RPATH 1)
 set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_MODULE_PATH})
 find_package(HOOMD)
 

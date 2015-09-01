@@ -75,6 +75,6 @@ struct MPISetup
 
     };
 
-BOOST_GLOBAL_FIXTURE( MPISetup )
+BOOST_GLOBAL_FIXTURE( MPISetup );
 
 #endif //ENABLE_MPI
