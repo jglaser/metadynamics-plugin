@@ -18,10 +18,18 @@ target_link_libraries(test_communicator_grid ${HOOMD_LIBRARIES} _metadynamics ${
 fix_cudart_rpath(test_communicator_grid)
 fix_rpath(test_communicator_grid)
 
-SET_TARGET_PROPERTIES (test_communicator_grid
-    PROPERTIES BUILD_WITH_INSTALL_RPATH 1
-    INSTALL_NAME_DIR "@executable_path/../cppmodule"
-)
+if (ENABLE_MPI)
+    # if we are compiling with MPI support built in, set appropriate
+    # compiler/linker flags
+    if(MPI_COMPILE_FLAGS)
+        set_target_properties(test_communciator_grid PROPERTIES COMPILE_FLAGS "${MPI_CXX_COMPILE_FLAGS}")
+    endif(MPI_COMPILE_FLAGS)
+    if(MPI_LINK_FLAGS)
+        set_target_properties(test_communicator_grid PROPERTIES LINK_FLAGS "${MPI_CXX_LINK_FLAGS}")
+    endif(MPI_LINK_FLAGS)
+endif(ENABLE_MPI)
+
+
 #if("${Boost_UNIT_TEST_FRAMEWORK_LIBRARY}" MATCHES "\\.so$")
 add_definitions(-DBOOST_TEST_DYN_LINK)
 #endif("${Boost_UNIT_TEST_FRAMEWORK_LIBRARY}" MATCHES "\\.so$")
