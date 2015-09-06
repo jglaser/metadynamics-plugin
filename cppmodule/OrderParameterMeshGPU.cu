@@ -132,15 +132,19 @@ __global__ void gpu_bin_particles_kernel(const unsigned int N,
         return;
         }
 
-    // store distance to bin center in bin in units of bin size
-    Scalar3 f = box.makeFraction(pos);
-    f = f*make_scalar3(mesh_dim.x, mesh_dim.y, mesh_dim.z);
+    // center of cell
     Scalar3 c = make_scalar3((Scalar)(bin_coord.x - (int)n_ghost_bins.x) + Scalar(0.5),
                              (Scalar)(bin_coord.y - (int)n_ghost_bins.y) + Scalar(0.5),
                              (Scalar)(bin_coord.z - (int)n_ghost_bins.z) + Scalar(0.5));
-    Scalar3 shift = f - c;
 
-    d_particle_bins[bin_idx(bin,n)] = make_scalar4(shift.x,shift.y,shift.z, mode);
+    // compute minimum image separation to center
+    Scalar3 c_cart = box.makeCoordinates(c/make_scalar3(mesh_dim.x,mesh_dim.y,mesh_dim.z));
+    Scalar3 shift_cart = box.minImage(pos-c_cart);
+    Scalar3 shift_f = box.makeFraction(shift_cart)-make_scalar3(0.5,0.5,0.5);
+    Scalar3 shift_cell = shift_f*make_scalar3(mesh_dim.x,mesh_dim.y,mesh_dim.z);
+
+    // store separation in global mem
+    d_particle_bins[bin_idx(bin,n)] = make_scalar4(shift_cell.x,shift_cell.y,shift_cell.z, mode);
     }
 
 void gpu_bin_particles(const unsigned int N,
