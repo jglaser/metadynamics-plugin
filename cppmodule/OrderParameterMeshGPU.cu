@@ -462,7 +462,8 @@ __global__ void gpu_update_meshes_kernel(const unsigned int n_wave_vectors,
                                          cufftComplex *d_fourier_mesh_G,
                                          const Scalar *d_inf_f,
                                          const Scalar3 *d_k,
-                                         const unsigned int N_global)
+                                         const unsigned int N_global,
+                                         Scalar sq_pow)
     {
     unsigned int k = blockDim.x * blockIdx.x + threadIdx.x;
 
@@ -473,7 +474,11 @@ __global__ void gpu_update_meshes_kernel(const unsigned int n_wave_vectors,
     // Normalization
     f.x /= (Scalar)N_global;
     f.y /= (Scalar)N_global;
-    Scalar val = f.x*f.x+f.y*f.y;
+    Scalar val(1.0);
+    if (sq_pow > Scalar(0.0))
+        {
+        val = fast::pow(f.x*f.x+f.y*f.y, sq_pow);
+        }
 
     cufftComplex fourier_G;
     fourier_G.x =f.x * val * d_inf_f[k];
@@ -488,7 +493,8 @@ void gpu_update_meshes(const unsigned int n_wave_vectors,
                          cufftComplex *d_fourier_mesh_G,
                          const Scalar *d_inf_f,
                          const Scalar3 *d_k,
-                         const unsigned int N_global)
+                         const unsigned int N_global,
+                         Scalar sq_pow)
 
     {
     const unsigned int block_size = 512;
@@ -498,7 +504,8 @@ void gpu_update_meshes(const unsigned int n_wave_vectors,
                                                                           d_fourier_mesh_G,
                                                                           d_inf_f,
                                                                           d_k,
-                                                                          N_global);
+                                                                          N_global,
+                                                                          sq_pow);
     }
 
 //! Texture for reading particle positions
@@ -516,7 +523,8 @@ __global__ void gpu_compute_forces_kernel(const unsigned int N,
                                           const unsigned int n_global,
                                           const Scalar3 b1,
                                           const Scalar3 b2,
-                                          const Scalar3 b3)
+                                          const Scalar3 b3,
+                                          Scalar sq_pow)
     {
     unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -649,7 +657,7 @@ __global__ void gpu_compute_forces_kernel(const unsigned int N,
         } // end neighbor cells loop
 
     // Normalization
-    force *= Scalar(2.0)/(Scalar)n_global;
+    force *= (Scalar(2.0)*(sq_pow+Scalar(1.0)))/(Scalar)n_global/Scalar(2.0);
 
     // Multiply with bias potential derivative
     force *= bias;
@@ -667,7 +675,8 @@ void gpu_compute_forces(const unsigned int N,
                         const Scalar *d_mode,
                         const BoxDim& box,
                         const BoxDim& global_box,
-                        const unsigned int n_global)
+                        const unsigned int n_global,
+                        Scalar sq_pow)
     {
     const unsigned int block_size = 512;
 
@@ -699,7 +708,8 @@ void gpu_compute_forces(const unsigned int N,
              n_global,
              b1,
              b2,
-             b3);
+             b3,
+             sq_pow);
 
     cudaUnbindTexture(inv_fourier_mesh_tex);
     }

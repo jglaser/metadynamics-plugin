@@ -35,6 +35,7 @@ OrderParameterMesh::OrderParameterMesh(boost::shared_ptr<SystemDefinition> sysde
       m_box_changed(false),
       m_cv(Scalar(0.0)),
       m_q_max_last_computed(0),
+      m_sq_pow(0.0),
       m_kiss_fft_initialized(false)
     {
 
@@ -567,7 +568,11 @@ void OrderParameterMesh::updateMeshes()
             f.r /= (Scalar) N_global;
             f.i /= (Scalar) N_global;
 
-            Scalar val = f.r*f.r+f.i*f.i;
+            Scalar val(1.0);
+            if (m_sq_pow > Scalar(0.0))
+                {
+                val = fast::pow(f.r*f.r+f.i*f.i, m_sq_pow);
+                }
 
             h_fourier_mesh_G.data[k].r = f.r * val * h_inf_f.data[k];
             h_fourier_mesh_G.data[k].i = f.i * val * h_inf_f.data[k];
@@ -719,7 +724,7 @@ void OrderParameterMesh::interpolateForces()
                     }
 
         // Multiply with bias potential derivative
-        force *= Scalar(2.0)/(Scalar)n_global*m_bias;
+        force *= (Scalar(2.0)*(m_sq_pow+Scalar(1.0)))/(Scalar)n_global*m_bias/Scalar(2.0);
 
         h_force.data[idx] = make_scalar4(force.x,force.y,force.z,0.0);
         }  // end of loop over particles
@@ -1025,6 +1030,7 @@ void export_OrderParameterMesh()
                                      const Scalar,
                                      const std::vector<Scalar>,
                                      const std::vector<int3>
-                                    >());
+                                    >())
+        .def("setSqPower", &OrderParameterMesh::setSqPower);
 
     }

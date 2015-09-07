@@ -318,7 +318,16 @@ class mesh(_collective_variable):
         globals.system.addCompute(self.cpp_force, self.force_name)
 
     ## \var cpp_force
-    # \internal 
+    # \internal
+
+    # Set parameters for the collective variable
+    # \param sq_pow Power of S(q), minus one, in the mode sum
+    def set_params(self, sq_pow = None, **args):
+        if sq_pow is not None:
+            self.cpp_force.setSqPower(sq_pow)
+
+        # call base class method
+        _collective_variable.set_params(self,*args)
 
     ## \internal
     def update_coeffs(self):

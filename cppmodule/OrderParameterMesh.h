@@ -41,6 +41,14 @@ class OrderParameterMesh : public CollectiveVariable
          */
         Scalar getLogValue(const std::string& quantity, unsigned int timestep);
 
+        //! Set power of structure factor in mode sum
+        /*! \param power power of S(q), minus one
+         */
+        void setSqPower(Scalar sq_pow)
+            {
+            m_sq_pow = sq_pow;
+            }
+
     protected:
         /*! Compute the biased forces for this collective variable.
             The force that is written to the force arrays must be
@@ -75,6 +83,8 @@ class OrderParameterMesh : public CollectiveVariable
         Scalar m_sq_max;                           //!< Maximum structure factor
 
         GPUArray<int3> m_zero_modes;        //!< Fourier modes that should be zeroed
+
+        Scalar m_sq_pow;                           //!< power-1 of the structure factor S(q) in mode sum
 
         //! Helper function to be called when box changes
         void setBoxChange()

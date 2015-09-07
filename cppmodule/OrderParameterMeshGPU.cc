@@ -285,7 +285,8 @@ void OrderParameterMeshGPU::updateMeshes()
                           d_fourier_mesh_G.data,
                           d_inf_f.data,
                           d_k.data,
-                          m_pdata->getNGlobal());
+                          m_pdata->getNGlobal(),
+                          m_sq_pow);
 
         if (m_exec_conf->isCUDAErrorCheckingEnabled())
             CHECK_CUDA_ERROR();
@@ -363,7 +364,8 @@ void OrderParameterMeshGPU::interpolateForces()
                        d_mode.data,
                        m_pdata->getBox(),
                        m_pdata->getGlobalBox(),
-                       m_pdata->getNGlobal());
+                       m_pdata->getNGlobal(),
+                       m_sq_pow);
 
     if (m_exec_conf->isCUDAErrorCheckingEnabled())
         CHECK_CUDA_ERROR();

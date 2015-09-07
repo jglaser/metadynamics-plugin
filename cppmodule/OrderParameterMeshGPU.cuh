@@ -39,7 +39,8 @@ void gpu_update_meshes(const unsigned int n_wave_vectors,
                          cufftComplex *d_fourier_mesh_G,
                          const Scalar *d_inf_f,
                          const Scalar3 *d_k,
-                         const unsigned int N_global);
+                         const unsigned int N_global,
+                         Scalar sq_pow);
 
 void gpu_compute_forces(const unsigned int N,
                         const Scalar4 *d_postype,
@@ -51,7 +52,8 @@ void gpu_compute_forces(const unsigned int N,
                         const Scalar *d_mode,
                         const BoxDim& box,
                         const BoxDim& global_box,
-                        const unsigned int n_global);
+                        const unsigned int n_global,
+                        Scalar sq_pow);
 
 void gpu_compute_cv(unsigned int n_wave_vectors,
                    Scalar *d_sum_partial,
