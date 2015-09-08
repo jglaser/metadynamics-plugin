@@ -115,7 +115,7 @@ void LamellarOrderParameter::computeBiasForces(unsigned int timestep)
 
             Scalar f;
             Scalar2 fourier_mode = h_fourier_modes.data[k];
-            f = Scalar(2.0)*mode*sin(dotproduct)*fourier_mode.x;
+            f = -Scalar(2.0)*mode*sin(dotproduct);
 
             force_energy.x += q.x*f;
             force_energy.y += q.y*f;

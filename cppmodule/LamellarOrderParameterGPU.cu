@@ -125,14 +125,13 @@ cudaError_t gpu_calculate_fourier_modes(unsigned int n_wave,
                d_mode,
                global_box.getL());
 
-    // calculate final S(q) values 
+    // calculate final S(q) values
     const unsigned int final_block_size = 512;
     shared_size = final_block_size*sizeof(Scalar2);
     kernel_final_reduce_fourier_modes<<<n_wave, final_block_size,shared_size,0>>>(d_fourier_mode_partial,
                                                                   n_blocks,
                                                                   d_fourier_modes,
                                                                   n_wave);
-                                                                  
     return cudaSuccess;
     }
 
@@ -168,7 +167,7 @@ __global__ void kernel_compute_sq_forces(unsigned int N,
         q = Scalar(2.0*M_PI)*make_scalar3(q.x/L.x,q.y/L.y,q.z/L.z);
         Scalar dotproduct = dot(pos,q);
 
-        Scalar f = Scalar(2.0)*m*fast::sin(dotproduct)*fourier_mode.x;
+        Scalar f = -Scalar(2.0)*m*fast::sin(dotproduct);
 
         force_energy.x += q.x*f;
         force_energy.y += q.y*f;
