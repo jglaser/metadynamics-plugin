@@ -32,8 +32,8 @@ __global__ void kernel_calculate_sq_partial(
         Scalar dotproduct = dot(q,p);
         unsigned int type = __float_as_int(postype[j].w);
         Scalar mode = d_modes[type];
-        mySum.x = mode*__cosf(dotproduct);
-        mySum.y = mode*__sinf(dotproduct);
+        mySum.x = mode*fast::cos(dotproduct);
+        mySum.y = mode*fast::sin(dotproduct);
         }
     sdata[tidx] = mySum;
 
@@ -168,8 +168,8 @@ __global__ void kernel_compute_sq_forces(unsigned int N,
         q = Scalar(2.0*M_PI)*make_scalar3(q.x/L.x,q.y/L.y,q.z/L.z);
         Scalar dotproduct = dot(pos,q);
 
-        Scalar f = Scalar(2.0)*m*(__sinf(dotproduct)*fourier_mode.x-__cosf(dotproduct)*fourier_mode.y);
-        
+        Scalar f = Scalar(2.0)*m*fast::sin(dotproduct)*fourier_mode.x;
+
         force_energy.x += q.x*f;
         force_energy.y += q.y*f;
         force_energy.z += q.z*f;

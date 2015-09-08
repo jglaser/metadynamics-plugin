@@ -67,7 +67,7 @@ void LamellarOrderParameter::computeCV(unsigned int timestep)
         Scalar2 fourier_mode = h_fourier_modes.data[k];
         sum += fourier_mode.x;
         }
-    sum /= Scalar(2.0)*(Scalar) N*(Scalar)N;
+    sum /= (Scalar) N;
 
     m_cv = sum;
 
@@ -113,9 +113,9 @@ void LamellarOrderParameter::computeBiasForces(unsigned int timestep)
             q = Scalar(2.0*M_PI)*make_scalar3(q.x/L.x,q.y/L.y,q.z/L.z);
             Scalar dotproduct = dot(pos,q);
 
-            Scalar f; 
+            Scalar f;
             Scalar2 fourier_mode = h_fourier_modes.data[k];
-            f = Scalar(2.0)*mode*(sin(dotproduct)*fourier_mode.x-cos(dotproduct)*fourier_mode.y);
+            f = Scalar(2.0)*mode*sin(dotproduct)*fourier_mode.x;
 
             force_energy.x += q.x*f;
             force_energy.y += q.y*f;
