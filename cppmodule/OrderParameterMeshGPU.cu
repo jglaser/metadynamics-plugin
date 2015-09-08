@@ -398,8 +398,15 @@ __global__ void gpu_compute_mesh_virial_kernel(const unsigned int n_wave_vectors
                                          cufftComplex *d_fourier_mesh_G,
                                          Scalar *d_virial_mesh,
                                          const Scalar3 *d_k,
-                                         const Scalar qstarsq,
-                                         const bool exclude_dc)
+                                         const bool exclude_dc,
+                                         Scalar kmin,
+                                         Scalar kmax,
+                                         Scalar delta_k,
+                                         const Scalar *d_table_D,
+                                         unsigned int use_table,
+                                         unsigned int N_global,
+                                         Scalar sq_pow
+                                         )
     {
     unsigned int idx = blockDim.x * blockIdx.x + threadIdx.x;
 
@@ -408,18 +415,43 @@ __global__ void gpu_compute_mesh_virial_kernel(const unsigned int n_wave_vectors
     if (!exclude_dc || idx != 0)
         {
         // non-zero wave vector
-        cufftComplex f_g = d_fourier_mesh_G[idx];
-        cufftComplex f = d_fourier_mesh[idx];
+        cufftComplex fourier = d_fourier_mesh[idx];
 
-        Scalar rhog = f_g.x * f.x + f_g.y * f.y;
         Scalar3 k = d_k[idx];
 
         Scalar ksq = dot(k,k);
         Scalar knorm = sqrtf(ksq);
-        Scalar k_cut = sqrtf(qstarsq);
-        Scalar fac = expf(-Scalar(12.0)*(knorm/k_cut-Scalar(1.0)));
-        Scalar kfac = -Scalar(6.0)/(Scalar(1.0)+fac)/knorm/k_cut;
-//        Scalar kfac = -Scalar(1.0/2.0)/qstarsq;
+
+        Scalar kfac = Scalar(1.0)/Scalar(2.0)/knorm;
+
+        // derivative of convolution kernel
+        Scalar val_D(0.0);
+
+        if (use_table && knorm >= kmin && knorm < kmax)
+            {
+            Scalar value_f = (knorm - kmin) / delta_k;
+
+            unsigned int value_i = (unsigned int) value_f;
+            Scalar dK0 = d_table_D[value_i];
+            Scalar dK1 = d_table_D[value_i+1];
+
+            // interpolate
+            Scalar f = value_f - Scalar(value_i);
+
+            val_D = dK0 + f * (dK1-dK0);
+            }
+
+        kfac *= val_D;
+
+        Scalar sq(1.0);
+
+        if (sq_pow > Scalar(0.0))
+            {
+            sq = fast::pow((fourier.x*fourier.x+fourier.y*fourier.y)/(Scalar)N_global, sq_pow);
+            }
+
+        Scalar rhog = (fourier.x * fourier.x + fourier.y * fourier.y)*sq/(Scalar) N_global;
+
         d_virial_mesh[0*n_wave_vectors+idx] = rhog*kfac*k.x*k.x; // xx
         d_virial_mesh[1*n_wave_vectors+idx] = rhog*kfac*k.x*k.y; // xy
         d_virial_mesh[2*n_wave_vectors+idx] = rhog*kfac*k.x*k.z; // xz
@@ -443,8 +475,15 @@ void gpu_compute_mesh_virial(const unsigned int n_wave_vectors,
                              cufftComplex *d_fourier_mesh_G,
                              Scalar *d_virial_mesh,
                              const Scalar3 *d_k,
-                             const Scalar qstarsq,
-                             const bool exclude_dc)
+                             const bool exclude_dc,
+                             Scalar kmin,
+                             Scalar kmax,
+                             Scalar delta_k,
+                             const Scalar *d_table_D,
+                             unsigned int use_table,
+                             unsigned int N_global,
+                             Scalar sq_pow)
+
     {
     const unsigned int block_size = 512;
 
@@ -453,8 +492,14 @@ void gpu_compute_mesh_virial(const unsigned int n_wave_vectors,
                                                                           d_fourier_mesh_G,
                                                                           d_virial_mesh,
                                                                           d_k,
-                                                                          qstarsq,
-                                                                          exclude_dc);
+                                                                          exclude_dc,
+                                                                          kmin,
+                                                                          kmax,
+                                                                          delta_k,
+                                                                          d_table_D,
+                                                                          use_table,
+                                                                          N_global,
+                                                                          sq_pow);
     }
 
 __global__ void gpu_update_meshes_kernel(const unsigned int n_wave_vectors,
@@ -992,11 +1037,15 @@ __global__ void gpu_compute_influence_function_kernel(const uint3 mesh_dim,
                                           const Scalar3 b1,
                                           const Scalar3 b2,
                                           const Scalar3 b3,
-                                          const Scalar qstarsq,
                                           const int3 *zero_modes,
                                           const unsigned int n_zero_modes,
                                           const uint3 pidx,
-                                          const uint3 pdim)
+                                          const uint3 pdim,
+                                          Scalar kmin,
+                                          Scalar kmax,
+                                          Scalar delta_k,
+                                          const Scalar *d_table,
+                                          unsigned int use_table)
     {
     unsigned int kidx = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -1053,7 +1102,25 @@ __global__ void gpu_compute_influence_function_kernel(const uint3 mesh_dim,
     if (!zero)
         {
         Scalar ksq = dot(kval,kval);
-        val = convolution_kernel(ksq,qstarsq);
+        Scalar k = fast::sqrt(ksq);
+
+        if (use_table && k >= kmin && k < kmax)
+            {
+            Scalar value_f = (k - kmin) / delta_k;
+
+            unsigned int value_i = (unsigned int) value_f;
+            Scalar K0 = d_table[value_i];
+            Scalar K1 = d_table[value_i+1];
+
+            // interpolate
+            Scalar f = value_f - Scalar(value_i);
+
+            val = K0 + f * (K1-K0);
+            }
+        else
+            {
+            val = Scalar(1.0);
+            }
         }
 
     // write out result
@@ -1066,12 +1133,16 @@ void gpu_compute_influence_function(const uint3 mesh_dim,
                                     Scalar *d_inf_f,
                                     Scalar3 *d_k,
                                     const BoxDim& global_box,
-                                    const Scalar qstarsq,
                                     const int3 *d_zero_modes,
                                     const unsigned int n_zero_modes,
                                     const bool local_fft,
                                     const uint3 pidx,
-                                    const uint3 pdim)
+                                    const uint3 pdim,
+                                    Scalar kmin,
+                                    Scalar kmax,
+                                    Scalar delta_k,
+                                    const Scalar *d_table,
+                                    unsigned int use_table)
     {
     // compute reciprocal lattice vectors
     Scalar3 a1 = global_box.getLatticeVector(0);
@@ -1098,11 +1169,15 @@ void gpu_compute_influence_function(const uint3 mesh_dim,
                                                                               b1,
                                                                               b2,
                                                                               b3,
-                                                                              qstarsq,
                                                                               d_zero_modes,
                                                                               n_zero_modes,
                                                                               pidx,
-                                                                              pdim);
+                                                                              pdim,
+                                                                              kmin,
+                                                                              kmax,
+                                                                              delta_k,
+                                                                              d_table,
+                                                                              use_table);
     #ifdef ENABLE_MPI
     else
         gpu_compute_influence_function_kernel<false><<<n_blocks,block_size>>>(mesh_dim,
@@ -1113,11 +1188,15 @@ void gpu_compute_influence_function(const uint3 mesh_dim,
                                                                              b1,
                                                                              b2,
                                                                              b3,
-                                                                             qstarsq,
                                                                              d_zero_modes,
                                                                              n_zero_modes,
                                                                              pidx,
-                                                                             pdim);
+                                                                             pdim,
+                                                                             kmin,
+                                                                             kmax,
+                                                                             delta_k,
+                                                                             d_table,
+                                                                             use_table);
     #endif
     }
 

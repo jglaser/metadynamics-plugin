@@ -262,17 +262,21 @@ class aspect_ratio(_collective_variable):
     def update_coeffs(self):
         pass
 
+def _table_eval(r, rmin, rmax, V, F, width):
+    dr = (rmax - rmin) / float(width-1);
+    i = int(round((r - rmin)/dr))
+    return (V[i], F[i])
+
 class mesh(_collective_variable):
     ## Construct a lamellar order parameter
     # \param sigma Standard deviation of deposited Gaussians
-    # \param qstar Short-wavelength cutoff
     # \param mode Per-type list (dictionary) of mode coefficients
     # \param nx Number of mesh points along first axis
     # \param ny Number of mesh points along second axis
     # \param nz Number of mesh points along third axis
     # \param name Name given to this collective variable
     # \param zero_modes Indices of modes that should be zeroed
-    def __init__(self, qstar, mode, nx, ny=None, nz=None, name=None,sigma=1.0,zero_modes=None):
+    def __init__(self, mode, nx, ny=None, nz=None, name=None,sigma=1.0,zero_modes=None):
         util.print_status_line()
 
         if name is not None:
@@ -311,9 +315,9 @@ class mesh(_collective_variable):
                 cpp_zero_modes.append(hoomd.make_int3(l[0], l[1], l[2]))
 
         if not globals.exec_conf.isCUDAEnabled():
-            self.cpp_force = _metadynamics.OrderParameterMesh(globals.system_definition, nx,ny,nz,qstar, cpp_mode, cpp_zero_modes)
+            self.cpp_force = _metadynamics.OrderParameterMesh(globals.system_definition, nx,ny,nz, cpp_mode, cpp_zero_modes)
         else:
-            self.cpp_force = _metadynamics.OrderParameterMeshGPU(globals.system_definition, nx,ny,nz,qstar, cpp_mode, cpp_zero_modes)
+            self.cpp_force = _metadynamics.OrderParameterMeshGPU(globals.system_definition, nx,ny,nz, cpp_mode, cpp_zero_modes)
 
         globals.system.addCompute(self.cpp_force, self.force_name)
 
@@ -322,12 +326,40 @@ class mesh(_collective_variable):
 
     # Set parameters for the collective variable
     # \param sq_pow Power of S(q), minus one, in the mode sum
-    def set_params(self, sq_pow = None, **args):
+    def set_params(self, sq_pow = None, use_table=None, **args):
         if sq_pow is not None:
             self.cpp_force.setSqPower(sq_pow)
 
+        if use_table is not None:
+            self.cpp_force.setUseTable(use_table)
+
         # call base class method
-        _collective_variable.set_params(self,*args)
+        _collective_variable.set_params(self,**args)
+
+    # Set the table to be used for the convolution kernel
+    # \param func The function the returns the convolution kernel and its derivative
+    # \param kmin Minimum k
+    # \param kmax Maximum k
+    # \param width Number of interpolation points
+    # \param coeff Additional parameters to the function, as a dict (optional)
+    def set_kernel(self, func, kmin, kmax, width, coeff = dict()):
+        # allocate arrays to store kernel and derivative
+        Ktable = hoomd.std_vector_scalar()
+        dKtable = hoomd.std_vector_scalar()
+
+        # calculate dr
+        dk = (kmax - kmin) / float(width-1);
+
+        # evaluate the function
+        for i in range(0, width):
+            k = kmin + dk * i;
+            (K,dK) = func(k, kmin, kmax, **coeff)
+
+            Ktable.append(K)
+            dKtable.append(dK)
+
+        # pass table to C++ collective variable
+        self.cpp_force.setTable(Ktable, dKtable, kmin, kmax)
 
     ## \internal
     def update_coeffs(self):

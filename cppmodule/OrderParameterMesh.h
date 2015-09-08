@@ -21,7 +21,6 @@ class OrderParameterMesh : public CollectiveVariable
                            const unsigned int nx,
                            const unsigned int ny,
                            const unsigned int nz,
-                           const Scalar qstar,
                            const std::vector<Scalar> mode,
                            const std::vector<int3> zero_modes = std::vector<int3>());
         virtual ~OrderParameterMesh();
@@ -47,6 +46,23 @@ class OrderParameterMesh : public CollectiveVariable
         void setSqPower(Scalar sq_pow)
             {
             m_sq_pow = sq_pow;
+            }
+
+        /*! Set the convolution kernel table
+         * \param K convolution kernel as function of k
+         * \param d_K derivative of convolution kernel
+         * \param kmin Minimum wave vector for table
+         * \param kmax Maximum wave vector for table
+         */
+        void setTable(const std::vector<Scalar> &K,
+                      const std::vector<Scalar> &d_K,
+                      Scalar kmin, Scalar kmax);
+
+        /*! Set flag whether to use a convolution kernel table
+         */
+        void setUseTable(bool use_table)
+            {
+            m_use_table = use_table;
             }
 
     protected:
@@ -85,6 +101,13 @@ class OrderParameterMesh : public CollectiveVariable
         GPUArray<int3> m_zero_modes;        //!< Fourier modes that should be zeroed
 
         Scalar m_sq_pow;                           //!< power-1 of the structure factor S(q) in mode sum
+
+        Scalar m_k_min;                             //!< Minimum k of tabulated convolution kernel
+        Scalar m_k_max;                             //!< Maximum k of tabulated convolution kernel
+        Scalar m_delta_k;                           //!< Spacing between k values
+        GPUArray<Scalar> m_table;                   //!< Tabulated kernel
+        GPUArray<Scalar> m_table_d;                 //!< Tabulated kernel
+        bool m_use_table;                           //!< Whether to use the tabulated kernel
 
         //! Helper function to be called when box changes
         void setBoxChange()

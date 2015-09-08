@@ -29,7 +29,6 @@ class OrderParameterMeshGPU : public OrderParameterMesh
                            const unsigned int nx,
                            const unsigned int ny,
                            const unsigned int nz,
-                           const Scalar qstar,
                            const std::vector<Scalar> mode,
                            const std::vector<int3> zero_modes = std::vector<int3>());
         virtual ~OrderParameterMeshGPU();

@@ -13,14 +13,12 @@ bool is_pow2(unsigned int n)
     \param nx Number of cells along first axis
     \param ny Number of cells along second axis
     \param nz Number of cells along third axis
-    \param qstar Short-wave length cutoff
     \param mode Per-type modes to multiply density
  */
 OrderParameterMesh::OrderParameterMesh(boost::shared_ptr<SystemDefinition> sysdef,
                                             const unsigned int nx,
                                             const unsigned int ny,
                                             const unsigned int nz,
-                                            const Scalar qstar,
                                             std::vector<Scalar> mode,
                                             std::vector<int3> zero_modes)
     : CollectiveVariable(sysdef, "mesh"),
@@ -36,6 +34,10 @@ OrderParameterMesh::OrderParameterMesh(boost::shared_ptr<SystemDefinition> sysde
       m_cv(Scalar(0.0)),
       m_q_max_last_computed(0),
       m_sq_pow(0.0),
+      m_k_min(0.0),
+      m_k_max(0.0),
+      m_delta_k(0.0),
+      m_use_table(false),
       m_kiss_fft_initialized(false)
     {
 
@@ -58,7 +60,6 @@ OrderParameterMesh::OrderParameterMesh(boost::shared_ptr<SystemDefinition> sysde
     ArrayHandle<int3> h_zero_modes(m_zero_modes, access_location::host, access_mode::overwrite);
     std::copy(zero_modes.begin(), zero_modes.end(), h_zero_modes.data);
 
-    m_qstarsq = qstar*qstar;
     m_boxchange_connection = m_pdata->connectBoxChange(boost::bind(&OrderParameterMesh::setBoxChange, this));
 
     m_mesh_points = make_uint3(nx, ny, nz);
@@ -137,6 +138,53 @@ OrderParameterMesh::~OrderParameterMesh()
         }
     #endif
     m_boxchange_connection.disconnect();
+    }
+
+/*! \param K Table for the convolution kernel
+    \param kmin Minimum k in the potential
+    \param kmax Maximum k in the potential
+*/
+void OrderParameterMesh::setTable(const std::vector<Scalar> &K,
+                              const std::vector<Scalar> &d_K,
+                              Scalar kmin,
+                              Scalar kmax)
+    {
+    // range check on the parameters
+    if (kmin < 0 || kmax < 0 || kmax <= kmin)
+        {
+        m_exec_conf->msg->error() << "cv.mesh kmin, kmax (" << kmin << "," << kmax
+             << ") is invalid" << endl;
+        throw runtime_error("Error setting up OrderParameterMesh");
+        }
+
+    if (K.size() != d_K.size())
+        {
+        m_exec_conf->msg->error() << "Convolution kernel and derivative have tables of unequal length "
+            << K.size() << " != " << d_K.size() << std::endl;
+        throw runtime_error("Error setting up OrderParameterMesh");
+        }
+
+    m_k_min = kmin;
+    m_k_max = kmax;
+    m_delta_k = (kmax - kmin) / Scalar(K.size() - 1);
+
+    // allocate the arrays
+    GPUArray<Scalar> table(K.size(), m_exec_conf);
+    m_table.swap(table);
+
+    GPUArray<Scalar> table_d(d_K.size(), m_exec_conf);
+    m_table_d.swap(table_d);
+
+    // access the array
+    ArrayHandle<Scalar> h_table(m_table, access_location::host, access_mode::readwrite);
+    ArrayHandle<Scalar> h_table_d(m_table_d, access_location::host, access_mode::readwrite);
+
+    // fill out the table
+    for (unsigned int i = 0; i < m_table.getNumElements(); i++)
+        {
+        h_table.data[i] = K[i];
+        h_table_d.data[i] = d_K[i];
+        }
     }
 
 void OrderParameterMesh::setupMesh()
@@ -294,6 +342,8 @@ void OrderParameterMesh::computeInfluenceFunction()
     ArrayHandle<Scalar> h_inf_f(m_inf_f,access_location::host, access_mode::overwrite);
     ArrayHandle<Scalar3> h_k(m_k,access_location::host, access_mode::overwrite);
 
+    ArrayHandle<Scalar> h_table(m_table, access_location::host, access_mode::read);
+
     // reset arrays
     memset(h_inf_f.data, 0, sizeof(Scalar)*m_inf_f.getNumElements());
     memset(h_k.data, 0, sizeof(Scalar3)*m_k.getNumElements());
@@ -366,9 +416,23 @@ void OrderParameterMesh::computeInfluenceFunction()
         Scalar3 k = (Scalar)n.x*b1+(Scalar)n.y*b2+(Scalar)n.z*b3;
         Scalar ksq = dot(k,k);
 
-        Scalar knorm = sqrtf(ksq);
-        Scalar k_cut = sqrtf(m_qstarsq);
-        Scalar val = Scalar(1.0)/(Scalar(1.0)+expf(Scalar(12.0)*(knorm/k_cut-Scalar(1.0))));
+        Scalar knorm = fast::sqrt(ksq);
+
+        Scalar val(1.0);
+
+        if (m_use_table && knorm >= m_k_min && knorm < m_k_max)
+            {
+            Scalar value_f = (knorm - m_k_min) / m_delta_k;
+
+            unsigned int value_i = (unsigned int) value_f;
+            Scalar K0 = h_table.data[value_i];
+            Scalar K1 = h_table.data[value_i+1];
+
+            // interpolate
+            Scalar f = value_f - Scalar(value_i);
+
+            val = K0 + f * (K1-K0);
+            }
 
         h_inf_f.data[cell_idx] = val;
 
@@ -839,6 +903,8 @@ void OrderParameterMesh::computeVirial()
     ArrayHandle<Scalar> h_inf_f(m_inf_f, access_location::host, access_mode::read);
     ArrayHandle<Scalar3> h_k(m_k, access_location::host, access_mode::read);
 
+    ArrayHandle<Scalar> h_table_d(m_table_d, access_location::host, access_mode::read);
+
     Scalar virial[6];
     for (unsigned int i = 0; i < 6; ++i)
         virial[i] = Scalar(0.0);
@@ -852,6 +918,8 @@ void OrderParameterMesh::computeVirial()
         }
     #endif
 
+    unsigned int Nglobal = m_pdata->getNGlobal();
+
     for (unsigned int kidx = 0; kidx < m_n_inner_cells; ++kidx)
         {
         bool exclude = false;
@@ -862,16 +930,40 @@ void OrderParameterMesh::computeVirial()
         if (! exclude)
             {
             // non-zero wave vector
-            kiss_fft_cpx f_g = h_fourier_mesh_G.data[kidx];
-            kiss_fft_cpx f = h_fourier_mesh.data[kidx];
+            kiss_fft_cpx fourier = h_fourier_mesh.data[kidx];
 
-            Scalar rhog = f_g.r * f.r + f_g.i * f.i;
             Scalar3 k = h_k.data[kidx];
-            Scalar k_cut = sqrt(m_qstarsq);
             Scalar ksq = dot(k,k);
             Scalar knorm = sqrt(ksq);
-            Scalar fac = expf(-Scalar(12.0)*(knorm/k_cut-Scalar(1.0)));
-            Scalar kfac = -Scalar(6.0)/(Scalar(1.0)+fac)/knorm/k_cut;
+
+            Scalar kfac = Scalar(1.0)/Scalar(2.0)/knorm;
+
+            // derivative of convolution kernel
+            Scalar val_D(0.0);
+
+            if (m_use_table && knorm >= m_k_min && knorm < m_k_max)
+                {
+                Scalar value_f = (knorm - m_k_min) / m_delta_k;
+
+                unsigned int value_i = (unsigned int) value_f;
+                Scalar dK0 = h_table_d.data[value_i];
+                Scalar dK1 = h_table_d.data[value_i+1];
+
+                // interpolate
+                Scalar f = value_f - Scalar(value_i);
+
+                val_D = dK0 + f * (dK1-dK0);
+                }
+
+            kfac *= val_D;
+
+            Scalar val(1.0);
+            if (m_sq_pow > Scalar(0.0))
+                {
+                val = fast::pow((fourier.r*fourier.r+fourier.i*fourier.i)/(Scalar)Nglobal, m_sq_pow);
+                }
+
+            Scalar rhog = (fourier.r * fourier.r + fourier.i * fourier.i)*val/(Scalar)Nglobal;
 
             virial[0] += rhog*kfac*k.x*k.x; // xx
             virial[1] += rhog*kfac*k.x*k.y; // xy
@@ -1027,10 +1119,10 @@ void export_OrderParameterMesh()
                                      const unsigned int,
                                      const unsigned int,
                                      const unsigned int,
-                                     const Scalar,
                                      const std::vector<Scalar>,
                                      const std::vector<int3>
                                     >())
-        .def("setSqPower", &OrderParameterMesh::setSqPower);
-
+        .def("setSqPower", &OrderParameterMesh::setSqPower)
+        .def("setTable", &OrderParameterMesh::setTable)
+        .def("setUseTable", &OrderParameterMesh::setUseTable);
     }

@@ -9,7 +9,6 @@ using namespace boost::python;
     \param nx Number of cells along first axis
     \param ny Number of cells along second axis
     \param nz Number of cells along third axis
-    \param qstar Short-wave length cutoff
     \param mode Per-type modes to multiply density
     \param zero_modes List of modes that should be zeroed
  */
@@ -17,10 +16,9 @@ OrderParameterMeshGPU::OrderParameterMeshGPU(boost::shared_ptr<SystemDefinition>
                                             const unsigned int nx,
                                             const unsigned int ny,
                                             const unsigned int nz,
-                                            const Scalar qstar,
                                             std::vector<Scalar> mode,
                                             std::vector<int3> zero_modes)
-    : OrderParameterMesh(sysdef, nx, ny, nz, qstar, mode,zero_modes),
+    : OrderParameterMesh(sysdef, nx, ny, nz, mode,zero_modes),
       m_local_fft(true),
       m_sum(m_exec_conf),
       m_block_size(256),
@@ -391,13 +389,21 @@ void OrderParameterMeshGPU::computeVirial()
         }
     #endif
 
+    ArrayHandle<Scalar> d_table_D(m_table_d, access_location::device, access_mode::read);
+
     gpu_compute_mesh_virial(m_n_inner_cells,
                             d_fourier_mesh.data,
                             d_fourier_mesh_G.data,
                             d_virial_mesh.data,
                             d_k.data,
-                            m_qstarsq,
-                            exclude_dc);
+                            exclude_dc,
+                            m_k_min,
+                            m_k_max,
+                            m_delta_k,
+                            d_table_D.data,
+                            m_use_table,
+                            m_pdata->getNGlobal(),
+                            m_sq_pow);
 
     if (m_exec_conf->isCUDAErrorCheckingEnabled())
         CHECK_CUDA_ERROR();
@@ -498,17 +504,24 @@ void OrderParameterMeshGPU::computeInfluenceFunction()
         }
     #endif
 
+    // access tabulated convolution kernel
+    ArrayHandle<Scalar> d_table(m_table, access_location::device, access_mode::read);
+
     gpu_compute_influence_function(m_mesh_points,
                                    global_dim,
                                    d_inf_f.data,
                                    d_k.data,
                                    m_pdata->getGlobalBox(),
-                                   m_qstarsq,
                                    d_zero_modes.data,
                                    m_zero_modes.getNumElements(),
                                    m_local_fft,
                                    pidx,
-                                   pdim);
+                                   pdim,
+                                   m_k_min,
+                                   m_k_max,
+                                   m_delta_k,
+                                   d_table.data,
+                                   m_use_table);
 
     if (m_exec_conf->isCUDAErrorCheckingEnabled())
         CHECK_CUDA_ERROR();
@@ -587,7 +600,6 @@ void export_OrderParameterMeshGPU()
                                      const unsigned int,
                                      const unsigned int,
                                      const unsigned int,
-                                     const Scalar,
                                      const std::vector<Scalar>,
                                      const std::vector<int3>
                                     >());
