@@ -12,9 +12,8 @@ using namespace boost::python;
 LamellarOrderParameter::LamellarOrderParameter(boost::shared_ptr<SystemDefinition> sysdef,
                                const std::vector<Scalar>& mode,
                                const std::vector<int3>& lattice_vectors,
-                               const Scalar offs,
                                const std::string& suffix)
-    : CollectiveVariable(sysdef, "cv_lamellar"), m_mode(mode), m_cv(0.0), m_offs(offs)
+    : CollectiveVariable(sysdef, "cv_lamellar"), m_mode(mode), m_cv(0.0)
     {
     if (mode.size() != m_pdata->getNTypes())
         {
@@ -71,7 +70,7 @@ void LamellarOrderParameter::computeCV(unsigned int timestep)
         }
     sum /= Scalar(2.0)*(Scalar) N*(Scalar)N;
 
-    m_cv = sqrt(sum) + m_offs;
+    m_cv = sum;
 
     if (m_prof)
         m_prof->pop();
@@ -190,7 +189,6 @@ void export_LamellarOrderParameter()
         ("LamellarOrderParameter", init< boost::shared_ptr<SystemDefinition>,
                                          const std::vector<Scalar>&,
                                          const std::vector<int3>,
-                                         const Scalar,
                                          const std::string&>());
 
     class_<std::vector<int3> >("std_vector_int3")

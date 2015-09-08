@@ -44,7 +44,6 @@ class LamellarOrderParameter : public CollectiveVariable
         LamellarOrderParameter(boost::shared_ptr<SystemDefinition> sysdef,
                                const std::vector<Scalar>& mode,
                                const std::vector<int3>& lattice_vectors,
-                               const Scalar offs = Scalar(0.0),
                                const std::string& suffix = ""
                                );
         virtual ~LamellarOrderParameter() {}
@@ -91,7 +90,7 @@ class LamellarOrderParameter : public CollectiveVariable
         GPUArray<Scalar2> m_fourier_modes;    //!< Fourier modes
 
         unsigned int m_cv_last_updated;       //!< Timestep the collective variable was last updated
-        Scalar m_offs;                        //!< Constant offset to add to collective variable to suppress singularity
+
         //! Calculates the current value of the collective variable
         virtual void computeCV(unsigned int timestep);
 
