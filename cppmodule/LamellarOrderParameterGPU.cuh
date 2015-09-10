@@ -39,7 +39,6 @@ cudaError_t gpu_calculate_fourier_modes(unsigned int n_wave,
     \param d_mode Device array of per-type mode coefficients
     \param n_global Total number of particles in system
     \param bias The bias factor to multiply the forces with
-    \param fourier_modes Array of fourier modes
     \param sum_of_sq Sum of structure factors
     \returns the CUDA status
 */
@@ -51,6 +50,5 @@ cudaError_t gpu_compute_sq_forces(unsigned int N,
                                   Scalar *d_mode,
                                   unsigned int n_global,
                                   Scalar bias,
-                                  Scalar2 *fourier_modes,
                                   Scalar cv_val,
                                   const BoxDim& global_box);

@@ -89,13 +89,12 @@ void LamellarOrderParameter::computeBiasForces(unsigned int timestep)
     ArrayHandle<Scalar4> h_postype(m_pdata->getPositions(), access_location::host, access_mode::read);
     ArrayHandle<Scalar4> h_force(m_force, access_location::host, access_mode::overwrite);
     ArrayHandle<int3> h_lattice_vectors(m_lattice_vectors, access_location::host, access_mode::read);
-    ArrayHandle<Scalar2> h_fourier_modes(m_fourier_modes, access_location::host, access_mode::read);
 
     Scalar3 L = m_pdata->getGlobalBox().getL();
 
     unsigned int N = m_pdata->getNGlobal();
 
-    Scalar denom = Scalar(2.0)*(Scalar)N*(Scalar)N*Scalar(2.0)*m_cv;
+    Scalar denom = (Scalar)N;
 
     for (unsigned int idx = 0; idx < m_pdata->getN(); idx++)
         {
@@ -114,8 +113,7 @@ void LamellarOrderParameter::computeBiasForces(unsigned int timestep)
             Scalar dotproduct = dot(pos,q);
 
             Scalar f;
-            Scalar2 fourier_mode = h_fourier_modes.data[k];
-            f = -Scalar(2.0)*mode*sin(dotproduct);
+            f = Scalar(2.0)*mode*sin(dotproduct);
 
             force_energy.x += q.x*f;
             force_energy.y += q.y*f;

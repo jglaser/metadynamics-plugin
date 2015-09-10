@@ -143,7 +143,6 @@ __global__ void kernel_compute_sq_forces(unsigned int N,
                                   Scalar *mode,
                                   unsigned int n_global,
                                   Scalar bias,
-                                  Scalar2 *fourier_modes,
                                   Scalar cv,
                                   const Scalar3 L)
     {
@@ -159,15 +158,14 @@ __global__ void kernel_compute_sq_forces(unsigned int N,
 
     Scalar4 force_energy = make_scalar4(0.0f,0.0f,0.0f,0.0f);
 
-    Scalar denom = Scalar(2.0)*(Scalar)n_global*(Scalar)n_global*Scalar(2.0)*cv;
+    Scalar denom = (Scalar)n_global;
     for (unsigned int k = 0; k < n_wave; k++)
         {
-        Scalar2 fourier_mode = fourier_modes[k];
         Scalar3 q = make_scalar3(lattice_vectors[k].x, lattice_vectors[k].y, lattice_vectors[k].z);
         q = Scalar(2.0*M_PI)*make_scalar3(q.x/L.x,q.y/L.y,q.z/L.z);
         Scalar dotproduct = dot(pos,q);
 
-        Scalar f = -Scalar(2.0)*m*fast::sin(dotproduct);
+        Scalar f = Scalar(2.0)*m*fast::sin(dotproduct);
 
         force_energy.x += q.x*f;
         force_energy.y += q.y*f;
@@ -193,7 +191,6 @@ cudaError_t gpu_compute_sq_forces(unsigned int N,
                                   Scalar *d_mode,
                                   unsigned int n_global,
                                   Scalar bias,
-                                  Scalar2 *fourier_modes,
                                   Scalar cv_val,
                                   const BoxDim& global_box)
     {
@@ -208,7 +205,6 @@ cudaError_t gpu_compute_sq_forces(unsigned int N,
                                                                d_mode,
                                                                n_global,
                                                                bias,
-                                                               fourier_modes,
                                                                cv_val,
                                                                global_box.getL());
 

@@ -25,24 +25,26 @@ void CollectiveVariable::computeForces(unsigned int timestep)
     if (m_umbrella != no_umbrella)
         {
         Scalar val = getCurrentValue(timestep);
-        if ((val < m_cv0 + m_width_flat/Scalar(2.0)) && 
+        if ((val < m_cv0 + m_width_flat/Scalar(2.0)) &&
             (val > m_cv0 - m_width_flat/Scalar(2.0)))
+            {
             setBiasFactor(0.0);
+            }
         else
             {
             Scalar delta(0.0);
             if (val > m_cv0)
                 delta = val - m_cv0 - m_width_flat/Scalar(2.0);
-            else 
+            else
                 delta = val - m_cv0 + m_width_flat/Scalar(2.0);
 
             if (m_umbrella == linear)
                 {
-                setBiasFactor(m_scale*Scalar(1.0)/m_kappa);
+                setBiasFactor(m_scale*Scalar(1.0));
                 }
             else if (m_umbrella == harmonic)
                 {
-                setBiasFactor(m_scale*delta/m_kappa/m_kappa);
+                setBiasFactor(m_kappa*delta);
                 }
             else if (m_umbrella == wall)
                 {
@@ -79,11 +81,11 @@ Scalar CollectiveVariable::getUmbrellaPotential(unsigned int timestep)
 
             if (m_umbrella == linear)
                 {
-                return m_scale*delta/m_kappa;
+                return m_scale*delta;
                 }
             else if (m_umbrella == harmonic)
                 {
-                return Scalar(1.0/2.0)*m_scale*delta*delta/m_kappa/m_kappa;
+                return Scalar(1.0/2.0)*delta*delta*m_kappa;
                 }
             else if (m_umbrella == wall)
                 {

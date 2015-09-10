@@ -75,7 +75,7 @@ void LamellarOrderParameterGPU::computeCV(unsigned int timestep)
 #endif
 
     ArrayHandle<Scalar2> h_fourier_modes(m_fourier_modes, access_location::host, access_mode::read);
-    // calculate value of collective variable 
+    // calculate value of collective variable
     Scalar sum = 0.0;
     for (unsigned k = 0; k < m_fourier_modes.getNumElements(); k++)
         {
@@ -108,7 +108,6 @@ void LamellarOrderParameterGPU::computeBiasForces(unsigned int timestep)
         ArrayHandle<int3> d_lattice_vectors(m_lattice_vectors, access_location::device, access_mode::read);
         ArrayHandle<Scalar> d_gpu_mode(m_gpu_mode, access_location::device, access_mode::read);
         ArrayHandle<Scalar4> d_force(m_force, access_location::device, access_mode::overwrite);
-        ArrayHandleAsync<Scalar2> d_fourier_modes(m_fourier_modes, access_location::device, access_mode::read);
 
         // calculate forces
         gpu_compute_sq_forces(m_pdata->getN(),
@@ -119,7 +118,6 @@ void LamellarOrderParameterGPU::computeBiasForces(unsigned int timestep)
                              d_gpu_mode.data,
                              m_pdata->getNGlobal(),
                              m_bias,
-                             d_fourier_modes.data,
                              m_cv,
                              m_pdata->getGlobalBox());
         if (m_exec_conf->isCUDAErrorCheckingEnabled())
