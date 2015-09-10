@@ -60,7 +60,7 @@ class LamellarOrderParameter : public CollectiveVariable
          */
         std::vector<std::string> getProvidedLogQuantities()
             {
-            std::vector<std::string> list;
+            std::vector<std::string> list = CollectiveVariable::getProvidedLogQuantities();
             list.push_back(m_log_name);
             return list;
             }

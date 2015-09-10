@@ -143,6 +143,31 @@ class CollectiveVariable : public ForceCompute
             return false;
             }
 
+        /*! Returns the names of provided log quantities.
+         */
+        std::vector<std::string> getProvidedLogQuantities()
+            {
+            std::vector<std::string> list;
+            list.push_back("umbrella_energy");
+            return list;
+            }
+
+        /*! Returns the value of a specific log quantity.
+         * \param quantity The name of the quantity to return the value of
+         * \param timestep The current value of the time step
+         */
+        Scalar getLogValue(const std::string& quantity, unsigned int timestep)
+            {
+            if (quantity == "umbrella_energy")
+                {
+                return getUmbrellaPotential(timestep);
+                }
+
+            // nothing found?
+            m_exec_conf->msg->error() << "cv.*: Invalid log quantity " << quantity << std::endl;
+            throw std::runtime_error("Error querying log quantity");
+            }
+
     protected:
         /*! \param timestep The current value of the time step
          */

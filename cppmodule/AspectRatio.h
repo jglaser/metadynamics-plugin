@@ -14,7 +14,7 @@ class AspectRatio :  public CollectiveVariable
          */
         std::vector<std::string> getProvidedLogQuantities()
             {
-            std::vector<std::string> list;
+            std::vector<std::string> list = CollectiveVariable::getProvidedLogQuantities();
             list.push_back(m_log_name);
             return list;
             }
@@ -27,11 +27,8 @@ class AspectRatio :  public CollectiveVariable
             {
             if (quantity == m_log_name)
                 return getCurrentValue(timestep);
-            else
-                {
-                m_exec_conf->msg->error() << "cv.aspect_ratio: " << quantity << " is not a valid log quantity." << std::endl;;
-                throw std::runtime_error("Error getting log value");
-                }
+
+            return CollectiveVariable::getLogValue(quantity, timestep);
             }
 
         /*! Returns true if the collective variable can compute derivatives

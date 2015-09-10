@@ -1031,12 +1031,9 @@ Scalar OrderParameterMesh::getLogValue(const std::string& quantity, unsigned int
         computeQmax(timestep);
         return m_sq_max;
         }
-    else
-        {
-        m_exec_conf->msg->error() << "cv.mesh: " << quantity << " is not a valid log quantity"
-                  << std::endl;
-        throw std::runtime_error("Error getting log value");
-        }
+
+    // nothing found? return base class value
+    return CollectiveVariable::getLogValue(quantity, timestep);
     }
 
 void OrderParameterMesh::computeQmax(unsigned int timestep)

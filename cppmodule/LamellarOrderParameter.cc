@@ -172,12 +172,9 @@ Scalar LamellarOrderParameter::getLogValue(const std::string& quantity, unsigned
         computeCV(timestep);
         return m_cv;
         }
-    else
-        {
-        this->m_exec_conf->msg->error() << "cv.lamellar: " << quantity << " is not a valid log quantity"
-                  << std::endl;
-        throw std::runtime_error("Error getting log value");
-        }
+
+    // nothing found, turn to base class
+    return CollectiveVariable::getLogValue(quantity, timestep);
     }
 
 void export_LamellarOrderParameter()

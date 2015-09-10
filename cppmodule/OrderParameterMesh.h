@@ -31,7 +31,12 @@ class OrderParameterMesh : public CollectiveVariable
          */
         std::vector<std::string> getProvidedLogQuantities()
             {
-            return m_log_names;
+            std::vector<std::string> list = CollectiveVariable::getProvidedLogQuantities();
+            for (std::vector<std::string>::iterator it = m_log_names.begin(); it != m_log_names.end(); ++it)
+                {
+                list.push_back(*it);
+                }
+            return list;
             }
 
         /*! Returns the value of a specific log quantity.
