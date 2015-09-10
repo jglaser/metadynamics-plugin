@@ -327,6 +327,8 @@ class mesh(_collective_variable):
     # Set parameters for the collective variable
     # \param sq_pow Power of S(q), minus one, in the mode sum
     def set_params(self, sq_pow = None, use_table=None, **args):
+        util.print_status_line()
+
         if sq_pow is not None:
             self.cpp_force.setSqPower(sq_pow)
 
@@ -334,7 +336,9 @@ class mesh(_collective_variable):
             self.cpp_force.setUseTable(use_table)
 
         # call base class method
+        util._disable_status_lines = True;
         _collective_variable.set_params(self,**args)
+        util._disable_status_lines = False;
 
     # Set the table to be used for the convolution kernel
     # \param func The function the returns the convolution kernel and its derivative
