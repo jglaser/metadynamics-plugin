@@ -593,8 +593,11 @@ __global__ void gpu_compute_forces_kernel(const unsigned int N,
                              (Scalar)(cell_coord.y-(int)n_ghost_cells.y)+Scalar(0.5),
                              (Scalar)(cell_coord.z-(int)n_ghost_cells.z)+Scalar(0.5));
 
-    Scalar3 p = box.makeFraction(pos)*make_scalar3(inner_dim.x, inner_dim.y, inner_dim.z);
-    Scalar3 shift_c = p-c;
+    // compute minimum image separation to center
+    Scalar3 c_cart = box.makeCoordinates(c/make_scalar3(inner_dim.x,inner_dim.y,inner_dim.z));
+    Scalar3 shift_cart = box.minImage(pos-c_cart);
+    Scalar3 shift_f = box.makeFraction(shift_cart)-make_scalar3(0.5,0.5,0.5);
+    Scalar3 shift_c = shift_f*make_scalar3(inner_dim.x,inner_dim.y,inner_dim.z);
 
     Scalar3 force = make_scalar3(0.0,0.0,0.0);
 
