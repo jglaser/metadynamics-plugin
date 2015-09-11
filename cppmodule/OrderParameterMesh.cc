@@ -522,7 +522,12 @@ void OrderParameterMesh::assignParticles()
         Scalar3 cell_center = make_scalar3((Scalar)ix + Scalar(0.5),
                                            (Scalar)iy + Scalar(0.5),
                                            (Scalar)iz + Scalar(0.5));
-        Scalar3 shift = reduced_pos - cell_center;
+
+        // compute minimum image separation to center
+        Scalar3 c_cart = box.makeCoordinates(cell_center/make_scalar3(m_mesh_points.x,m_mesh_points.y,m_mesh_points.z));
+        Scalar3 shift_cart = box.minImage(pos-c_cart);
+        Scalar3 shift_f = box.makeFraction(shift_cart)-make_scalar3(0.5,0.5,0.5);
+        Scalar3 shift = shift_f*make_scalar3(m_mesh_points.x,m_mesh_points.y,m_mesh_points.z);
 
         // assign particle to cell and next neighbors
         for (int i = -1; i <= 1 ; ++i)
@@ -739,7 +744,12 @@ void OrderParameterMesh::interpolateForces()
         Scalar3 cell_center = make_scalar3((Scalar)ix - (Scalar)(m_n_ghost_cells.x) + Scalar(0.5),
                                            (Scalar)iy - (Scalar)(m_n_ghost_cells.y) + Scalar(0.5),
                                            (Scalar)iz - (Scalar)(m_n_ghost_cells.z) + Scalar(0.5));
-        Scalar3 shift = reduced_pos - cell_center;
+
+        // compute minimum image separation to center
+        Scalar3 c_cart = box.makeCoordinates(cell_center/make_scalar3(m_mesh_points.x,m_mesh_points.y,m_mesh_points.z));
+        Scalar3 shift_cart = box.minImage(pos-c_cart);
+        Scalar3 shift_f = box.makeFraction(shift_cart)-make_scalar3(0.5,0.5,0.5);
+        Scalar3 shift = shift_f*make_scalar3(m_mesh_points.x,m_mesh_points.y,m_mesh_points.z);
 
         Scalar3 force = make_scalar3(0.0,0.0,0.0);
 
