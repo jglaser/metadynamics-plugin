@@ -113,8 +113,6 @@ OrderParameterMesh::OrderParameterMesh(boost::shared_ptr<SystemDefinition> sysde
     ArrayHandle<Scalar> h_virial(m_virial, access_location::host, access_mode::overwrite);
     memset(h_virial.data, 0, sizeof(Scalar)*m_virial.getNumElements());
 
-    m_bias = Scalar(1.0);
-
     m_log_names.push_back("cv_mesh");
     m_log_names.push_back("qx_max");
     m_log_names.push_back("qy_max");
@@ -796,7 +794,7 @@ void OrderParameterMesh::interpolateForces()
                     force += -(Scalar)m_mesh_points.x*b1*mode*assignTSCderiv(dx_frac.x)*assignTSC(dx_frac.y)*assignTSC(dx_frac.z)*inv_mesh.r;
                     force += -(Scalar)m_mesh_points.y*b2*mode*assignTSC(dx_frac.x)*assignTSCderiv(dx_frac.y)*assignTSC(dx_frac.z)*inv_mesh.r;
                     force += -(Scalar)m_mesh_points.z*b3*mode*assignTSC(dx_frac.x)*assignTSC(dx_frac.y)*assignTSCderiv(dx_frac.z)*inv_mesh.r;
-                    }
+                   }
 
         // Multiply with bias potential derivative
         force *= (Scalar(2.0)*(m_sq_pow+Scalar(1.0)))/(Scalar)n_global*m_bias/Scalar(2.0);

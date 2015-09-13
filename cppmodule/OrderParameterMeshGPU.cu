@@ -737,7 +737,7 @@ void gpu_compute_forces(const unsigned int N,
     unsigned int num_cells = grid_dim.x*grid_dim.y*grid_dim.z;
     inv_fourier_mesh_tex.normalized = false;
     inv_fourier_mesh_tex.filterMode = cudaFilterModePoint;
-    cudaBindTexture(0, inv_fourier_mesh_tex, d_inv_fourier_mesh, sizeof(Scalar4)*num_cells);
+    cudaBindTexture(0, inv_fourier_mesh_tex, d_inv_fourier_mesh, sizeof(cufftComplex)*num_cells);
 
     // compute local inverse lattice vectors
     Scalar3 a1 = box.getLatticeVector(0);
