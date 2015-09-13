@@ -526,7 +526,7 @@ void OrderParameterMesh::assignParticles()
         // compute minimum image separation to center
         Scalar3 c_cart = box.makeCoordinates(cell_center/make_scalar3(m_mesh_points.x,m_mesh_points.y,m_mesh_points.z));
         Scalar3 shift_cart = box.minImage(pos-c_cart);
-        Scalar3 shift_f = box.makeFraction(shift_cart)-make_scalar3(0.5,0.5,0.5);
+        Scalar3 shift_f = box.makeFraction(shift_cart+box.getLo());
         Scalar3 shift = shift_f*make_scalar3(m_mesh_points.x,m_mesh_points.y,m_mesh_points.z);
 
         // assign particle to cell and next neighbors
@@ -748,7 +748,7 @@ void OrderParameterMesh::interpolateForces()
         // compute minimum image separation to center
         Scalar3 c_cart = box.makeCoordinates(cell_center/make_scalar3(m_mesh_points.x,m_mesh_points.y,m_mesh_points.z));
         Scalar3 shift_cart = box.minImage(pos-c_cart);
-        Scalar3 shift_f = box.makeFraction(shift_cart)-make_scalar3(0.5,0.5,0.5);
+        Scalar3 shift_f = box.makeFraction(shift_cart+box.getLo());
         Scalar3 shift = shift_f*make_scalar3(m_mesh_points.x,m_mesh_points.y,m_mesh_points.z);
 
         Scalar3 force = make_scalar3(0.0,0.0,0.0);
