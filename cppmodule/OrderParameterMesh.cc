@@ -499,10 +499,12 @@ void OrderParameterMesh::assignParticles()
         unsigned int type = __scalar_as_int(postype.w);
 
         // compute coordinates in units of the mesh size
-        Scalar3 f = box.makeFraction(pos, m_ghost_width);
-        Scalar3 reduced_pos = make_scalar3(f.x * (Scalar) m_grid_dim.x,
-                                           f.y * (Scalar) m_grid_dim.y,
-                                           f.z * (Scalar) m_grid_dim.z);
+        Scalar3 f = box.makeFraction(pos);
+        Scalar3 reduced_pos = make_scalar3(f.x * (Scalar) m_mesh_points.x,
+                                           f.y * (Scalar) m_mesh_points.y,
+                                           f.z * (Scalar) m_mesh_points.z);
+
+        reduced_pos += make_scalar3(m_n_ghost_cells.x, m_n_ghost_cells.y, m_n_ghost_cells.z);
 
         // find cell the particle is in (rounding downwards)
         int ix = reduced_pos.x;
@@ -519,9 +521,9 @@ void OrderParameterMesh::assignParticles()
 
         // compute distance between particle and cell center
         // in fractional coordinates
-        Scalar3 cell_center = make_scalar3((Scalar)ix + Scalar(0.5),
-                                           (Scalar)iy + Scalar(0.5),
-                                           (Scalar)iz + Scalar(0.5));
+        Scalar3 cell_center = make_scalar3((Scalar)(ix-(int)m_n_ghost_cells.x)+Scalar(0.5),
+                             (Scalar)(iy-(int)m_n_ghost_cells.y)+Scalar(0.5),
+                             (Scalar)(iz-(int)m_n_ghost_cells.z)+Scalar(0.5));
 
         // compute minimum image separation to center
         Scalar3 c_cart = box.makeCoordinates(cell_center/make_scalar3(m_mesh_points.x,m_mesh_points.y,m_mesh_points.z));
@@ -794,7 +796,6 @@ void OrderParameterMesh::interpolateForces()
                     force += -(Scalar)m_mesh_points.x*b1*mode*assignTSCderiv(dx_frac.x)*assignTSC(dx_frac.y)*assignTSC(dx_frac.z)*inv_mesh.r;
                     force += -(Scalar)m_mesh_points.y*b2*mode*assignTSC(dx_frac.x)*assignTSCderiv(dx_frac.y)*assignTSC(dx_frac.z)*inv_mesh.r;
                     force += -(Scalar)m_mesh_points.z*b3*mode*assignTSC(dx_frac.x)*assignTSC(dx_frac.y)*assignTSCderiv(dx_frac.z)*inv_mesh.r;
-
                     }
 
         // Multiply with bias potential derivative

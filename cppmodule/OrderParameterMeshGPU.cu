@@ -86,6 +86,7 @@ __device__ int3 find_cell(const Scalar3& pos,
     return make_int3(ix, iy, iz);
     }
 
+#include <stdio.h>
 __global__ void gpu_bin_particles_kernel(const unsigned int N,
                                          const Scalar4 *d_postype,
                                          Scalar4 *d_particle_bins,
@@ -117,7 +118,10 @@ __global__ void gpu_bin_particles_kernel(const unsigned int N,
     // ignore particles that are not within our domain (the error should be caught by HOOMD's cell list)
     if (bin_coord.x < 0 || bin_coord.x >= bin_dim.x ||
         bin_coord.y < 0 || bin_coord.y >= bin_dim.y ||
-        bin_coord.z < 0 || bin_coord.z >= bin_dim.z) return;
+        bin_coord.z < 0 || bin_coord.z >= bin_dim.z)
+        {
+        return;
+        }
 
     // row-major mapping of bins onto array
     unsigned int bin = bin_coord.x + bin_dim.x * (bin_coord.y + bin_dim.y * bin_coord.z);
@@ -556,6 +560,7 @@ void gpu_update_meshes(const unsigned int n_wave_vectors,
 //! Texture for reading particle positions
 texture<cufftComplex, 1, cudaReadModeElementType> inv_fourier_mesh_tex;
 
+#include <stdio.h>
 __global__ void gpu_compute_forces_kernel(const unsigned int N,
                                           const Scalar4 *d_postype,
                                           Scalar4 *d_force,
@@ -759,7 +764,6 @@ void gpu_compute_forces(const unsigned int N,
              b3,
              sq_pow);
 
-    cudaUnbindTexture(inv_fourier_mesh_tex);
     }
 
 __global__ void kernel_calculate_cv_partial(

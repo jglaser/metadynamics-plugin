@@ -310,11 +310,13 @@ void OrderParameterMeshGPU::updateMeshes()
     else
         {
         if (m_prof) m_prof->push(m_exec_conf, "FFT");
+
         // Distributed inverse transform of force mesh
         m_exec_conf->msg->notice(8) << "cv.mesh: Distributed iFFT" << std::endl;
         #ifndef USE_HOST_DFFT
         ArrayHandle<cufftComplex> d_fourier_mesh_G(m_fourier_mesh_G, access_location::device, access_mode::read);
         ArrayHandle<cufftComplex> d_inv_fourier_mesh(m_inv_fourier_mesh, access_location::device, access_mode::overwrite);
+
         if (m_exec_conf->isCUDAErrorCheckingEnabled())
             dfft_cuda_check_errors(&m_dfft_plan_inverse, 1);
         else
