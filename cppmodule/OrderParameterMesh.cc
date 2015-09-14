@@ -1115,7 +1115,7 @@ void OrderParameterMesh::computeQmax(unsigned int timestep)
 
     // normalize with 1/V
     unsigned int n_global = m_pdata->getNGlobal();
-    m_sq_max *= (Scalar)n_global*(Scalar)n_global/m_pdata->getGlobalBox().getVolume();
+    m_sq_max *= (Scalar)n_global;
     }
 
 void export_OrderParameterMesh()
