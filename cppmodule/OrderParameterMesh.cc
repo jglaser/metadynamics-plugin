@@ -38,7 +38,8 @@ OrderParameterMesh::OrderParameterMesh(boost::shared_ptr<SystemDefinition> sysde
       m_k_max(0.0),
       m_delta_k(0.0),
       m_use_table(false),
-      m_kiss_fft_initialized(false)
+      m_kiss_fft_initialized(false),
+      m_dfft_initialized(false)
     {
 
     if (mode.size() != m_pdata->getNTypes())
@@ -129,7 +130,7 @@ OrderParameterMesh::~OrderParameterMesh()
         kiss_fft_cleanup();
         }
     #ifdef ENABLE_MPI
-    else
+    if (m_dfft_initialized)
         {
         dfft_destroy_plan(m_dfft_plan_forward);
         dfft_destroy_plan(m_dfft_plan_inverse);
@@ -303,6 +304,7 @@ void OrderParameterMesh::initializeFFT()
             row_m, 0, 1, m_exec_conf->getMPICommunicator(), (int *)h_cart_ranks.data);
         dfft_create_plan(&m_dfft_plan_inverse, 3, gdim, NULL, embed, pdim, pidx,
             row_m, 0, 1, m_exec_conf->getMPICommunicator(), (int *)h_cart_ranks.data);
+        m_dfft_initialized = true;
         }
     #endif // ENABLE_MPI
 

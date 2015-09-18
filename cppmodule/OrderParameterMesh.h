@@ -175,6 +175,8 @@ class OrderParameterMesh : public CollectiveVariable
 
         std::vector<string> m_log_names;           //!< Name of the log quantity
 
+        bool m_dfft_initialized;                   //! True if host dfft has been initialized
+
         //! Compute virial on mesh
         void computeVirialMesh();
 
