@@ -622,8 +622,6 @@ void OrderParameterMesh::updateMeshes()
         }
     #endif
 
-    if (m_prof) m_prof->push("update");
-
     ArrayHandle<kiss_fft_cpx> h_fourier_mesh(m_fourier_mesh, access_location::host, access_mode::readwrite);
 
     unsigned int N_global = m_pdata->getNGlobal();

@@ -1,4 +1,5 @@
 #include "OrderParameterMeshGPU.cuh"
+#include <stdio.h>
 
 //! Implements workaround atomic float addition on sm_1x hardware
 __device__ inline void atomicFloatAdd(float* address, float value)
@@ -86,7 +87,6 @@ __device__ int3 find_cell(const Scalar3& pos,
     return make_int3(ix, iy, iz);
     }
 
-#include <stdio.h>
 __global__ void gpu_bin_particles_kernel(const unsigned int N,
                                          const Scalar4 *d_postype,
                                          Scalar4 *d_particle_bins,
@@ -105,7 +105,7 @@ __global__ void gpu_bin_particles_kernel(const unsigned int N,
     Scalar4 postype = d_postype[idx];
 
     Scalar3 pos = make_scalar3(postype.x, postype.y, postype.z);
-    unsigned int type = __float_as_int(postype.w);
+    unsigned int type = __scalar_as_int(postype.w);
     Scalar mode = d_mode[type];
 
     int3 bin_dim = make_int3(mesh_dim.x+2*n_ghost_bins.x,
@@ -379,6 +379,7 @@ void gpu_assign_binned_particles_to_mesh(const uint3 mesh_dim,
 
     unsigned int shared_size = block_size*scratch_idx.getH()*sizeof(Scalar);
 
+    cudaMemset(d_mesh_scratch, 0, sizeof(Scalar)*scratch_idx.getNumElements());
     gpu_assign_binned_particles_to_scratch_kernel<<<n_blocks,block_size,shared_size>>>(
           mesh_dim,
           n_ghost_bins,
@@ -560,7 +561,6 @@ void gpu_update_meshes(const unsigned int n_wave_vectors,
 //! Texture for reading particle positions
 texture<cufftComplex, 1, cudaReadModeElementType> inv_fourier_mesh_tex;
 
-#include <stdio.h>
 __global__ void gpu_compute_forces_kernel(const unsigned int N,
                                           const Scalar4 *d_postype,
                                           Scalar4 *d_force,
@@ -587,7 +587,7 @@ __global__ void gpu_compute_forces_kernel(const unsigned int N,
     Scalar4 postype = d_postype[idx];
 
     Scalar3 pos = make_scalar3(postype.x, postype.y, postype.z);
-    unsigned int type = __float_as_int(postype.w);
+    unsigned int type = __scalar_as_int(postype.w);
     Scalar mode = d_mode[type];
 
     // find cell the particle is in
