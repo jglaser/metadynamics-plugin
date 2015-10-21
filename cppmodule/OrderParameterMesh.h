@@ -173,7 +173,7 @@ class OrderParameterMesh : public CollectiveVariable
 
         boost::signals2::connection m_boxchange_connection; //!< Connection to ParticleData box change signal
 
-        std::vector<string> m_log_names;           //!< Name of the log quantity
+        std::vector<std::string> m_log_names;           //!< Name of the log quantity
 
         bool m_dfft_initialized;                   //! True if host dfft has been initialized
 

@@ -18,7 +18,7 @@ LamellarOrderParameter::LamellarOrderParameter(boost::shared_ptr<SystemDefinitio
     if (mode.size() != m_pdata->getNTypes())
         {
         m_exec_conf->msg->error() << "cv.lamellar: Number of mode parameters has to equal the number of particle types!" << std::endl;
-        throw runtime_error("Error initializing cv.lamellar");
+        throw std::runtime_error("Error initializing cv.lamellar");
         }
 
     // allocate array of wave vectors

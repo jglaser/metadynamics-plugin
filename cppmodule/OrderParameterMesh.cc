@@ -152,15 +152,15 @@ void OrderParameterMesh::setTable(const std::vector<Scalar> &K,
     if (kmin < 0 || kmax < 0 || kmax <= kmin)
         {
         m_exec_conf->msg->error() << "cv.mesh kmin, kmax (" << kmin << "," << kmax
-             << ") is invalid" << endl;
-        throw runtime_error("Error setting up OrderParameterMesh");
+             << ") is invalid" << std::endl;
+        throw std::runtime_error("Error setting up OrderParameterMesh");
         }
 
     if (K.size() != d_K.size())
         {
         m_exec_conf->msg->error() << "Convolution kernel and derivative have tables of unequal length "
             << K.size() << " != " << d_K.size() << std::endl;
-        throw runtime_error("Error setting up OrderParameterMesh");
+        throw std::runtime_error("Error setting up OrderParameterMesh");
         }
 
     m_k_min = kmin;
@@ -240,7 +240,7 @@ uint3 OrderParameterMesh::computeGhostCellNum()
     #ifdef ENABLE_MPI
     if (m_comm)
         {
-        Scalar r_buff = m_comm->getGhostLayerWidth();
+        Scalar r_buff = m_comm->getGhostLayerMaxWidth();
 
         const BoxDim& box = m_pdata->getBox();
         Scalar3 cell_width = box.getNearestPlaneDistance() /
