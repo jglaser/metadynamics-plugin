@@ -33,7 +33,7 @@ OrderParameterMesh::OrderParameterMesh(boost::shared_ptr<SystemDefinition> sysde
       m_box_changed(false),
       m_cv(Scalar(0.0)),
       m_q_max_last_computed(0),
-      m_sq_pow(0.0),
+      m_sq_pow(1.0),
       m_k_min(0.0),
       m_k_max(0.0),
       m_delta_k(0.0),
