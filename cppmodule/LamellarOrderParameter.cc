@@ -90,11 +90,20 @@ void LamellarOrderParameter::computeBiasForces(unsigned int timestep)
     ArrayHandle<Scalar4> h_force(m_force, access_location::host, access_mode::overwrite);
     ArrayHandle<int3> h_lattice_vectors(m_lattice_vectors, access_location::host, access_mode::read);
 
-    Scalar3 L = m_pdata->getGlobalBox().getL();
-
     unsigned int N = m_pdata->getNGlobal();
 
     Scalar denom = (Scalar)N;
+
+    // compute reciprocal lattice vectors
+    const BoxDim& global_box = m_pdata->getGlobalBox();
+    Scalar3 a1 = global_box.getLatticeVector(0);
+    Scalar3 a2 = global_box.getLatticeVector(1);
+    Scalar3 a3 = global_box.getLatticeVector(2);
+
+    Scalar V_box = global_box.getVolume();
+    Scalar3 b1 = Scalar(2.0*M_PI)*make_scalar3(a2.y*a3.z-a2.z*a3.y, a2.z*a3.x-a2.x*a3.z, a2.x*a3.y-a2.y*a3.x)/V_box;
+    Scalar3 b2 = Scalar(2.0*M_PI)*make_scalar3(a3.y*a1.z-a3.z*a1.y, a3.z*a1.x-a3.x*a1.z, a3.x*a1.y-a3.y*a1.x)/V_box;
+    Scalar3 b3 = Scalar(2.0*M_PI)*make_scalar3(a1.y*a2.z-a1.z*a2.y, a1.z*a2.x-a1.x*a2.z, a1.x*a2.y-a1.y*a2.x)/V_box;
 
     for (unsigned int idx = 0; idx < m_pdata->getN(); idx++)
         {
@@ -108,8 +117,7 @@ void LamellarOrderParameter::computeBiasForces(unsigned int timestep)
 
         for (unsigned int k = 0; k < m_lattice_vectors.getNumElements(); k++)
             {
-            Scalar3 q = make_scalar3(h_lattice_vectors.data[k].x, h_lattice_vectors.data[k].y, h_lattice_vectors.data[k].z);
-            q = Scalar(2.0*M_PI)*make_scalar3(q.x/L.x,q.y/L.y,q.z/L.z);
+            Scalar3 q = b1*(Scalar)h_lattice_vectors.data[k].x + b2*(Scalar)h_lattice_vectors.data[k].y + b3*(Scalar)h_lattice_vectors.data[k].z;
             Scalar dotproduct = dot(pos,q);
 
             Scalar f;
@@ -143,14 +151,23 @@ void LamellarOrderParameter::calculateFourierModes()
 
     ArrayHandle<Scalar4> h_postype(m_pdata->getPositions(), access_location::host, access_mode::read);
 
-    Scalar3 L = m_pdata->getGlobalBox().getL();
-    
+    // compute reciprocal lattice vectors
+    const BoxDim& global_box = m_pdata->getGlobalBox();
+    Scalar3 a1 = global_box.getLatticeVector(0);
+    Scalar3 a2 = global_box.getLatticeVector(1);
+    Scalar3 a3 = global_box.getLatticeVector(2);
+
+    Scalar V_box = global_box.getVolume();
+    Scalar3 b1 = Scalar(2.0*M_PI)*make_scalar3(a2.y*a3.z-a2.z*a3.y, a2.z*a3.x-a2.x*a3.z, a2.x*a3.y-a2.y*a3.x)/V_box;
+    Scalar3 b2 = Scalar(2.0*M_PI)*make_scalar3(a3.y*a1.z-a3.z*a1.y, a3.z*a1.x-a3.x*a1.z, a3.x*a1.y-a3.y*a1.x)/V_box;
+    Scalar3 b3 = Scalar(2.0*M_PI)*make_scalar3(a1.y*a2.z-a1.z*a2.y, a1.z*a2.x-a1.x*a2.z, a1.x*a2.y-a1.y*a2.x)/V_box;
+
+
     for (unsigned int k = 0; k < m_lattice_vectors.getNumElements(); k++)
         {
         h_fourier_modes.data[k] = make_scalar2(0.0,0.0);
-        Scalar3 q = make_scalar3(h_lattice_vectors.data[k].x, h_lattice_vectors.data[k].y, h_lattice_vectors.data[k].z);
-        q = Scalar(2.0*M_PI)*make_scalar3(q.x/L.x,q.y/L.y,q.z/L.z);
-        
+        Scalar3 q = b1*(Scalar)h_lattice_vectors.data[k].x + b2*(Scalar)h_lattice_vectors.data[k].y + b3*(Scalar)h_lattice_vectors.data[k].z;
+
         for (unsigned int idx = 0; idx < m_pdata->getN(); idx++)
             {
             Scalar4 postype = h_postype.data[idx];

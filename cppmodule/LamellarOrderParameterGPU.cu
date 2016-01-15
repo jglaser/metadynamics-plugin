@@ -12,7 +12,9 @@ __global__ void kernel_calculate_sq_partial(
             int n_wave,
             const int3 *lattice_vectors,
             Scalar *d_modes,
-            const Scalar3 L)
+            const Scalar3 b1,
+            const Scalar3 b2,
+            const Scalar3 b3)
     {
     extern __shared__ Scalar2 sdata[];
 
@@ -22,8 +24,7 @@ __global__ void kernel_calculate_sq_partial(
 
     unsigned int i = blockIdx.y;
 
-    Scalar3 q = make_scalar3(lattice_vectors[i].x, lattice_vectors[i].y, lattice_vectors[i].z);
-    q = Scalar(2.0*M_PI)*make_scalar3(q.x/L.x,q.y/L.y,q.z/L.z);
+    Scalar3 q = b1*(Scalar)lattice_vectors[i].x + b2*(Scalar)lattice_vectors[i].y + b3*(Scalar)lattice_vectors[i].z;
 
     Scalar2 mySum = make_scalar2(0.0,0.0);
 
@@ -115,6 +116,16 @@ cudaError_t gpu_calculate_fourier_modes(unsigned int n_wave,
     dim3 grid_dim(n_blocks, n_wave,1);
     dim3 block_dim(block_size);
 
+    // compute reciprocal lattice vectors
+    Scalar3 a1 = global_box.getLatticeVector(0);
+    Scalar3 a2 = global_box.getLatticeVector(1);
+    Scalar3 a3 = global_box.getLatticeVector(2);
+
+    Scalar V_box = global_box.getVolume();
+    Scalar3 b1 = Scalar(2.0*M_PI)*make_scalar3(a2.y*a3.z-a2.z*a3.y, a2.z*a3.x-a2.x*a3.z, a2.x*a3.y-a2.y*a3.x)/V_box;
+    Scalar3 b2 = Scalar(2.0*M_PI)*make_scalar3(a3.y*a1.z-a3.z*a1.y, a3.z*a1.x-a3.x*a1.z, a3.x*a1.y-a3.y*a1.x)/V_box;
+    Scalar3 b3 = Scalar(2.0*M_PI)*make_scalar3(a1.y*a2.z-a1.z*a2.y, a1.z*a2.x-a1.x*a2.z, a1.x*a2.y-a1.y*a2.x)/V_box;
+
     unsigned int shared_size = block_size * sizeof(Scalar2);
     kernel_calculate_sq_partial<<<grid_dim, block_dim, shared_size,0>>>(
                n_particles,
@@ -123,7 +134,7 @@ cudaError_t gpu_calculate_fourier_modes(unsigned int n_wave,
                n_wave,
                d_lattice_vectors,
                d_mode,
-               global_box.getL());
+               b1,b2,b3);
 
     // calculate final S(q) values
     const unsigned int final_block_size = 512;
@@ -144,7 +155,9 @@ __global__ void kernel_compute_sq_forces(unsigned int N,
                                   unsigned int n_global,
                                   Scalar bias,
                                   Scalar cv,
-                                  const Scalar3 L)
+                                  const Scalar3 b1,
+                                  const Scalar3 b2,
+                                  const Scalar3 b3)
     {
     unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= N)
@@ -161,8 +174,7 @@ __global__ void kernel_compute_sq_forces(unsigned int N,
     Scalar denom = (Scalar)n_global;
     for (unsigned int k = 0; k < n_wave; k++)
         {
-        Scalar3 q = make_scalar3(lattice_vectors[k].x, lattice_vectors[k].y, lattice_vectors[k].z);
-        q = Scalar(2.0*M_PI)*make_scalar3(q.x/L.x,q.y/L.y,q.z/L.z);
+        Scalar3 q = b1*(Scalar)lattice_vectors[k].x + b2*(Scalar)lattice_vectors[k].y + b3*(Scalar)lattice_vectors[k].z;
         Scalar dotproduct = dot(pos,q);
 
         Scalar f = Scalar(2.0)*m*fast::sin(dotproduct);
@@ -197,6 +209,17 @@ cudaError_t gpu_compute_sq_forces(unsigned int N,
     cudaError_t cudaStatus;
     const unsigned int block_size = 512;
 
+    // compute reciprocal lattice vectors
+    Scalar3 a1 = global_box.getLatticeVector(0);
+    Scalar3 a2 = global_box.getLatticeVector(1);
+    Scalar3 a3 = global_box.getLatticeVector(2);
+
+    Scalar V_box = global_box.getVolume();
+    Scalar3 b1 = Scalar(2.0*M_PI)*make_scalar3(a2.y*a3.z-a2.z*a3.y, a2.z*a3.x-a2.x*a3.z, a2.x*a3.y-a2.y*a3.x)/V_box;
+    Scalar3 b2 = Scalar(2.0*M_PI)*make_scalar3(a3.y*a1.z-a3.z*a1.y, a3.z*a1.x-a3.x*a1.z, a3.x*a1.y-a3.y*a1.x)/V_box;
+    Scalar3 b3 = Scalar(2.0*M_PI)*make_scalar3(a1.y*a2.z-a1.z*a2.y, a1.z*a2.x-a1.x*a2.z, a1.x*a2.y-a1.y*a2.x)/V_box;
+
+
     kernel_compute_sq_forces<<<N/block_size + 1, block_size,0,0>>>(N,
                                                                d_postype,
                                                                d_force,
@@ -206,7 +229,7 @@ cudaError_t gpu_compute_sq_forces(unsigned int N,
                                                                n_global,
                                                                bias,
                                                                cv_val,
-                                                               global_box.getL());
+                                                               b1, b2, b3);
 
     cudaStatus = cudaGetLastError();
     return cudaStatus;
