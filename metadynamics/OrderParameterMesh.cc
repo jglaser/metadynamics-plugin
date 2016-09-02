@@ -1,6 +1,6 @@
 #include "OrderParameterMesh.h"
 
-using namespace boost::python;
+namespace py = pybind11;
 
 bool is_pow2(unsigned int n)
     {
@@ -15,7 +15,7 @@ bool is_pow2(unsigned int n)
     \param nz Number of cells along third axis
     \param mode Per-type modes to multiply density
  */
-OrderParameterMesh::OrderParameterMesh(boost::shared_ptr<SystemDefinition> sysdef,
+OrderParameterMesh::OrderParameterMesh(std::shared_ptr<SystemDefinition> sysdef,
                                             const unsigned int nx,
                                             const unsigned int ny,
                                             const unsigned int nz,
@@ -61,7 +61,7 @@ OrderParameterMesh::OrderParameterMesh(boost::shared_ptr<SystemDefinition> sysde
     ArrayHandle<int3> h_zero_modes(m_zero_modes, access_location::host, access_mode::overwrite);
     std::copy(zero_modes.begin(), zero_modes.end(), h_zero_modes.data);
 
-    m_boxchange_connection = m_pdata->connectBoxChange(boost::bind(&OrderParameterMesh::setBoxChange, this));
+    m_pdata->getBoxChangeSignal().connect<OrderParameterMesh, &OrderParameterMesh::setBoxChange>(this);
 
     m_mesh_points = make_uint3(nx, ny, nz);
 
@@ -136,7 +136,8 @@ OrderParameterMesh::~OrderParameterMesh()
         dfft_destroy_plan(m_dfft_plan_inverse);
         }
     #endif
-    m_boxchange_connection.disconnect();
+
+    m_pdata->getBoxChangeSignal().disconnect<OrderParameterMesh, &OrderParameterMesh::setBoxChange>(this);
     }
 
 /*! \param K Table for the convolution kernel
@@ -264,14 +265,14 @@ void OrderParameterMesh::initializeFFT()
     if (! local_fft)
         {
         // ghost cell communicator for charge interpolation
-        m_grid_comm_forward = std::auto_ptr<CommunicatorGrid<kiss_fft_cpx> >(
+        m_grid_comm_forward = std::unique_ptr<CommunicatorGrid<kiss_fft_cpx> >(
             new CommunicatorGrid<kiss_fft_cpx>(m_sysdef,
                make_uint3(m_mesh_points.x, m_mesh_points.y, m_mesh_points.z),
                make_uint3(m_grid_dim.x, m_grid_dim.y, m_grid_dim.z),
                m_n_ghost_cells,
                true));
         // ghost cell communicator for force mesh
-        m_grid_comm_reverse = std::auto_ptr<CommunicatorGrid<kiss_fft_cpx> >(
+        m_grid_comm_reverse = std::unique_ptr<CommunicatorGrid<kiss_fft_cpx> >(
             new CommunicatorGrid<kiss_fft_cpx>(m_sysdef,
                make_uint3(m_mesh_points.x, m_mesh_points.y, m_mesh_points.z),
                make_uint3(m_grid_dim.x, m_grid_dim.y, m_grid_dim.z),
@@ -1118,10 +1119,10 @@ void OrderParameterMesh::computeQmax(unsigned int timestep)
     m_sq_max *= (Scalar)n_global;
     }
 
-void export_OrderParameterMesh()
+void export_OrderParameterMesh(py::module& m)
     {
-    class_<OrderParameterMesh, boost::shared_ptr<OrderParameterMesh>, bases<CollectiveVariable>, boost::noncopyable >
-        ("OrderParameterMesh", init< boost::shared_ptr<SystemDefinition>,
+    py::class_<OrderParameterMesh, std::shared_ptr<OrderParameterMesh> >(m,"OrderParameterMesh", py::base<CollectiveVariable> ())
+        .def(py::init<std::shared_ptr<SystemDefinition>,
                                      const unsigned int,
                                      const unsigned int,
                                      const unsigned int,

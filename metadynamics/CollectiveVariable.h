@@ -5,12 +5,14 @@
     \brief Declares the CollectiveVariable abstract class
  */
 
-#include <hoomd/hoomd.h>
+#include <hoomd/ForceCompute.h>
+
+#include <hoomd/extern/pybind/include/pybind11/pybind11.h>
 
 #include <string.h>
 
 /*! Abstract interface for a collective variable
- 
+
     All C++ implementations of collective variables inherit from this class.
     A CollectiveVariable is an extension of a ForceCompute,
     and can compute forces.
@@ -44,13 +46,13 @@ class CollectiveVariable : public ForceCompute
             \param sysdef The system definition
             \param name The name of this collective variable
          */
-        CollectiveVariable(boost::shared_ptr<SystemDefinition> sysdef, const std::string& name);
+        CollectiveVariable(std::shared_ptr<SystemDefinition> sysdef, const std::string& name);
         virtual ~CollectiveVariable() {}
 
         /*! Returns the current value of the collective variable
          *  \param timestep The currnt value of the timestep
          */
-        virtual Scalar getCurrentValue(unsigned int timestep) = 0;
+        virtual Scalar getCurrentValue(unsigned int timestep) { return Scalar(0.0); }
 
         /*! Set the current value of the bias factor.
             This routine has to be called before force evaluation
@@ -99,11 +101,11 @@ class CollectiveVariable : public ForceCompute
 
         /*! Set minimum position of harmonic potential
          * \param cv0 Minimum position (units of c.v.)
-         */ 
+         */
         void setMinimum(Scalar cv0)
             {
             m_cv0 = cv0;
-            } 
+            }
 
         /*! Returns the name of the collective variable
          */
@@ -135,19 +137,19 @@ class CollectiveVariable : public ForceCompute
          */
         Scalar getUmbrellaPotential(unsigned int timestep);
 
-        /*! Returns true if the evaluation of other variables depends on the evaluation
-         * of this variable
+        /*! Returns true if the evaluation of this variable depends on the evaluation
+         * of the other variables
          */
-        virtual bool needEvaluateFirst()
+        virtual bool requiresNetForce()
             {
             return false;
             }
 
         /*! Returns the names of provided log quantities.
          */
-        std::vector<std::string> getProvidedLogQuantities()
+        virtual std::vector<std::string> getProvidedLogQuantities()
             {
-            std::vector<std::string> list;
+            std::vector<std::string> list = ForceCompute::getProvidedLogQuantities();
             list.push_back("umbrella_energy");
             return list;
             }
@@ -179,7 +181,7 @@ class CollectiveVariable : public ForceCompute
 
             \param timestep The current value of the time step
          */
-        virtual void computeBiasForces(unsigned int timestep) = 0;
+        virtual void computeBiasForces(unsigned int timestep) { };
 
         Scalar m_bias;         //!< The bias factor multiplying the force
 
@@ -194,6 +196,6 @@ class CollectiveVariable : public ForceCompute
     };
 
 //! Export the CollectiveVariable class to python
-void export_CollectiveVariable();
+void export_CollectiveVariable(pybind11::module& m);
 
 #endif // __COLLECTIVE_VARIABLE_H__

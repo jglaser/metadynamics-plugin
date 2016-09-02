@@ -4,8 +4,6 @@
 /*! \file LamellarOrderParameter.h
     \brief Declares the LamellarOrderParameter class
  */
-#include <hoomd/hoomd.h>
-
 #include <string.h>
 
 #include "CollectiveVariable.h"
@@ -41,7 +39,7 @@ class LamellarOrderParameter : public CollectiveVariable
             \param lattice_vectors The Miller indices of the mode vector
             \param suffix The suffix appended to the log name for this quantity
          */
-        LamellarOrderParameter(boost::shared_ptr<SystemDefinition> sysdef,
+        LamellarOrderParameter(std::shared_ptr<SystemDefinition> sysdef,
                                const std::vector<Scalar>& mode,
                                const std::vector<int3>& lattice_vectors,
                                const std::string& suffix = ""
@@ -110,6 +108,6 @@ HOSTDEVICE inline bool operator== (const int3 &a, const int3 &b)
     }
 
 //! Export LamellarOrderParameter to python
-void export_LamellarOrderParameter();
+void export_LamellarOrderParameter(pybind11::module& m);
 
 #endif // __LAMELLAR_ORDER_PARAMETER_H__

@@ -1,11 +1,9 @@
 #include "CollectiveVariable.h"
 
-#include <hoomd/hoomd.h>
-
 class AspectRatio :  public CollectiveVariable
     {
     public:
-        AspectRatio(boost::shared_ptr<SystemDefinition> sysdef, const unsigned int dir1, unsigned int dir2);
+        AspectRatio(std::shared_ptr<SystemDefinition> sysdef, const unsigned int dir1, unsigned int dir2);
         virtual ~AspectRatio() {}
 
         virtual Scalar getCurrentValue(unsigned int timestep);
@@ -54,4 +52,4 @@ class AspectRatio :  public CollectiveVariable
     };
 
 //! Export AspectRatio to Python
-void export_AspectRatio();
+void export_AspectRatio(pybind11::module& m);

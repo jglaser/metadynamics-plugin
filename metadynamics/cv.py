@@ -1,13 +1,9 @@
 ## \package metadynamics.cv
 # \brief Defines the collective variables used for metadynamics integration
 
-from hoomd_script import globals
-from hoomd_script import util
-from hoomd_script import data
-from hoomd_script.force import _force
-
-from hoomd_plugins.metadynamics import _metadynamics
+from hoomd.metadynamics import  _metadynamics
 import hoomd
+from hoomd import md
 
 ## \internal
 # \brief Base class for collective variables
@@ -15,7 +11,7 @@ import hoomd
 # A collective_variable in python reflects a CollectiveVariable in C++.
 # It is, in particular, a specialization of a force, since collective
 # variables generate forces acting on the particles during the simulation.
-class _collective_variable(_force):
+class _collective_variable(md.force._force):
     ## \internal
     # \brief Constructs a collective variable
     #
@@ -24,7 +20,8 @@ class _collective_variable(_force):
     # \param sigma Standard deviation of Gaussians added for this collective variable - only relevant for "well-tempered" or "standard" metadynamics
     # \param name Name of the collective variable
     def __init__(self, sigma, name=None):
-        _force.__init__(self, name)
+        # register as ForceCompute
+        md.force._force.__init__(self, name)
 
         self.sigma = sigma
 
@@ -72,7 +69,7 @@ class _collective_variable(_force):
     # \param cv_max Maximum of the collective variable (largest grid value)
     # \param num_points Dimension of the grid for this collective variable 
     def set_grid(self,cv_min, cv_max, num_points):
-        util.print_status_line()
+        hoomd.util.print_status_line()
 
         self.cv_min = cv_min
         self.cv_max = cv_max
@@ -85,7 +82,7 @@ class _collective_variable(_force):
     # \param ftm_max Maximum of the collective variable (largest grid value)
     # \param num_points Dimension of the grid for this collective variable 
     def enable_histograms(self,ftm_min, ftm_max):
-        util.print_status_line()
+        hoomd.util.print_status_line()
 
         self.ftm_min = ftm_min
         self.ftm_max = ftm_max
@@ -102,7 +99,7 @@ class _collective_variable(_force):
     # \param scale Prefactor multiplying umbrella potential
     # \param reweight True if CV should be included in reweighting
     def set_params(self, sigma=None, kappa=None, cv0=None, umbrella=None, width_flat=None, scale=None, reweight=None):
-        util.print_status_line()
+        hoomd.util.print_status_line()
 
         if sigma is not None:
             self.sigma = sigma
@@ -129,7 +126,7 @@ class _collective_variable(_force):
                 self.reweight=True
                 self.umbrella=True
             else:
-                globals.msg.error("cv: Invalid umbrella mode specified.")
+                hoomd.context.msg.error("cv: Invalid umbrella mode specified.")
                 raise RuntimeError("Error setting parameters of collective variable.");
 
             self.cpp_force.setUmbrella(cpp_umbrella)
@@ -188,7 +185,7 @@ class lamellar(_collective_variable):
     # \param lattice_vectors List of reciprocal lattice vectors (Miller indices) for every mode
     # \param name Name given to this collective variable
     def __init__(self, mode, lattice_vectors, name=None,sigma=1.0):
-        util.print_status_line()
+        hoomd.util.print_status_line()
 
         if name is not None:
             name = "_" + name
@@ -199,35 +196,35 @@ class lamellar(_collective_variable):
         _collective_variable.__init__(self, sigma, name)
 
         if len(lattice_vectors) == 0:
-                globals.msg.error("cv.lamellar: List of supplied latice vectors is empty.\n")
+                hoomd.context.msg.error("cv.lamellar: List of supplied latice vectors is empty.\n")
                 raise RuntimeEror('Error creating collective variable.')
      
         if type(mode) != type(dict()):
-                globals.msg.error("cv.lamellar: Mode amplitudes specified incorrectly.\n")
+                hoomd.context.msg.error("cv.lamellar: Mode amplitudes specified incorrectly.\n")
                 raise RuntimeEror('Error creating collective variable.')
 
         cpp_mode = hoomd.std_vector_scalar()
-        for i in range(0, globals.system_definition.getParticleData().getNTypes()):
-            t = globals.system_definition.getParticleData().getNameByType(i)
+        for i in range(0, hoomd.context.current.system_definition.getParticleData().getNTypes()):
+            t = hoomd.context.current.system_definition.getParticleData().getNameByType(i)
 
             if t not in mode.keys():
-                globals.msg.error("cv.lamellar: Missing mode amplitude for particle type " + t + ".\n")
+                hoomd.context.msg.error("cv.lamellar: Missing mode amplitude for particle type " + t + ".\n")
                 raise RuntimeEror('Error creating collective variable.')
             cpp_mode.append(mode[t])
 
         cpp_lattice_vectors = _metadynamics.std_vector_int3()
         for l in lattice_vectors:
             if len(l) != 3:
-                globals.msg.error("cv.lamellar: List of input lattice vectors not a list of triples.\n")
+                hoomd.context.msg.error("cv.lamellar: List of input lattice vectors not a list of triples.\n")
                 raise RuntimeError('Error creating collective variable.')
             cpp_lattice_vectors.append(hoomd.make_int3(l[0], l[1], l[2]))
 
-        if not globals.exec_conf.isCUDAEnabled():
-            self.cpp_force = _metadynamics.LamellarOrderParameter(globals.system_definition, cpp_mode, cpp_lattice_vectors, suffix)
+        if not hoomd.context.exec_conf.isCUDAEnabled():
+            self.cpp_force = _metadynamics.LamellarOrderParameter(hoomd.context.current.system_definition, cpp_mode, cpp_lattice_vectors, suffix)
         else:
-            self.cpp_force = _metadynamics.LamellarOrderParameterGPU(globals.system_definition, cpp_mode, cpp_lattice_vectors, suffix)
+            self.cpp_force = _metadynamics.LamellarOrderParameterGPU(hoomd.context.current.system_definition, cpp_mode, cpp_lattice_vectors, suffix)
 
-        globals.system.addCompute(self.cpp_force, self.force_name)
+        hoomd.context.current.system.addCompute(self.cpp_force, self.force_name)
 
     ## \var cpp_force
     # \internal 
@@ -247,13 +244,13 @@ class aspect_ratio(_collective_variable):
     # \param dir2 Cartesian index of second direction
     # \param sigma Standard deviation of deposited Gaussians
     def __init__(self, dir1, dir2, name="",sigma=1.0):
-        util.print_status_line()
+        hoomd.util.print_status_line()
 
         _collective_variable.__init__(self, sigma, name)
 
-        self.cpp_force = _metadynamics.AspectRatio(globals.system_definition, int(dir1), int(dir2))
+        self.cpp_force = _metadynamics.AspectRatio(hoomd.context.current.system_definition, int(dir1), int(dir2))
 
-        globals.system.addCompute(self.cpp_force, self.force_name)
+        hoomd.context.current.system.addCompute(self.cpp_force, self.force_name)
 
     ## \var cpp_force
     # \internal 
@@ -277,7 +274,7 @@ class mesh(_collective_variable):
     # \param name Name given to this collective variable
     # \param zero_modes Indices of modes that should be zeroed
     def __init__(self, mode, nx, ny=None, nz=None, name=None,sigma=1.0,zero_modes=None):
-        util.print_status_line()
+        hoomd.util.print_status_line()
 
         if name is not None:
             name = "_" + name
@@ -294,15 +291,15 @@ class mesh(_collective_variable):
         _collective_variable.__init__(self, sigma, name)
 
         if type(mode) != type(dict()):
-                globals.msg.error("cv.mesh: Mode amplitudes specified incorrectly.\n")
+                hoomd.context.msg.error("cv.mesh: Mode amplitudes specified incorrectly.\n")
                 raise RuntimeEror('Error creating collective variable.')
 
         cpp_mode = hoomd.std_vector_scalar()
-        for i in range(0, globals.system_definition.getParticleData().getNTypes()):
-            t = globals.system_definition.getParticleData().getNameByType(i)
+        for i in range(0, hoomd.context.current.system_definition.getParticleData().getNTypes()):
+            t = hoomd.context.current.system_definition.getParticleData().getNameByType(i)
 
             if t not in mode.keys():
-                globals.msg.error("cv.mesh: Missing mode amplitude for particle type " + t + ".\n")
+                hoomd.context.msg.error("cv.mesh: Missing mode amplitude for particle type " + t + ".\n")
                 raise RuntimeEror('Error creating collective variable.')
             cpp_mode.append(mode[t])
 
@@ -310,16 +307,16 @@ class mesh(_collective_variable):
         if zero_modes is not None:
             for l in zero_modes:
                 if len(l) != 3:
-                    globals.msg.error("cv.lamellar: List of modes to zero not a list of triples.\n")
+                    hoomd.context.msg.error("cv.lamellar: List of modes to zero not a list of triples.\n")
                     raise RuntimeError('Error creating collective variable.')
                 cpp_zero_modes.append(hoomd.make_int3(l[0], l[1], l[2]))
 
-        if not globals.exec_conf.isCUDAEnabled():
-            self.cpp_force = _metadynamics.OrderParameterMesh(globals.system_definition, nx,ny,nz, cpp_mode, cpp_zero_modes)
+        if not hoomd.context.exec_conf.isCUDAEnabled():
+            self.cpp_force = _metadynamics.OrderParameterMesh(hoomd.context.current.system_definition, nx,ny,nz, cpp_mode, cpp_zero_modes)
         else:
-            self.cpp_force = _metadynamics.OrderParameterMeshGPU(globals.system_definition, nx,ny,nz, cpp_mode, cpp_zero_modes)
+            self.cpp_force = _metadynamics.OrderParameterMeshGPU(hoomd.context.current.system_definition, nx,ny,nz, cpp_mode, cpp_zero_modes)
 
-        globals.system.addCompute(self.cpp_force, self.force_name)
+        hoomd.context.current.system.addCompute(self.cpp_force, self.force_name)
 
     ## \var cpp_force
     # \internal
@@ -327,7 +324,7 @@ class mesh(_collective_variable):
     # Set parameters for the collective variable
     # \param sq_pow Power of S(q), minus one, in the mode sum
     def set_params(self, sq_pow = None, use_table=None, **args):
-        util.print_status_line()
+        hoomd.util.print_status_line()
 
         if sq_pow is not None:
             self.cpp_force.setSqPower(sq_pow)
@@ -368,3 +365,34 @@ class mesh(_collective_variable):
     ## \internal
     def update_coeffs(self):
         pass
+
+## Potential Energy (Well-Tempered Ensemble)
+#
+# Use the potential energy as a collective variable
+class potential_energy(_collective_variable):
+    ## Construct a lamellar order parameter
+    # \param sigma Standard deviation of deposited Gaussians
+    # \param mode Per-type list (dictionary) of mode coefficients
+    # \param lattice_vectors List of reciprocal lattice vectors (Miller indices) for every mode
+    def __init__(self, sigma=1.0):
+        hoomd.util.print_status_line()
+
+        name = 'cv_potential_energy'
+
+        _collective_variable.__init__(self, sigma, name)
+
+        # disable as regular ForceCompute
+        self.enabled = False
+
+        self.cpp_force = _metadynamics.WellTemperedEnsemble(hoomd.context.current.system_definition, name)
+
+        hoomd.context.current.system.addCompute(self.cpp_force, name)
+
+    ## \var cpp_force
+    # \internal 
+
+    ## \internal
+    def update_coeffs(self):
+        pass
+
+

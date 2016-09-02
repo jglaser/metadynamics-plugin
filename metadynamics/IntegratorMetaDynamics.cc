@@ -7,25 +7,20 @@
 #include <stdio.h>
 #include <iomanip>
 #include <sstream>
+#include <sys/stat.h>
+
+namespace py = pybind11;
+
+#include <hoomd/extern/Eigen/Dense>
 
 using namespace std;
 
-#include <boost/python.hpp>
-#include <boost/filesystem.hpp>
-#include <boost/numeric/ublas/matrix.hpp>
-#include <boost/numeric/ublas/io.hpp>
-#include <boost/numeric/ublas/lu.hpp>
-
 #ifdef ENABLE_CUDA
 #include "IntegratorMetaDynamics.cuh"
-#endif 
-
-using namespace boost::python;
-using namespace boost::filesystem;
-namespace bnu = boost::numeric::ublas;
+#endif
 
 //! Constructor
-IntegratorMetaDynamics::IntegratorMetaDynamics(boost::shared_ptr<SystemDefinition> sysdef,
+IntegratorMetaDynamics::IntegratorMetaDynamics(std::shared_ptr<SystemDefinition> sysdef,
             Scalar deltaT,
             Scalar W,
             Scalar T_shift,
@@ -78,7 +73,10 @@ IntegratorMetaDynamics::IntegratorMetaDynamics(boost::shared_ptr<SystemDefinitio
 
 void IntegratorMetaDynamics::openOutputFile()
     {
-    if (exists(m_filename) && !m_overwrite)
+    struct stat buffer;
+    bool file_exists  = stat(m_filename.c_str(), &buffer) == 0;
+
+    if (file_exists && !m_overwrite)
         {
         m_exec_conf->msg->notice(3) << "integrate.mode_metadynamics: Appending log to existing file \"" << m_filename << "\"" << endl;
         m_file.open(m_filename.c_str(), ios_base::in | ios_base::out | ios_base::ate);
@@ -226,69 +224,92 @@ void IntegratorMetaDynamics::update(unsigned int timestep)
         m_exec_conf->msg->warning() << "No integration methods are set, continuing anyways." << endl;
         m_gave_warning = true;
         }
-    
+
     // ensure that prepRun() has been called
     assert(this->m_prepared);
-    
+
     if (m_prof)
         m_prof->push("Integrate");
-    
+
     // perform the first step of the integration on all groups
-    std::vector< boost::shared_ptr<IntegrationMethodTwoStep> >::iterator method;
+    std::vector< std::shared_ptr<IntegrationMethodTwoStep> >::iterator method;
     for (method = m_methods.begin(); method != m_methods.end(); ++method)
         (*method)->integrateStepOne(timestep);
 
-    // Update the rigid body particle positions and velocities if they are present
-    if (m_sysdef->getRigidData()->getNumBodies() > 0)
-        m_sysdef->getRigidData()->setRV(true);
-
     if (m_prof)
         m_prof->pop();
+
 
 #ifdef ENABLE_MPI
     if (m_comm)
         {
         // perform all necessary communication steps. This ensures
         // a) that particles have migrated to the correct domains
-        // b) that forces are calculated correctly
+        // b) that forces are calculated correctly, if ghost atom positions are updated every time step
+
+        // also updates rigid bodies after ghost updating
         m_comm->communicate(timestep+1);
         }
+    else
 #endif
+        {
+        updateRigidBodies(timestep+1);
+        }
+
+    bool net_force_first = (m_variables.size() == 1 && m_variables[0].m_cv->requiresNetForce());
+
+    if (! net_force_first)
+        {
+        // check sanity
+        for (auto it = m_variables.begin(); it != m_variables.end(); ++it)
+            {
+            if (it->m_cv->requiresNetForce())
+                {
+                throw std::runtime_error("Only one collective variable requiring the potential energy may be defined.\n");
+                }
+            }
+        }
+
+    if (net_force_first)
+        {
+        // compute the net force on all particles
+        #ifdef ENABLE_CUDA
+        if (m_exec_conf->exec_mode == ExecutionConfiguration::GPU)
+            computeNetForceGPU(timestep+1);
+        else
+        #endif
+            computeNetForce(timestep+1);
+        }
 
     // update bias potential
     updateBiasPotential(timestep+1);
 
-    // compute the net force on all particles
-#ifdef ENABLE_CUDA
-    if (m_exec_conf->exec_mode == ExecutionConfiguration::GPU)
-        computeNetForceGPU(timestep+1);
+    if (! net_force_first)
+        {
+        // compute the net force on all particles
+        #ifdef ENABLE_CUDA
+        if (m_exec_conf->exec_mode == ExecutionConfiguration::GPU)
+            computeNetForceGPU(timestep+1);
+        else
+        #endif
+            computeNetForce(timestep+1);
+        }
     else
-#endif
-        computeNetForce(timestep+1);
+        {
+        // compute bias forces *after* everything else
+        m_variables[0].m_cv->compute(timestep);
+        }
 
     if (m_prof)
         m_prof->push("Integrate");
-
-    // if the virial needs to be computed and there are rigid bodies, perform the virial correction
-    PDataFlags flags = m_pdata->getFlags();
-    if (flags[pdata_flag::isotropic_virial] && m_sysdef->getRigidData()->getNumBodies() > 0)
-        m_sysdef->getRigidData()->computeVirialCorrectionStart();
 
     // perform the second step of the integration on all groups
     for (method = m_methods.begin(); method != m_methods.end(); ++method)
         (*method)->integrateStepTwo(timestep);
 
-    // Update the rigid body particle velocities if they are present
-    if (m_sysdef->getRigidData()->getNumBodies() > 0)
-       m_sysdef->getRigidData()->setRV(false);
-
-    // if the virial needs to be computed and there are rigid bodies, perform the virial correction
-    if (flags[pdata_flag::isotropic_virial] && m_sysdef->getRigidData()->getNumBodies() > 0)
-        m_sysdef->getRigidData()->computeVirialCorrectionEnd(m_deltaT/2.0);
-
     if (m_prof)
         m_prof->pop();
-    } 
+    }
 
 void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
     {
@@ -317,7 +338,7 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
 
         // compute instantaneous estimate of standard deviation matrix
         computeSigma();
-        } 
+        }
 
     if (m_prof)
         m_prof->push("Metadynamics");
@@ -1241,16 +1262,13 @@ void IntegratorMetaDynamics::computeSigma()
         // invert sigma matrix
         ArrayHandle<Scalar> h_sigma_inv(m_sigma_inv, access_location::host, access_mode::overwrite);
 
-        bnu::matrix<Scalar> m(ncv,ncv);
+        Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> m(ncv,ncv);
+
         for (unsigned int i = 0; i < ncv; ++i)
             for (unsigned int j = 0 ; j < ncv; ++j)
                 m(i,j) = sqrt(sigmasq[i*ncv+j]);
 
-        bnu::permutation_matrix<std::size_t> pm(m.size1());
-        bnu::lu_factorize(m,pm);
-        bnu::matrix<Scalar> inv(ncv,ncv);
-        inv.assign(bnu::identity_matrix<Scalar>(m.size1()));
-        bnu::lu_substitute(m,pm, inv);
+        Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> inv = m.inverse();
 
         for (unsigned int i = 0; i < ncv; ++i)
             for (unsigned int j = 0 ; j < ncv; ++j)
@@ -1261,16 +1279,6 @@ void IntegratorMetaDynamics::computeSigma()
     delete[] sigmasq;
     }
 
-int determinant_sign(const bnu::permutation_matrix<std ::size_t>& pm)
-{
-    int pm_sign=1;
-    size_t size = pm.size();
-    for (size_t i = 0; i < size; ++i)
-        if (i != pm(i))
-            pm_sign *= -1.0;
-    return pm_sign;
-}
- 
 Scalar IntegratorMetaDynamics::sigmaDeterminant()
     {
     #ifdef ENABLE_MPI
@@ -1278,37 +1286,23 @@ Scalar IntegratorMetaDynamics::sigmaDeterminant()
         return Scalar(0.0);
     #endif
 
-    ArrayHandle<Scalar> h_sigma_inv(m_sigma_inv, access_location::host, access_mode::read);
+    ArrayHandle<Scalar> h_sigma_inv(m_sigma_inv, access_location::host, access_mode::overwrite);
 
-    unsigned int n_cv =m_variables.size();
+    unsigned int ncv = m_variables.size();
+    Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> m(ncv,ncv);
 
-    bnu::matrix<Scalar> m(n_cv,n_cv);
-    for (unsigned int i = 0; i < n_cv; ++i)
-        for (unsigned int j = 0 ; j < n_cv; ++j)
-            {
-            m(i,j) = h_sigma_inv.data[i*n_cv+j];
-            }
+    for (unsigned int i = 0; i < ncv; ++i)
+        for (unsigned int j = 0 ; j < ncv; ++j)
+            m(i,j) = h_sigma_inv.data[i*ncv+j];
 
-    bnu::permutation_matrix<size_t> pm(m.size1());
-    Scalar det(1.0);
-    if( bnu::lu_factorize(m,pm) )
-        {
-        det = 0.0;
-        }
-    else
-        {
-        for(unsigned int i = 0; i < m.size1(); i++)
-            det *= m(i,i); // multiply by elements on diagonal
-        det = det * determinant_sign( pm );
-        }
-
-    return Scalar(1.0)/det;
+    return m.determinant();
     }
 
-void export_IntegratorMetaDynamics()
+void export_IntegratorMetaDynamics(py::module& m)
     {
-    scope in_metad = class_<IntegratorMetaDynamics, boost::shared_ptr<IntegratorMetaDynamics>, bases<IntegratorTwoStep>, boost::noncopyable>
-    ("IntegratorMetaDynamics", init< boost::shared_ptr<SystemDefinition>,
+    py::class_<IntegratorMetaDynamics, std::shared_ptr<IntegratorMetaDynamics> > integrator_metad(m, "IntegratorMetaDynamics", py::base<IntegratorTwoStep>());
+
+    integrator_metad.def(py::init< std::shared_ptr<SystemDefinition>,
                           Scalar,
                           Scalar,
                           Scalar,
@@ -1318,23 +1312,24 @@ void export_IntegratorMetaDynamics()
                           const std::string&,
                           bool,
                           IntegratorMetaDynamics::Enum>())
-    .def("registerCollectiveVariable", &IntegratorMetaDynamics::registerCollectiveVariable)
-    .def("removeAllVariables", &IntegratorMetaDynamics::removeAllVariables)
-    .def("isInitialized", &IntegratorMetaDynamics::isInitialized)
-    .def("setGrid", &IntegratorMetaDynamics::setGrid)
-    .def("dumpGrid", &IntegratorMetaDynamics::dumpGrid)
-    .def("restartFromGridFile", &IntegratorMetaDynamics::restartFromGridFile)
-    .def("setAddHills", &IntegratorMetaDynamics::setAddHills)
-    .def("setMode", &IntegratorMetaDynamics::setMode)
-    .def("setStride", &IntegratorMetaDynamics::setStride)
-    .def("setAdaptive", &IntegratorMetaDynamics::setAdaptive)
-    .def("setSigmaG", &IntegratorMetaDynamics::setSigmaG)
-    .def("resetHistogram", &IntegratorMetaDynamics::resetHistogram)
-    .def("setMultipleWalkers", &IntegratorMetaDynamics::setMultipleWalkers)
-    ;
+        .def("registerCollectiveVariable", &IntegratorMetaDynamics::registerCollectiveVariable)
+        .def("removeAllVariables", &IntegratorMetaDynamics::removeAllVariables)
+        .def("isInitialized", &IntegratorMetaDynamics::isInitialized)
+        .def("setGrid", &IntegratorMetaDynamics::setGrid)
+        .def("dumpGrid", &IntegratorMetaDynamics::dumpGrid)
+        .def("restartFromGridFile", &IntegratorMetaDynamics::restartFromGridFile)
+        .def("setAddHills", &IntegratorMetaDynamics::setAddHills)
+        .def("setMode", &IntegratorMetaDynamics::setMode)
+        .def("setStride", &IntegratorMetaDynamics::setStride)
+        .def("setAdaptive", &IntegratorMetaDynamics::setAdaptive)
+        .def("setSigmaG", &IntegratorMetaDynamics::setSigmaG)
+        .def("resetHistogram", &IntegratorMetaDynamics::resetHistogram)
+        .def("setMultipleWalkers", &IntegratorMetaDynamics::setMultipleWalkers)
+        ;
 
-    enum_<IntegratorMetaDynamics::Enum>("mode")
-    .value("standard", IntegratorMetaDynamics::mode_standard)
-    .value("well_tempered", IntegratorMetaDynamics::mode_well_tempered)
+    py::enum_<IntegratorMetaDynamics::Enum>(integrator_metad,"mode")
+        .value("standard", IntegratorMetaDynamics::mode_standard)
+        .value("well_tempered", IntegratorMetaDynamics::mode_well_tempered)
+        .export_values();
     ;
     }

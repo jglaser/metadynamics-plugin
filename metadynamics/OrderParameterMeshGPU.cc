@@ -1,9 +1,9 @@
 #include "OrderParameterMeshGPU.h"
 
+namespace py = pybind11;
+
 #ifdef ENABLE_CUDA
 #include "OrderParameterMeshGPU.cuh"
-
-using namespace boost::python;
 
 /*! \param sysdef The system definition
     \param nx Number of cells along first axis
@@ -12,7 +12,7 @@ using namespace boost::python;
     \param mode Per-type modes to multiply density
     \param zero_modes List of modes that should be zeroed
  */
-OrderParameterMeshGPU::OrderParameterMeshGPU(boost::shared_ptr<SystemDefinition> sysdef,
+OrderParameterMeshGPU::OrderParameterMeshGPU(std::shared_ptr<SystemDefinition> sysdef,
                                             const unsigned int nx,
                                             const unsigned int ny,
                                             const unsigned int nz,
@@ -62,14 +62,14 @@ void OrderParameterMeshGPU::initializeFFT()
     if (! m_local_fft)
         {
         // ghost cell communicator for charge interpolation
-        m_gpu_grid_comm_forward = std::auto_ptr<CommunicatorGridGPUComplex>(
+        m_gpu_grid_comm_forward = std::unique_ptr<CommunicatorGridGPUComplex>(
             new CommunicatorGridGPUComplex(m_sysdef,
                make_uint3(m_mesh_points.x, m_mesh_points.y, m_mesh_points.z),
                make_uint3(m_grid_dim.x, m_grid_dim.y, m_grid_dim.z),
                m_n_ghost_cells,
                true));
         // ghost cell communicator for force mesh
-        m_gpu_grid_comm_reverse = std::auto_ptr<CommunicatorGridGPUComplex >(
+        m_gpu_grid_comm_reverse = std::unique_ptr<CommunicatorGridGPUComplex >(
             new CommunicatorGridGPUComplex(m_sysdef,
                make_uint3(m_mesh_points.x, m_mesh_points.y, m_mesh_points.z),
                make_uint3(m_grid_dim.x, m_grid_dim.y, m_grid_dim.z),
@@ -595,16 +595,16 @@ void OrderParameterMeshGPU::computeQmax(unsigned int timestep)
     }
 
 
-void export_OrderParameterMeshGPU()
+void export_OrderParameterMeshGPU(py::module& m)
     {
-    class_<OrderParameterMeshGPU, boost::shared_ptr<OrderParameterMeshGPU>, bases<OrderParameterMesh>, boost::noncopyable >
-        ("OrderParameterMeshGPU", init< boost::shared_ptr<SystemDefinition>,
-                                     const unsigned int,
-                                     const unsigned int,
-                                     const unsigned int,
-                                     const std::vector<Scalar>,
-                                     const std::vector<int3>
-                                    >());
+    py::class_<OrderParameterMeshGPU, std::shared_ptr<OrderParameterMeshGPU> >(m, "OrderParameterMeshGPU", py::base<OrderParameterMesh>())
+        .def(py::init< std::shared_ptr<SystemDefinition>,
+                         const unsigned int,
+                         const unsigned int,
+                         const unsigned int,
+                         const std::vector<Scalar>,
+                         const std::vector<int3>
+                        >());
     }
 
 #endif // ENABLE_CUDA

@@ -1,4 +1,4 @@
-#include <hoomd/hoomd_config.h>
+#include <hoomd/ParticleData.cuh>
 #include <hoomd/HOOMDMath.h>
 #include <hoomd/Index1D.h>
 #include <hoomd/BoxDim.h>

@@ -7,7 +7,9 @@
 
 #include "LamellarOrderParameterGPU.cuh"
 
-LamellarOrderParameterGPU::LamellarOrderParameterGPU(boost::shared_ptr<SystemDefinition> sysdef,
+namespace py = pybind11;
+
+LamellarOrderParameterGPU::LamellarOrderParameterGPU(std::shared_ptr<SystemDefinition> sysdef,
                           const std::vector<Scalar>& mode,
                           const std::vector<int3>& lattice_vectors,
                           const std::string& suffix)
@@ -129,12 +131,12 @@ void LamellarOrderParameterGPU::computeBiasForces(unsigned int timestep)
 
     }
 
-void export_LamellarOrderParameterGPU()
+void export_LamellarOrderParameterGPU(py::module &m)
     {
-    class_<LamellarOrderParameterGPU, boost::shared_ptr<LamellarOrderParameterGPU>, bases<LamellarOrderParameter>, boost::noncopyable >
-        ("LamellarOrderParameterGPU", init< boost::shared_ptr<SystemDefinition>,
-                                         const std::vector<Scalar>&,
-                                         const std::vector<int3>&,
-                                         const std::string& >());
+    py::class_<LamellarOrderParameterGPU, std::shared_ptr<LamellarOrderParameterGPU> >(m,"LamellarOrderParameterGPU",py::base<LamellarOrderParameter>())
+        .def(py::init<std::shared_ptr<SystemDefinition>,
+                     const std::vector<Scalar>&,
+                     const std::vector<int3>,
+                     const std::string&>());
     }
 #endif

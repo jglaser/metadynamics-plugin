@@ -1,15 +1,12 @@
-#include <hoomd/hoomd.h>
-
 #ifndef __ORDER_PARAMETER_MESH_H__
 #define __ORDER_PARAMETER_MESH_H__
 
 #include "CollectiveVariable.h"
-#include "CommunicatorGrid.h"
 
-#include <dfft_host.h>
+#include <hoomd/md/CommunicatorGrid.h>
 
-#include <boost/signals2.hpp>
-#include <boost/bind.hpp>
+#include <hoomd/extern/dfftlib/src/dfft_host.h>
+#include <hoomd/extern/kiss_fftnd.h>
 
 /*! Order parameter evaluated using the particle mesh method
  */
@@ -17,7 +14,7 @@ class OrderParameterMesh : public CollectiveVariable
     {
     public:
         //! Constructor
-        OrderParameterMesh(boost::shared_ptr<SystemDefinition> sysdef,
+        OrderParameterMesh(std::shared_ptr<SystemDefinition> sysdef,
                            const unsigned int nx,
                            const unsigned int ny,
                            const unsigned int nz,
@@ -160,8 +157,8 @@ class OrderParameterMesh : public CollectiveVariable
         #ifdef ENABLE_MPI
         dfft_plan m_dfft_plan_forward;     //!< Distributed FFT for forward transform
         dfft_plan m_dfft_plan_inverse;     //!< Distributed FFT for inverse transform
-        std::auto_ptr<CommunicatorGrid<kiss_fft_cpx> > m_grid_comm_forward; //!< Communicator for charge mesh
-        std::auto_ptr<CommunicatorGrid<kiss_fft_cpx> > m_grid_comm_reverse; //!< Communicator for inv fourier mesh
+        std::unique_ptr<CommunicatorGrid<kiss_fft_cpx> > m_grid_comm_forward; //!< Communicator for charge mesh
+        std::unique_ptr<CommunicatorGrid<kiss_fft_cpx> > m_grid_comm_reverse; //!< Communicator for inv fourier mesh
         #endif
 
         bool m_kiss_fft_initialized;               //!< True if a local KISS FFT has been set up
@@ -170,8 +167,6 @@ class OrderParameterMesh : public CollectiveVariable
         GPUArray<kiss_fft_cpx> m_fourier_mesh;     //!< The fourier transformed mesh
         GPUArray<kiss_fft_cpx> m_fourier_mesh_G;   //!< Fourier transformed mesh times the influence function
         GPUArray<kiss_fft_cpx> m_inv_fourier_mesh; //!< The inverse-Fourier transformed mesh
-
-        boost::signals2::connection m_boxchange_connection; //!< Connection to ParticleData box change signal
 
         std::vector<std::string> m_log_names;           //!< Name of the log quantity
 
@@ -184,6 +179,6 @@ class OrderParameterMesh : public CollectiveVariable
         uint3 computeGhostCellNum();
     };
 
-void export_OrderParameterMesh();
+void export_OrderParameterMesh(pybind11::module& m);
 
 #endif

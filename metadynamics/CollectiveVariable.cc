@@ -1,13 +1,12 @@
 /*! \file CollectiveVariable.cc
     \brief Partially implements the CollectiveVariable class
  */
-#include <boost/python.hpp>
 
 #include "CollectiveVariable.h"
 
-using namespace boost::python;
+namespace py = pybind11;
 
-CollectiveVariable::CollectiveVariable(boost::shared_ptr<SystemDefinition> sysdef,
+CollectiveVariable::CollectiveVariable(std::shared_ptr<SystemDefinition> sysdef,
                                        const std::string& name)
     : ForceCompute(sysdef),
       m_bias(0.0),
@@ -101,53 +100,26 @@ Scalar CollectiveVariable::getUmbrellaPotential(unsigned int timestep)
     return Scalar(0.0);
     }
 
-//! Wrapper for abstract class CollectiveVariable
-class CollectiveVariableWrap : public CollectiveVariable, public wrapper<CollectiveVariable>
+
+void export_CollectiveVariable(py::module& m)
     {
-    public:
-        //! Constructs a CollectiveVariableWrap
-        /*! \param sysdef The system definition
-            \param name Name of the collective variable
-         */
-        CollectiveVariableWrap(boost::shared_ptr<SystemDefinition> sysdef,
-                               const std::string& name) 
-            : CollectiveVariable(sysdef, name)
-            { }
-
-        /*! Compute the forces
-            \param timestep Current value of the timestep
-         */
-        void computeBiasForces(unsigned int timestep)
-            {
-            this->get_override("computeBiasForces")(timestep);
-            }
-
-        /*! Returns the current value of the collective variable
-            \param timestep Current value of the timestep
-         */
-        Scalar getCurrentValue(unsigned int timestep)
-            {
-            return this->get_override("getCurrentValue")(timestep);
-            }
-    };              
-
-void export_CollectiveVariable()
-    {
-    class_<CollectiveVariableWrap, boost::shared_ptr<CollectiveVariableWrap>, bases<ForceCompute>, boost::noncopyable>
-        ("CollectiveVariable", init< boost::shared_ptr<SystemDefinition>, const std::string& > ())
-        .def("getCurrentValue", pure_virtual(&CollectiveVariable::getCurrentValue))
+    py::class_<CollectiveVariable, std::shared_ptr<CollectiveVariable> > collective_variable(m, "CollectiveVariable", py::base<ForceCompute>() );
+    collective_variable.def(py::init< std::shared_ptr<SystemDefinition>, const std::string& > ())
+        .def("getCurrentValue", &CollectiveVariable::getCurrentValue)
         .def("setUmbrella", &CollectiveVariable::setUmbrella)
         .def("setKappa", &CollectiveVariable::setKappa)
         .def("setWidthFlat", &CollectiveVariable::setWidthFlat)
         .def("setMinimum", &CollectiveVariable::setMinimum)
         .def("setScale", &CollectiveVariable::setScale)
+        .def("requiresNetForce", &CollectiveVariable::requiresNetForce)
         ;
 
-    enum_<CollectiveVariableWrap::umbrella_Enum>("umbrella")
-    .value("no_umbrella", CollectiveVariableWrap::no_umbrella)
-    .value("linear", CollectiveVariableWrap::linear)
-    .value("harmonic", CollectiveVariableWrap::harmonic)
-    .value("wall", CollectiveVariableWrap::wall)
-    .value("gaussian", CollectiveVariableWrap::gaussian)
+    py::enum_<CollectiveVariable::umbrella_Enum>(collective_variable,"umbrella")
+    .value("no_umbrella", CollectiveVariable::no_umbrella)
+    .value("linear", CollectiveVariable::linear)
+    .value("harmonic", CollectiveVariable::harmonic)
+    .value("wall", CollectiveVariable::wall)
+    .value("gaussian", CollectiveVariable::gaussian)
+    .export_values()
     ;
     }

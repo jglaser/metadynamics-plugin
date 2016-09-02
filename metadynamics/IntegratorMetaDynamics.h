@@ -1,12 +1,12 @@
 #ifndef __INTEGRATOR_METADYNAMICS_H__
 #define __INTEGRATOR_METADYNAMICS_H__
 
-#include <hoomd/hoomd.h>
-
-#include <boost/shared_ptr.hpp>
-
 #include "CollectiveVariable.h"
 #include "IndexGrid.h"
+
+#include <hoomd/md/IntegratorTwoStep.h>
+
+#include <hoomd/extern/pybind/include/pybind11/pybind11.h>
 
 /*! \file IntegratorMetaDynamics.h
     \brief Declares the IntegratorMetaDynamics class
@@ -15,7 +15,7 @@
 //! Structure to hold information about a collective variable
 struct CollectiveVariableItem
     {
-    boost::shared_ptr<CollectiveVariable> m_cv; //!< The collective variable
+    std::shared_ptr<CollectiveVariable> m_cv;   //!< The collective variable
     Scalar m_sigma;                             //!< Width of compensating gaussians for this variable
     Scalar m_cv_min;                            //!< Minium value of collective variable (if using grid)
     Scalar m_cv_max;                            //!< Maximum value of collective variable (if using grid)
@@ -85,7 +85,7 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
            \param use_grid True if grid should be used
            \param mode The variant of metadynamics to use
         */
-        IntegratorMetaDynamics(boost::shared_ptr<SystemDefinition> sysdef,
+        IntegratorMetaDynamics(std::shared_ptr<SystemDefinition> sysdef,
                    Scalar deltaT,
                    Scalar W,
                    Scalar T_shift,
@@ -119,7 +119,7 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
             \param cv_max Maximum value, if using grid
             \param num_points Number of grid points to use for interpolation
          */
-        void registerCollectiveVariable(boost::shared_ptr<CollectiveVariable> cv, Scalar sigma, Scalar cv_min=Scalar(0.0), Scalar cv_max=Scalar(0.0), int num_points=0)
+        void registerCollectiveVariable(std::shared_ptr<CollectiveVariable> cv, Scalar sigma, Scalar cv_min=Scalar(0.0), Scalar cv_max=Scalar(0.0), int num_points=0)
             {
             assert(cv);
             assert(sigma > 0);
@@ -128,7 +128,7 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
 
             cv_item.m_cv = cv;
             cv_item.m_sigma = sigma;
-           
+
             cv_item.m_cv_min = cv_min;
             cv_item.m_cv_max = cv_max;
             cv_item.m_num_points = (unsigned int) num_points;
@@ -381,6 +381,6 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
     };
 
 //! Export to python
-void export_IntegratorMetaDynamics();
+void export_IntegratorMetaDynamics(pybind11::module& m);
 
 #endif // __INTEGRATOR_METADYNAMICS_H__

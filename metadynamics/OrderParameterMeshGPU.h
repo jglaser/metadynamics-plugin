@@ -1,5 +1,3 @@
-#include <hoomd/hoomd.h>
-
 #include "OrderParameterMesh.h"
 
 #ifndef __ORDER_PARAMETER_MESH_GPU_H__
@@ -9,13 +7,14 @@
 
 //#define USE_HOST_DFFT
 
-#include "CommunicatorGridGPU.h"
+#include <hoomd/GPUFlags.h>
+#include <hoomd/md/CommunicatorGridGPU.h>
 
 #ifdef ENABLE_MPI
 #ifndef USE_HOST_DFFT
-#include <dfft_cuda.h>
+#include <hoomd/extern/dfftlib/src/dfft_cuda.h>
 #else
-#include <dfft_host.h>
+#include <hoomd/extern/dfftlib/src/dfft_host.h>
 #endif
 #endif
 
@@ -25,7 +24,7 @@ class OrderParameterMeshGPU : public OrderParameterMesh
     {
     public:
         //! Constructor
-        OrderParameterMeshGPU(boost::shared_ptr<SystemDefinition> sysdef,
+        OrderParameterMeshGPU(std::shared_ptr<SystemDefinition> sysdef,
                            const unsigned int nx,
                            const unsigned int ny,
                            const unsigned int nz,
@@ -64,8 +63,8 @@ class OrderParameterMeshGPU : public OrderParameterMesh
 
         #ifdef ENABLE_MPI
         typedef CommunicatorGridGPU<cufftComplex> CommunicatorGridGPUComplex;
-        boost::shared_ptr<CommunicatorGridGPUComplex> m_gpu_grid_comm_forward; //!< Communicate mesh
-        boost::shared_ptr<CommunicatorGridGPUComplex> m_gpu_grid_comm_reverse; //!< Communicate fourier mesh
+        std::shared_ptr<CommunicatorGridGPUComplex> m_gpu_grid_comm_forward; //!< Communicate mesh
+        std::shared_ptr<CommunicatorGridGPUComplex> m_gpu_grid_comm_reverse; //!< Communicate fourier mesh
 
         dfft_plan m_dfft_plan_forward;     //!< Forward distributed FFT
         dfft_plan m_dfft_plan_inverse;     //!< Forward distributed FFT
@@ -115,7 +114,7 @@ inline Scalar4 operator + (Scalar4& lhs, Scalar4& rhs)
     }
 
 
-void export_OrderParameterMeshGPU();
+void export_OrderParameterMeshGPU(pybind11::module& m);
 
 #endif // ENABLE_CUDA
 #endif // __ORDER_PARAMETER_MESH_GPU_H__

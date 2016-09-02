@@ -1,4 +1,4 @@
-#include <hoomd/hoomd_config.h>
+#include <hoomd/ParticleData.cuh>
 #include <hoomd/HOOMDMath.h>
 
 extern __shared__ unsigned int coords[];

@@ -13,7 +13,7 @@
 class LamellarOrderParameterGPU : public LamellarOrderParameter
     {
     public:
-        LamellarOrderParameterGPU(boost::shared_ptr<SystemDefinition> sysdef,
+        LamellarOrderParameterGPU(std::shared_ptr<SystemDefinition> sysdef,
                                const std::vector<Scalar>& mode,
                                const std::vector<int3>& lattice_vectors,
                                const std::string& suffix = "");
@@ -31,6 +31,6 @@ class LamellarOrderParameterGPU : public LamellarOrderParameter
         GPUArray<Scalar2> m_fourier_mode_scratch; //!< Scratch memory for fourier mode calculation
     };
 
-void export_LamellarOrderParameterGPU();
+void export_LamellarOrderParameterGPU(pybind11::module& m);
 #endif
 #endif // __LAMELLAR_ORDER_PARAMETER_GPU_H__

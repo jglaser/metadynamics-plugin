@@ -3,13 +3,9 @@
  */
 #include "LamellarOrderParameter.h"
 
-#include <boost/python.hpp>
+namespace py = pybind11;
 
-#include <boost/python/suite/indexing/vector_indexing_suite.hpp>
-
-using namespace boost::python;
-
-LamellarOrderParameter::LamellarOrderParameter(boost::shared_ptr<SystemDefinition> sysdef,
+LamellarOrderParameter::LamellarOrderParameter(std::shared_ptr<SystemDefinition> sysdef,
                                const std::vector<Scalar>& mode,
                                const std::vector<int3>& lattice_vectors,
                                const std::string& suffix)
@@ -194,15 +190,11 @@ Scalar LamellarOrderParameter::getLogValue(const std::string& quantity, unsigned
     return CollectiveVariable::getLogValue(quantity, timestep);
     }
 
-void export_LamellarOrderParameter()
+void export_LamellarOrderParameter(py::module& m)
     {
-    class_<LamellarOrderParameter, boost::shared_ptr<LamellarOrderParameter>, bases<CollectiveVariable>, boost::noncopyable >
-        ("LamellarOrderParameter", init< boost::shared_ptr<SystemDefinition>,
-                                         const std::vector<Scalar>&,
-                                         const std::vector<int3>,
-                                         const std::string&>());
-
-    class_<std::vector<int3> >("std_vector_int3")
-        .def(vector_indexing_suite< std::vector<int3> > ())
-        ;
+    py::class_<LamellarOrderParameter, std::shared_ptr<LamellarOrderParameter> >(m,"LamellarOrderParameter",py::base<CollectiveVariable>())
+        .def(py::init<std::shared_ptr<SystemDefinition>,
+                     const std::vector<Scalar>&,
+                     const std::vector<int3>,
+                     const std::string&>());
     }

@@ -1,7 +1,7 @@
 /*! \file LamellarOrderParameterGPU.cuh
  *  \brief Defines the GPU routines for LamellarOrderParameterGPU
  */
-#include <hoomd/hoomd_config.h>
+#include <hoomd/ParticleData.cuh>
 #include <hoomd/BoxDim.h>
 
 /*! Calculates the fourier modes for the collective variable

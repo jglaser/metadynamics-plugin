@@ -1,6 +1,8 @@
 #include "AspectRatio.h"
 
-AspectRatio::AspectRatio(boost::shared_ptr<SystemDefinition> sysdef, const unsigned int dir1, const unsigned int dir2)
+namespace py = pybind11;
+
+AspectRatio::AspectRatio(std::shared_ptr<SystemDefinition> sysdef, const unsigned int dir1, const unsigned int dir2)
     : CollectiveVariable(sysdef, "cv_aspect_ratio"), m_dir1(dir1), m_dir2(dir2)
     {
     if (dir1==dir2 || dir1 >= 3 || dir2 >= 3)
@@ -127,12 +129,12 @@ void AspectRatio::computeBiasForces(unsigned int timestep)
     m_external_virial[5] = - m_bias*d_l_z * L.z;         // zz
     }
 
-void export_AspectRatio()
+void export_AspectRatio(py::module& m)
     {
-    class_<AspectRatio, boost::shared_ptr<AspectRatio>, bases<CollectiveVariable>, boost::noncopyable >
-        ("AspectRatio", init< boost::shared_ptr<SystemDefinition>,
-                                         const unsigned int,
-                                         const unsigned int >() );
+    py::class_<AspectRatio, std::shared_ptr<AspectRatio> >(m, "AspectRatio", py::base<CollectiveVariable>() )
+        .def(py::init< std::shared_ptr<SystemDefinition>,
+                       const unsigned int,
+                       const unsigned int >() );
         ;
     }
 

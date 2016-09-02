@@ -20,16 +20,11 @@
 # in the presence of a previously generated bias potential,
 # without updating the latter, to sample a histogram of values of the
 # collective variable (i.e. for error control)
-from hoomd_plugins.metadynamics import _metadynamics
-
-from hoomd_script.integrate import _integrator
-from hoomd_script.force import _force
-from hoomd_script import util
-from hoomd_script import globals
-
+from hoomd.metadynamics import  _metadynamics
+from hoomd.metadynamics import cv
 import hoomd
+from hoomd import md
 
-from hoomd_plugins.metadynamics import cv
 
 ## \brief Enables integration using metadynamics, a free energy technique
 #
@@ -174,7 +169,7 @@ from hoomd_plugins.metadynamics import cv
 # run(1e5)
 # \endcode
 #
-class mode_metadynamics(_integrator):
+class mode_metadynamics(md.integrate._integrator):
     ## Specifies the metadynamics integration mode
     # \param dt Each time step of the simulation run() will advance the real time of the system forward by \a dt (in time units) 
     # \param stride Interval (number of time steps) between depositions of Gaussians
@@ -187,25 +182,25 @@ class mode_metadynamics(_integrator):
     # \param add_hills (optional) True if Gaussians should be deposited during the simulation
     # \param T (optiona
     def __init__(self, dt, stride, mode="standard", W=1.0,  deltaT=1.0, T=1.0, filename="", overwrite=False, add_hills=True):
-        util.print_status_line();
+        hoomd.util.print_status_line();
     
         # initialize base class
-        _integrator.__init__(self);
+        md.integrate._integrator.__init__(self);
   
         if (mode == "standard"):
             cpp_mode = _metadynamics.IntegratorMetaDynamics.mode.standard
         elif (mode == "well_tempered"):
             cpp_mode = _metadynamics.IntegratorMetaDynamics.mode.well_tempered
         else:
-            globals.msg.error("integrate.mode_metadynamics: Unsupported metadynamics mode.\n")
+            hoomd.context.msg.error("integrate.mode_metadynamics: Unsupported metadynamics mode.\n")
             raise RuntimeError('Error setting up Metadynamics.');
 
         # initialize the reflected c++ class
-        self.cpp_integrator = _metadynamics.IntegratorMetaDynamics(globals.system_definition, dt, W, deltaT, T, stride, add_hills, filename, overwrite, cpp_mode);
+        self.cpp_integrator = _metadynamics.IntegratorMetaDynamics(hoomd.context.current.system_definition, dt, W, deltaT, T, stride, add_hills, filename, overwrite, cpp_mode);
 
         self.supports_methods = True;
 
-        globals.system.setIntegrator(self.cpp_integrator);
+        hoomd.context.current.system.setIntegrator(self.cpp_integrator);
 
         self.cv_names = [];
 
@@ -215,7 +210,7 @@ class mode_metadynamics(_integrator):
         if self.cpp_integrator.isInitialized():
             notfound = False;
             num_cv = 0
-            for f in globals.forces:
+            for f in hoomd.context.current.forces:
                 if isinstance(f, cv._collective_variable) and f.grid_set:
                     if f.umbrella:
                         continue
@@ -225,14 +220,14 @@ class mode_metadynamics(_integrator):
                     num_cv += 1;
 
             if (len(self.cv_names) != num_cv) or notfound:
-                globals.msg.error("integrate.mode_metadynamics: Set of collective variables has changed since last run. This is unsupported.\n")
+                hoomd.context.msg.error("integrate.mode_metadynamics: Set of collective variables has changed since last run. This is unsupported.\n")
                 raise RuntimeError('Error setting up Metadynamics.');
 
         # (re-) register collective variables with integrator
         self.cv_names = []
         self.cpp_integrator.removeAllVariables()
 
-        for f in globals.forces:
+        for f in hoomd.context.current.forces:
             if isinstance(f, cv._collective_variable):
 
                 if f.umbrella:
@@ -245,15 +240,15 @@ class mode_metadynamics(_integrator):
                     self.cv_names.append(f.name)
                 else:
                     if not f.umbrella:
-                        globals.msg.warning("integrate.mode_metadynamics: Grid parameters not set. Ignoring CV "+f.name)
+                        hoomd.context.msg.warning("integrate.mode_metadynamics: Grid parameters not set. Ignoring CV "+f.name)
 
         if len(self.cv_names) == 0:
-            globals.msg.warning("integrate.mode_metadynamics: No collective variables defined. Continuing with simulation anyway.\n")
+            hoomd.context.msg.warning("integrate.mode_metadynamics: No collective variables defined. Continuing with simulation anyway.\n")
 
         if not self.cpp_integrator.isInitialized():
            self.cpp_integrator.setGrid(True)
 
-        _integrator.update_forces(self)
+        md.integrate._integrator.update_forces(self)
 
     ## Dump information about the bias potential
     # If a grid has been previously defined for the collective variables,
@@ -269,7 +264,7 @@ class mode_metadynamics(_integrator):
     # \param period    Number of timesteps between periodic dumps. If zero
     #                  (default), file is written when the command is called.
     def dump_grid(self, filename1, filename2="", period=0):
-        util.print_status_line();
+        hoomd.util.print_status_line();
 
         self.cpp_integrator.dumpGrid(filename1,filename2, int(period))
 
@@ -280,14 +275,14 @@ class mode_metadynamics(_integrator):
     # 
     # \param filename The file to read, which has been previously generated by dump_grid
     def restart_from_grid(self, filename):
-        util.print_status_line();
+        hoomd.util.print_status_line();
 
         self.cpp_integrator.restartFromGridFile(filename)
 
     ## Reset histogram
     # This command resets the histogram of values of the collective variable visited.
     def reset_histogram(self):
-        util.print_status_line();
+        hoomd.util.print_status_line();
 
         self.cpp_integrator.resetHistogram()
 
@@ -298,7 +293,7 @@ class mode_metadynamics(_integrator):
     # \param adaptive True if adaptive Gaussians should be used
     # \param sigma_g Estimated RMSD of particle positions for adapative Gaussian mode
     def set_params(self, add_hills=None, mode=None, stride=None, adaptive=None, sigma_g=None, multiple_walkers=None):
-        util.print_status_line();
+        hoomd.util.print_status_line();
       
         if add_hills is not None:
             self.cpp_integrator.setAddHills(add_hills)
@@ -309,7 +304,7 @@ class mode_metadynamics(_integrator):
             elif (mode == "well_tempered"):
                 cpp_mode = _metadynamics.IntegratorMetaDynamics.mode.well_tempered
             else:
-                globals.msg.error("integrate.mode_metadynamics: Unsupported metadynamics mode.\n")
+                hoomd.context.msg.error("integrate.mode_metadynamics: Unsupported metadynamics mode.\n")
                 raise RuntimeError('Error setting up Metadynamics.');
 
             self.cpp_integrator.setMode(cpp_mode)
