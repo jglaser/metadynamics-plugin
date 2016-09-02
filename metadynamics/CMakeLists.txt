@@ -19,6 +19,7 @@ set(_${COMPONENT_NAME}_cu_sources
     IntegratorMetaDynamics.cu
     LamellarOrderParameterGPU.cu
     OrderParameterMeshGPU.cu
+    WellTemperedEnsemble.cu
     )
 
 include_directories(${HOOMD_INCLUDE_DIR}/hoomd/extern/dfftlib/src)

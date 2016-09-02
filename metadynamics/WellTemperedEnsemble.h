@@ -7,6 +7,8 @@
 
 #include "CollectiveVariable.h"
 
+#include <hoomd/GPUFlags.h>
+
 /*! Class to implement the potential energy as a collective variable (Well-tempered Ensemble)
 
     see Bonomi, Parrinello PRL 104:190601 (2010)
@@ -66,6 +68,10 @@ class WellTemperedEnsemble : public CollectiveVariable
         Scalar m_pe;                //!< The potential energy
         std::string m_log_name;     //!< Name of log quantity
 
+        #ifdef ENABLE_CUDA
+        GPUFlags<Scalar> m_sum;     //!< for reading back potential energy from GPU
+        #endif
+
         virtual void computeCV(unsigned int timestep);
 
         /*! Compute the biased forces for this collective variable.
@@ -75,6 +81,12 @@ class WellTemperedEnsemble : public CollectiveVariable
             \param timestep The current value of the time step
          */
         virtual void computeBiasForces(unsigned int timestep);
+
+        //! Compute bias force on GPU
+        void computeBiasForcesGPU(unsigned int timestep);
+
+        //! Compute collective variable on GPU
+        void computeCVGPU(unsigned int timestep);
     };
 
 //! Export the CollectiveVariable class to python
