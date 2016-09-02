@@ -87,53 +87,73 @@ void WellTemperedEnsemble::computeCVGPU(unsigned int timestep)
 
 void WellTemperedEnsemble::computeBiasForcesGPU(unsigned int timestep)
     {
-    if (m_prof)
-        m_prof->push(m_exec_conf,"Well-Tempered Ensemble");
-
     ArrayHandle<Scalar4> d_net_force(m_pdata->getNetForce(), access_location::device, access_mode::readwrite);
     ArrayHandle<Scalar4> d_net_torque(m_pdata->getNetTorqueArray(), access_location::device, access_mode::readwrite);
+    ArrayHandle<Scalar> d_net_virial(m_pdata->getNetVirial(), access_location::device, access_mode::readwrite);
 
+    unsigned int pitch = m_pdata->getNetVirial().getPitch();
     Scalar fac = Scalar(1.0)+m_bias;
-    gpu_scale_netforce(d_net_force.data, d_net_torque.data, fac, m_pdata->getN());
-    if (m_exec_conf->isCUDAErrorCheckingEnabled()) CHECK_CUDA_ERROR();
 
-    if (m_prof) m_prof->pop(m_exec_conf);
+    gpu_scale_netforce(d_net_force.data, d_net_torque.data, d_net_virial.data, pitch, fac, m_pdata->getN());
+
+    if (m_exec_conf->isCUDAErrorCheckingEnabled())
+        CHECK_CUDA_ERROR();
     }
 #endif
 
 void WellTemperedEnsemble::computeBiasForces(unsigned int timestep)
     {
+    if (m_prof)
+        m_prof->push("Well-Tempered Ensemble");
+
+    Scalar fac = Scalar(1.0)+m_bias;
+
     #ifdef ENABLE_CUDA
     if (m_exec_conf->exec_mode == ExecutionConfiguration::GPU)
         {
         computeBiasForcesGPU(timestep);
-        return;
         }
+    else
     #endif
-
-    if (m_prof)
-        m_prof->push("Well-Tempered Ensemble");
-
-    // Note: this Compute operates directly on the net force, therefore it needs to be called
-    // after every other force
-    ArrayHandle<Scalar4> h_net_force(m_pdata->getNetForce(), access_location::host, access_mode::readwrite);
-    ArrayHandle<Scalar4> h_net_torque(m_pdata->getNetTorqueArray(), access_location::host, access_mode::readwrite);
-
-    unsigned int N = m_pdata->getN();
-
-    // apply bias factor
-    Scalar fac = Scalar(1.0)+m_bias;
-    for (unsigned int i = 0; i < N; ++i)
         {
-        h_net_force.data[i].x *= fac;
-        h_net_force.data[i].y *= fac;
-        h_net_force.data[i].z *= fac;
-        h_net_force.data[i].w *= fac;
+        // Note: this Compute operates directly on the net force, therefore it needs to be called
+        // after every other force
+        ArrayHandle<Scalar4> h_net_force(m_pdata->getNetForce(), access_location::host, access_mode::readwrite);
+        ArrayHandle<Scalar4> h_net_torque(m_pdata->getNetTorqueArray(), access_location::host, access_mode::readwrite);
+        ArrayHandle<Scalar> h_net_virial(m_pdata->getNetVirial(), access_location::host, access_mode::readwrite);
 
-        h_net_torque.data[i].x *= fac;
-        h_net_torque.data[i].y *= fac;
-        h_net_torque.data[i].z *= fac;
-        h_net_torque.data[i].w *= fac;
+        unsigned int N = m_pdata->getN();
+        unsigned int pitch = m_pdata->getNetVirial().getPitch();
+
+        // apply bias factor
+        for (unsigned int i = 0; i < N; ++i)
+            {
+            h_net_force.data[i].x *= fac;
+            h_net_force.data[i].y *= fac;
+            h_net_force.data[i].z *= fac;
+            h_net_force.data[i].w *= fac;
+
+            h_net_torque.data[i].x *= fac;
+            h_net_torque.data[i].y *= fac;
+            h_net_torque.data[i].z *= fac;
+            h_net_torque.data[i].w *= fac;
+
+            h_net_virial.data[i + 0*pitch] *= fac;
+            h_net_virial.data[i + 1*pitch] *= fac;
+            h_net_virial.data[i + 2*pitch] *= fac;
+            h_net_virial.data[i + 3*pitch] *= fac;
+            h_net_virial.data[i + 4*pitch] *= fac;
+            h_net_virial.data[i + 5*pitch] *= fac;
+            }
+        }
+
+    Scalar external_energy = m_pdata->getExternalEnergy();
+    m_pdata->setExternalEnergy(fac*external_energy);
+
+    for (unsigned int i = 0; i < 6; ++i)
+        {
+        Scalar v = m_pdata->getExternalVirial(i);
+        m_pdata->setExternalVirial(i,fac*v);
         }
 
     if (m_prof)

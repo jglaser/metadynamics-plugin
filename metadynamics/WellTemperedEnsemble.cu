@@ -2,6 +2,8 @@
 
 __global__ void gpu_scale_netforce_kernel(Scalar4 *d_net_force,
     Scalar4 *d_net_torque,
+    Scalar *d_net_virial,
+    unsigned int net_virial_pitch,
     Scalar fac,
     unsigned int N)
     {
@@ -21,15 +23,24 @@ __global__ void gpu_scale_netforce_kernel(Scalar4 *d_net_force,
     net_torque.y *= fac;
     net_torque.z *= fac;
     d_net_torque[idx] = net_torque;
+
+    d_net_virial[0*net_virial_pitch+idx] *= fac;
+    d_net_virial[1*net_virial_pitch+idx] *= fac;
+    d_net_virial[2*net_virial_pitch+idx] *= fac;
+    d_net_virial[3*net_virial_pitch+idx] *= fac;
+    d_net_virial[4*net_virial_pitch+idx] *= fac;
+    d_net_virial[5*net_virial_pitch+idx] *= fac;
     }
 
 void gpu_scale_netforce(Scalar4 *d_net_force,
     Scalar4 *d_net_torque,
+    Scalar *d_net_virial,
+    unsigned int net_virial_pitch,
     Scalar fac,
     unsigned int N)
     {
     unsigned int block_size = 256;
-    gpu_scale_netforce_kernel<<<(N/block_size+1),block_size>>>(d_net_force, d_net_torque, fac, N);
+    gpu_scale_netforce_kernel<<<(N/block_size+1),block_size>>>(d_net_force, d_net_torque, d_net_virial, net_virial_pitch, fac, N);
     }
 
 //! Shared memory used in reducing the sums
