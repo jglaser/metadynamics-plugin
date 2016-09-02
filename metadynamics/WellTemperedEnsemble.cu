@@ -1,6 +1,7 @@
 #include <hoomd/ParticleData.cuh>
 
 __global__ void gpu_scale_netforce_kernel(Scalar4 *d_net_force,
+    Scalar4 *d_net_torque,
     Scalar fac,
     unsigned int N)
     {
@@ -14,14 +15,21 @@ __global__ void gpu_scale_netforce_kernel(Scalar4 *d_net_force,
     net_force.z *= fac;
     net_force.w *= fac;
     d_net_force[idx] = net_force;
+
+    Scalar4 net_torque = d_net_torque[idx];
+    net_torque.x *= fac;
+    net_torque.y *= fac;
+    net_torque.z *= fac;
+    d_net_torque[idx] = net_torque;
     }
 
 void gpu_scale_netforce(Scalar4 *d_net_force,
+    Scalar4 *d_net_torque,
     Scalar fac,
     unsigned int N)
     {
     unsigned int block_size = 256;
-    gpu_scale_netforce_kernel<<<(N/block_size+1),block_size>>>(d_net_force, fac, N);
+    gpu_scale_netforce_kernel<<<(N/block_size+1),block_size>>>(d_net_force, d_net_torque, fac, N);
     }
 
 //! Shared memory used in reducing the sums

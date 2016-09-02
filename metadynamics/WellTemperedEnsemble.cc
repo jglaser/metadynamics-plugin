@@ -91,9 +91,10 @@ void WellTemperedEnsemble::computeBiasForcesGPU(unsigned int timestep)
         m_prof->push(m_exec_conf,"Well-Tempered Ensemble");
 
     ArrayHandle<Scalar4> d_net_force(m_pdata->getNetForce(), access_location::device, access_mode::readwrite);
+    ArrayHandle<Scalar4> d_net_torque(m_pdata->getNetTorqueArray(), access_location::device, access_mode::readwrite);
 
     Scalar fac = Scalar(1.0)+m_bias;
-    gpu_scale_netforce(d_net_force.data, fac, m_pdata->getN());
+    gpu_scale_netforce(d_net_force.data, d_net_torque.data, fac, m_pdata->getN());
     if (m_exec_conf->isCUDAErrorCheckingEnabled()) CHECK_CUDA_ERROR();
 
     if (m_prof) m_prof->pop(m_exec_conf);
@@ -116,6 +117,7 @@ void WellTemperedEnsemble::computeBiasForces(unsigned int timestep)
     // Note: this Compute operates directly on the net force, therefore it needs to be called
     // after every other force
     ArrayHandle<Scalar4> h_net_force(m_pdata->getNetForce(), access_location::host, access_mode::readwrite);
+    ArrayHandle<Scalar4> h_net_torque(m_pdata->getNetTorqueArray(), access_location::host, access_mode::readwrite);
 
     unsigned int N = m_pdata->getN();
 
@@ -127,6 +129,11 @@ void WellTemperedEnsemble::computeBiasForces(unsigned int timestep)
         h_net_force.data[i].y *= fac;
         h_net_force.data[i].z *= fac;
         h_net_force.data[i].w *= fac;
+
+        h_net_torque.data[i].x *= fac;
+        h_net_torque.data[i].y *= fac;
+        h_net_torque.data[i].z *= fac;
+        h_net_torque.data[i].w *= fac;
         }
 
     if (m_prof)
