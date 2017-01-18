@@ -131,7 +131,6 @@ void WellTemperedEnsemble::computeBiasForces(unsigned int timestep)
             h_net_force.data[i].x *= fac;
             h_net_force.data[i].y *= fac;
             h_net_force.data[i].z *= fac;
-//            h_net_force.data[i].w *= fac;
 
             h_net_torque.data[i].x *= fac;
             h_net_torque.data[i].y *= fac;
@@ -146,9 +145,6 @@ void WellTemperedEnsemble::computeBiasForces(unsigned int timestep)
             h_net_virial.data[i + 5*pitch] *= fac;
             }
         }
-
-    Scalar external_energy = m_pdata->getExternalEnergy();
-    m_pdata->setExternalEnergy(fac*external_energy);
 
     for (unsigned int i = 0; i < 6; ++i)
         {
