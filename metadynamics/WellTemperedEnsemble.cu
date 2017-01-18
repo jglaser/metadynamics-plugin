@@ -15,7 +15,7 @@ __global__ void gpu_scale_netforce_kernel(Scalar4 *d_net_force,
     net_force.x *= fac;
     net_force.y *= fac;
     net_force.z *= fac;
-    net_force.w *= fac;
+//    net_force.w *= fac;
     d_net_force[idx] = net_force;
 
     Scalar4 net_torque = d_net_torque[idx];

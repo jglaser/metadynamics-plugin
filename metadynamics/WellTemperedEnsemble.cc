@@ -131,7 +131,7 @@ void WellTemperedEnsemble::computeBiasForces(unsigned int timestep)
             h_net_force.data[i].x *= fac;
             h_net_force.data[i].y *= fac;
             h_net_force.data[i].z *= fac;
-            h_net_force.data[i].w *= fac;
+//            h_net_force.data[i].w *= fac;
 
             h_net_torque.data[i].x *= fac;
             h_net_torque.data[i].y *= fac;
