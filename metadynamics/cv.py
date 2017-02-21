@@ -3,6 +3,7 @@
 
 from hoomd.metadynamics import  _metadynamics
 import hoomd
+from hoomd import _hoomd
 from hoomd import md
 
 ## \internal
@@ -203,7 +204,7 @@ class lamellar(_collective_variable):
                 hoomd.context.msg.error("cv.lamellar: Mode amplitudes specified incorrectly.\n")
                 raise RuntimeEror('Error creating collective variable.')
 
-        cpp_mode = hoomd.std_vector_scalar()
+        cpp_mode = _hoomd.std_vector_scalar()
         for i in range(0, hoomd.context.current.system_definition.getParticleData().getNTypes()):
             t = hoomd.context.current.system_definition.getParticleData().getNameByType(i)
 
@@ -294,7 +295,7 @@ class mesh(_collective_variable):
                 hoomd.context.msg.error("cv.mesh: Mode amplitudes specified incorrectly.\n")
                 raise RuntimeEror('Error creating collective variable.')
 
-        cpp_mode = hoomd.std_vector_scalar()
+        cpp_mode = _hoomd.std_vector_scalar()
         for i in range(0, hoomd.context.current.system_definition.getParticleData().getNTypes()):
             t = hoomd.context.current.system_definition.getParticleData().getNameByType(i)
 
@@ -333,9 +334,9 @@ class mesh(_collective_variable):
             self.cpp_force.setUseTable(use_table)
 
         # call base class method
-        util._disable_status_lines = True;
+        hoomd.util.quiet_status()
         _collective_variable.set_params(self,**args)
-        util._disable_status_lines = False;
+        hoomd.util.quiet_status()
 
     # Set the table to be used for the convolution kernel
     # \param func The function the returns the convolution kernel and its derivative
@@ -345,8 +346,8 @@ class mesh(_collective_variable):
     # \param coeff Additional parameters to the function, as a dict (optional)
     def set_kernel(self, func, kmin, kmax, width, coeff = dict()):
         # allocate arrays to store kernel and derivative
-        Ktable = hoomd.std_vector_scalar()
-        dKtable = hoomd.std_vector_scalar()
+        Ktable = _hoomd.std_vector_scalar()
+        dKtable = _hoomd.std_vector_scalar()
 
         # calculate dr
         dk = (kmax - kmin) / float(width-1);
