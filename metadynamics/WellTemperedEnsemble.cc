@@ -78,7 +78,8 @@ void WellTemperedEnsemble::computeCVGPU(unsigned int timestep)
         m_pdata->getN(),
         m_sum.getDeviceFlags(),
         n_blocks,
-        block_size);
+        block_size,
+        false);
 
     if (m_exec_conf->isCUDAErrorCheckingEnabled()) CHECK_CUDA_ERROR();
 

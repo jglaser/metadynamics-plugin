@@ -10,6 +10,7 @@ set(_${COMPONENT_NAME}_sources
     OrderParameterMesh.cc
     OrderParameterMeshGPU.cc
     WellTemperedEnsemble.cc
+    CollectiveWrapper.cc
     IndexGrid.cc
     CollectiveVariable.cc
     AspectRatio.cc

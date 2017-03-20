@@ -30,7 +30,7 @@ class _collective_variable(md.force._force):
         self.cv_min = 0.0
         self.cv_max = 0.0
         self.num_points = 0
-        
+
         self.grid_set = False
 
         self.ftm_min = 0.0
@@ -371,10 +371,8 @@ class mesh(_collective_variable):
 #
 # Use the potential energy as a collective variable
 class potential_energy(_collective_variable):
-    ## Construct a lamellar order parameter
+    ## Construct a well-tempered ensemble
     # \param sigma Standard deviation of deposited Gaussians
-    # \param mode Per-type list (dictionary) of mode coefficients
-    # \param lattice_vectors List of reciprocal lattice vectors (Miller indices) for every mode
     def __init__(self, sigma=1.0):
         hoomd.util.print_status_line()
 
@@ -391,6 +389,41 @@ class potential_energy(_collective_variable):
 
     ## \var cpp_force
     # \internal 
+
+    ## \internal
+    def update_coeffs(self):
+        pass
+
+## Force Wraper
+#
+# Use an arbitrary force as collective variable
+class wrap(_collective_variable):
+    ## Construct the collective variable
+    # \param force The handle to the force we are wrapping
+    # \param sigma Standard deviation of deposited Gaussians
+    def __init__(self, force, sigma=1.0):
+        hoomd.util.print_status_line()
+
+        if not isinstance(force, md.force._force):
+            hoomd.context.msg.error("cv.wrap needs a md._force instance as argument.")
+
+        name = 'cv_'+force.name
+
+        _collective_variable.__init__(self, sigma, name)
+
+        self.cpp_force = _metadynamics.CollectiveWrapper(hoomd.context.current.system_definition, force.cpp_force, name)
+
+        if force.enabled or force.log:
+            hoomd.context.current.system.addCompute(self.cpp_force, name)
+        self.log = force.log
+
+    def disable(self, log=False):
+        self.disable(log)
+        force.disable(log)
+
+    def enable(self):
+        self.enable()
+        force.enable()
 
     ## \internal
     def update_coeffs(self):
