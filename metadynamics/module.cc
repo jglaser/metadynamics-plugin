@@ -6,6 +6,7 @@
 #include "OrderParameterMesh.h"
 #include "WellTemperedEnsemble.h"
 #include "CollectiveWrapper.h"
+#include "SteinhardtQl.h"
 
 #ifdef ENABLE_CUDA
 #include "LamellarOrderParameterGPU.h"
@@ -31,6 +32,7 @@ PYBIND11_PLUGIN(_metadynamics)
     export_OrderParameterMesh(m);
     export_WellTemperedEnsemble(m);
     export_CollectiveWrapper(m);
+    export_SteinhardtQl(m);
 
 #ifdef ENABLE_CUDA
     export_LamellarOrderParameterGPU(m);

@@ -5,6 +5,7 @@ from hoomd.metadynamics import  _metadynamics
 import hoomd
 from hoomd import _hoomd
 from hoomd import md
+from hoomd.md import nlist as nl
 
 ## \internal
 # \brief Base class for collective variables
@@ -251,6 +252,7 @@ class aspect_ratio(_collective_variable):
 
         self.cpp_force = _metadynamics.AspectRatio(hoomd.context.current.system_definition, int(dir1), int(dir2))
 
+        # add to System
         hoomd.context.current.system.addCompute(self.cpp_force, self.force_name)
 
     ## \var cpp_force
@@ -424,6 +426,68 @@ class wrap(_collective_variable):
     def enable(self):
         self.enable()
         force.enable()
+
+    ## \internal
+    def update_coeffs(self):
+        pass
+
+## Steinhardt Ql
+#
+class steinhardt(_collective_variable):
+    ## Construct the collective variable
+    # \param r_cut Cut-off for neighbor search
+    # \param lmax Maximum Ql to compute
+    # \param nlist Neighbor list object
+    # \param type Type of particles to compute order parameter for
+    # \param name Name of Ql instance (optional)
+    # \param sigma Standard deviation of deposited Gaussians
+    def __init__(self, r_cut, lmax, nlist, type, name=None, sigma=1.0):
+        hoomd.util.print_status_line()
+
+        suffix = ""
+        if name is not None:
+            suffix = "_" + name
+
+        _collective_variable.__init__(self, sigma, name)
+
+        self.type = type
+
+        # subscribe to neighbor list rcut
+        self.nlist = nlist
+        self.r_cut = r_cut
+        self.nlist.subscribe(lambda: self.get_rcut())
+        self.nlist.update_rcut()
+
+        type_list = []
+        for i in range(0, hoomd.context.current.system_definition.getParticleData().getNTypes()):
+            type_list.append(hoomd.context.current.system_definition.getParticleData().getNameByType(i))
+
+        if type not in type_list:
+            hoomd.context.msg.error("cv.steinhardt: Invalid particle type.");
+            raise RuntimeError('Error creating collective variable.')
+
+        self.cpp_force = _metadynamics.SteinhardtQl(hoomd.context.current.system_definition, float(r_cut), int(lmax), nlist.cpp_nlist, type_list.index(type), suffix)
+        hoomd.context.current.system.addCompute(self.cpp_force, self.force_name)
+
+    def get_rcut(self):
+        # go through the list of only the active particle types in the sim
+        ntypes = hoomd.context.current.system_definition.getParticleData().getNTypes();
+        type_list = [];
+        for i in range(0,ntypes):
+            type_list.append(hoomd.context.current.system_definition.getParticleData().getNameByType(i));
+
+        my_typeid = type_list.index(self.type)
+        # update the rcut by pair type
+        r_cut_dict = nl.rcut();
+        for i in range(0,ntypes):
+            for j in range(i,ntypes):
+                # interaction only for one particle type pair
+                if i == my_typeid and j == my_typeid:
+                    # get the r_cut value
+                    r_cut_dict.set_pair(type_list[i],type_list[j], self.r_cut);
+                else:
+                    r_cut_dict.set_pair(type_list[i],type_list[j], -1.0);
+        return r_cut_dict;
 
     ## \internal
     def update_coeffs(self):

@@ -14,6 +14,7 @@ set(_${COMPONENT_NAME}_sources
     IndexGrid.cc
     CollectiveVariable.cc
     AspectRatio.cc
+	SteinhardtQl.cc
     )
 
 set(_${COMPONENT_NAME}_cu_sources

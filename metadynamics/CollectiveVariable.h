@@ -160,7 +160,7 @@ class CollectiveVariable : public ForceCompute
          */
         Scalar getLogValue(const std::string& quantity, unsigned int timestep)
             {
-            if (quantity == "umbrella_energy")
+            if (quantity == "umbrella_energy_"+m_cv_name)
                 {
                 return getUmbrellaPotential(timestep);
                 }
