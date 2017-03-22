@@ -12,9 +12,9 @@
 class SteinhardtQl : public CollectiveVariable
     {
     public:
-        SteinhardtQl(std::shared_ptr<SystemDefinition> sysdef, Scalar rcut, unsigned int lmax,
-            std::shared_ptr<NeighborList> nlist,
-            unsigned int type,
+        SteinhardtQl(std::shared_ptr<SystemDefinition> sysdef, Scalar rcut, Scalar ron,
+            unsigned int lmax, std::shared_ptr<NeighborList> nlist, unsigned int type,
+            const std::vector<Scalar>& Ql_ref,
             const std::string& log_suffix="");
         virtual ~SteinhardtQl() {}
 
@@ -79,6 +79,7 @@ class SteinhardtQl : public CollectiveVariable
 
     private:
         Scalar m_rcutsq;       //! Cutoff
+        Scalar m_ronsq;        //!< Onset of smoothing
         unsigned int m_lmax;   //!< Maxiumum l of spherical harmonics
         std::shared_ptr<NeighborList> m_nlist; //!< The neighbor list
         unsigned int m_type;   //!< Particle type to compute order parameter for
@@ -86,10 +87,9 @@ class SteinhardtQl : public CollectiveVariable
         unsigned int m_cv_last_updated; //!< Last updated timestep
         bool m_have_computed;           //!< True if we have computed the CV at least once
 
-        std::string m_prof_name; //!< Profiling name
-
         std::vector<Scalar> m_Ql; //!< List of compute Ql, up to lmax
-
+        std::vector<Scalar> m_Ql_ref; //!< List of reference Ql
+        std::string m_prof_name;  //!< Name for profiling
         Scalar m_value;          //!< Value of the collective variable
     };
 

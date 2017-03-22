@@ -437,11 +437,12 @@ class steinhardt(_collective_variable):
     ## Construct the collective variable
     # \param r_cut Cut-off for neighbor search
     # \param lmax Maximum Ql to compute
+    # \param Ql_ref List of reference Ql values
     # \param nlist Neighbor list object
     # \param type Type of particles to compute order parameter for
     # \param name Name of Ql instance (optional)
     # \param sigma Standard deviation of deposited Gaussians
-    def __init__(self, r_cut, lmax, nlist, type, name=None, sigma=1.0):
+    def __init__(self, r_cut, lmax, Ql_ref, nlist, type, name=None, sigma=1.0):
         hoomd.util.print_status_line()
 
         suffix = ""
@@ -466,7 +467,11 @@ class steinhardt(_collective_variable):
             hoomd.context.msg.error("cv.steinhardt: Invalid particle type.");
             raise RuntimeError('Error creating collective variable.')
 
-        self.cpp_force = _metadynamics.SteinhardtQl(hoomd.context.current.system_definition, float(r_cut), int(lmax), nlist.cpp_nlist, type_list.index(type), suffix)
+        cpp_Ql_ref = _hoomd.std_vector_scalar()
+        for Ql in list(Ql_ref):
+            cpp_Ql_ref.append(Ql)
+
+        self.cpp_force = _metadynamics.SteinhardtQl(hoomd.context.current.system_definition, float(r_cut), int(lmax), cpp_Ql_ref, nlist.cpp_nlist, type_list.index(type), suffix)
         hoomd.context.current.system.addCompute(self.cpp_force, self.force_name)
 
     def get_rcut(self):
