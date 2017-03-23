@@ -6,6 +6,7 @@ import hoomd
 from hoomd import _hoomd
 from hoomd import md
 from hoomd.md import nlist as nl
+from hoomd.md import _md
 
 ## \internal
 # \brief Base class for collective variables
@@ -108,23 +109,23 @@ class _collective_variable(md.force._force):
 
         if umbrella is not None:
             if umbrella=="no_umbrella":
-                cpp_umbrella = _metadynamics.umbrella.no_umbrella 
+                cpp_umbrella = self.cpp_force.umbrella.no_umbrella 
                 self.reweight=False
                 self.umbrella=False
             elif umbrella=="linear":
-                cpp_umbrella = _metadynamics.umbrella.linear
+                cpp_umbrella = self.cpp_force.umbrella.linear
                 self.reweight=True
                 self.umbrella=True
             elif umbrella=="harmonic":
-                cpp_umbrella = _metadynamics.umbrella.harmonic
+                cpp_umbrella = self.cpp_force.umbrella.harmonic
                 self.reweight=True
                 self.umbrella=True
             elif umbrella=="wall":
-                cpp_umbrella = _metadynamics.umbrella.wall
+                cpp_umbrella = self.cpp_force.umbrella.wall
                 self.reweight=True
                 self.umbrella=True
             elif umbrella=="gaussian":
-                cpp_umbrella = _metadynamics.umbrella.gaussian
+                cpp_umbrella = self.cpp_force.umbrella.gaussian
                 self.reweight=True
                 self.umbrella=True
             else:
@@ -436,13 +437,14 @@ class wrap(_collective_variable):
 class steinhardt(_collective_variable):
     ## Construct the collective variable
     # \param r_cut Cut-off for neighbor search
+    # \param r_on Onset of smoothing
     # \param lmax Maximum Ql to compute
-    # \param Ql_ref List of reference Ql values
+    # \param Ql_ref List of reference Ql values (of length lmax+1)
     # \param nlist Neighbor list object
     # \param type Type of particles to compute order parameter for
     # \param name Name of Ql instance (optional)
     # \param sigma Standard deviation of deposited Gaussians
-    def __init__(self, r_cut, lmax, Ql_ref, nlist, type, name=None, sigma=1.0):
+    def __init__(self, r_cut, r_on, lmax, Ql_ref, nlist, type, name=None, sigma=1.0):
         hoomd.util.print_status_line()
 
         suffix = ""
@@ -459,6 +461,9 @@ class steinhardt(_collective_variable):
         self.nlist.subscribe(lambda: self.get_rcut())
         self.nlist.update_rcut()
 
+        if hoomd.context.exec_conf.isCUDAEnabled():
+            self.nlist.cpp_nlist.setStorageMode(_md.NeighborList.storageMode.full);
+
         type_list = []
         for i in range(0, hoomd.context.current.system_definition.getParticleData().getNTypes()):
             type_list.append(hoomd.context.current.system_definition.getParticleData().getNameByType(i))
@@ -471,7 +476,7 @@ class steinhardt(_collective_variable):
         for Ql in list(Ql_ref):
             cpp_Ql_ref.append(Ql)
 
-        self.cpp_force = _metadynamics.SteinhardtQl(hoomd.context.current.system_definition, float(r_cut), int(lmax), cpp_Ql_ref, nlist.cpp_nlist, type_list.index(type), suffix)
+        self.cpp_force = _metadynamics.SteinhardtQl(hoomd.context.current.system_definition, float(r_cut), float(r_on), int(lmax), nlist.cpp_nlist, type_list.index(type), cpp_Ql_ref, suffix)
         hoomd.context.current.system.addCompute(self.cpp_force, self.force_name)
 
     def get_rcut(self):

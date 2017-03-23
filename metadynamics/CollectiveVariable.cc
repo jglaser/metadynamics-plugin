@@ -57,7 +57,6 @@ void CollectiveVariable::computeForces(unsigned int timestep)
         }
 
     computeBiasForces(timestep);
-
     }
 
 Scalar CollectiveVariable::getUmbrellaPotential(unsigned int timestep)

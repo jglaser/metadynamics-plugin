@@ -150,7 +150,7 @@ class CollectiveVariable : public ForceCompute
         virtual std::vector<std::string> getProvidedLogQuantities()
             {
             std::vector<std::string> list = ForceCompute::getProvidedLogQuantities();
-            list.push_back("umbrella_energy");
+            list.push_back("umbrella_energy_"+m_cv_name);
             return list;
             }
 

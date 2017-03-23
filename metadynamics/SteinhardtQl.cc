@@ -15,18 +15,21 @@ SteinhardtQl::SteinhardtQl(std::shared_ptr<SystemDefinition> sysdef,
             const std::vector<Scalar>& Ql_ref,
             const std::string& log_suffix)
 
-    : CollectiveVariable(sysdef,"cv_steinhardt"+log_suffix), m_rcutsq(rcut*rcut), m_ronsq(ron*ron),
+    : CollectiveVariable(sysdef,"steinhardt"+log_suffix), m_rcutsq(rcut*rcut), m_ronsq(ron*ron),
         m_lmax(lmax), m_nlist(nlist), m_type(type), m_cv_last_updated(0), m_have_computed(false), m_value(0.0)
     {
     m_prof_name = "steinhardt_Ql"+log_suffix;
 
-    m_Ql = std::vector<Scalar>(m_lmax, Scalar(0.0));
+    m_Ql = std::vector<Scalar>(m_lmax+1, Scalar(0.0));
 
-    if (Ql_ref.size() != m_lmax)
+    if (Ql_ref.size() != m_lmax+1)
         {
-        m_exec_conf->msg->error() << "List of reference Qlm needs to be exactly of length lmax = " << m_lmax << std::endl;
+        m_exec_conf->msg->error() << "List of reference Qlm needs to be exactly of length lmax = " << m_lmax+1 << std::endl;
         throw std::runtime_error("Error setting up Steinhardt CV");
         }
+
+    m_Ql_ref.resize(Ql_ref.size());
+
     std::copy(Ql_ref.begin(), Ql_ref.end(), m_Ql_ref.begin());
     }
 
@@ -82,9 +85,10 @@ void SteinhardtQl::computeCV(unsigned int timestep)
 
     const BoxDim& box = m_pdata->getBox();
 
-    unsigned int sph_count = ((m_lmax+1)*(m_lmax+2))/2 + (m_lmax*(m_lmax+1))/2;
+    unsigned int sph_count = (m_lmax+1)*(m_lmax+1);
     std::vector<std::complex<Scalar> > Ylm_pp(sph_count,std::complex<Scalar>(0.0,0.0));
-    std::vector<std::complex<Scalar> > Ylm(sph_count,std::complex<Scalar>(0.0,0.0));
+    m_Qlm.resize(sph_count);
+    std::fill(m_Qlm.begin(), m_Qlm.end(), std::complex<Scalar>(0.0,0.0));
 
     // for each particle
     unsigned int N = m_pdata->getN();
@@ -128,16 +132,27 @@ void SteinhardtQl::computeCV(unsigned int timestep)
 
             if (rsq <= m_rcutsq)
                 {
+                Scalar f = fSmooth(m_ronsq, m_rcutsq, rsq);
+
                 // compute theta, phi
-                Scalar theta = acos(dx.y/sqrt(rsq));
+                Scalar theta = acos(dx.z/sqrt(rsq));
                 Scalar phi = atan2(dx.y, dx.x);
 
                 bool negative_m = true;
-                fsph::evaluate_SPH<Scalar>(&Ylm_pp.front(), m_lmax, &phi, &theta, 1, negative_m);
+                // note switching theta and phi due to diffferent convention
+                fsph::evaluate_SPH<Scalar>(&Ylm_pp.front(), m_lmax, &theta, &phi, 1, negative_m);
 
-                // accumulate
-                for (unsigned int n = 0; n < sph_count; ++n)
-                   Ylm[n] += Ylm_pp[n]*fSmooth(m_ronsq, m_rcutsq, rsq);
+                int n = 0;
+                for (int l = 0; l <= (int)m_lmax; ++l)
+                    {
+                    for (int p = 0; p < 2*l+1; ++p)
+                        {
+                        int m = (p <= l) ? p : (l-p);
+                        int phase = (m > 0 && m % 2) ? -1 : 1; // Condon-Shortley
+                        m_Qlm[n] += std::complex<Scalar>(phase)*Ylm_pp[n]*f;
+                        n++;
+                        }
+                    }
                 }
             }
 
@@ -149,41 +164,34 @@ void SteinhardtQl::computeCV(unsigned int timestep)
     unsigned int Nglobal = m_pdata->getNGlobal();
     unsigned int nc = 1; // for now
 
-    for (int l = 1; l <= (int)m_lmax; ++l)
+    unsigned int n = 0;
+    for (int l = 0; l <= (int)m_lmax; ++l)
         {
-        m_Ql[l-1] = Scalar(0.0);
-        for (int m = -l; m <= l; ++m)
+        m_Ql[l] = Scalar(0.0);
+        for (int p=0; p < 2*l+1; ++p)
             {
-            unsigned int n = fsph::sphIndex(l,m);
-
             if (third_law)
                 {
                 if (l % 2 == 0)
-                    Ylm[n] *= 2; // assume even parity
+                    m_Qlm[n] *= 2; // assume even parity
                 else
-                    Ylm[n] = std::complex<Scalar>(0.0,0.0);
+                    m_Qlm[n] = std::complex<Scalar>(0.0,0.0);
                 }
 
-            Scalar Qlm_sq = std::abs(Ylm[n])*std::abs(Ylm[n]);
-            Qlm_sq /= Nglobal*Nglobal/nc/nc;
-            m_Ql[l-1] += Scalar(4.0*M_PI/(2*l+1))*Qlm_sq;
-            }
+            Scalar Qlm_sq = (std::conj(m_Qlm[n])*m_Qlm[n]).real();
+            Qlm_sq *= Scalar(4.0*M_PI/(2*l+1))/(Nglobal*Nglobal*nc*nc);
+            m_Ql[l] += Qlm_sq;
 
-        m_Ql[l-1] = sqrt(m_Ql[l-1]);
+            n++;
+            }
         }
 
     // compute collective variable as normalizd dot product
     m_value = Scalar(0.0);
-    Scalar Ql_norm(0.0);
-    Scalar Ql_ref_norm(0.0);
-    for (unsigned int l = 1; l <= m_lmax; ++l)
+    for (unsigned int l = 0; l <= m_lmax; ++l)
         {
-        m_value += m_Ql_ref[l-1]*m_Ql[l-1];
-        Ql_norm += m_Ql[l-1]*m_Ql[l-1];
-        Ql_ref_norm += m_Ql_ref[l-1]*m_Ql_ref[l-1];
+        m_value += m_Ql_ref[l]*m_Ql[l];
         }
-
-    m_value /= sqrt(Ql_norm)*sqrt(Ql_ref_norm);
 
     m_have_computed = true;
     m_cv_last_updated = timestep;
@@ -200,12 +208,14 @@ void SteinhardtQl::computeBiasForces(unsigned int timestep)
     // start the profile for this compute
     if (m_prof) m_prof->push(m_prof_name);
 
+    if (m_prof) m_prof->push("Force");
+
     // depending on the neighborlist settings, we can take advantage of newton's third law
     // to reduce computations at the cost of memory access complexity: set that flag now
     bool third_law = m_nlist->getStorageMode() == NeighborList::half;
 
     // access the force array
-    ArrayHandle<Scalar4> h_force(m_force, access_location::host, access_mode::readwrite);
+    ArrayHandle<Scalar4> h_force(m_force, access_location::host, access_mode::overwrite);
 
     // access the neighbor list, particle data, and system box
     ArrayHandle<unsigned int> h_n_neigh(m_nlist->getNNeighArray(), access_location::host, access_mode::read);
@@ -216,31 +226,17 @@ void SteinhardtQl::computeBiasForces(unsigned int timestep)
 
     const BoxDim& box = m_pdata->getBox();
 
-    unsigned int sph_count = ((m_lmax+1)*(m_lmax+2))/2 + (m_lmax*(m_lmax+1))/2;
+    unsigned int sph_count = (m_lmax+1)*(m_lmax+1); //l = 0..lmax
     std::vector<std::complex<Scalar> > Ylm_pp(sph_count,std::complex<Scalar>(0.0,0.0));
-    std::vector<vec3<Scalar> > del_Ql_i(m_lmax);
 
     unsigned int Nglobal = m_pdata->getNGlobal();
     unsigned int nc = 1; // for now
 
+    // reset force
+    memset(h_force.data, 0, sizeof(Scalar4)*m_force.getNumElements());
+
     // for each particle
     unsigned int N = m_pdata->getN();
-
-    Scalar Ql_norm(0.0);
-    Scalar Ql_ref_norm(0.0);
-    Scalar QdotQ_ref(0.0);
-    for (unsigned int l = 1; l <= m_lmax; ++l)
-        {
-        QdotQ_ref += m_Ql_ref[l-1]*m_Ql[l-1];
-        Ql_norm += m_Ql[l-1]*m_Ql[l-1];
-        Ql_ref_norm += m_Ql_ref[l-1]*m_Ql_ref[l-1];
-        }
-
-    std::vector<Scalar> Qterm(m_lmax);
-    for (unsigned int l = 0; l < m_lmax; ++l)
-        {
-        Qterm[l] = (m_Ql_ref[l]-QdotQ_ref/Ql_norm*m_Ql[l])/sqrt(Ql_norm)/sqrt(Ql_ref_norm);
-        }
 
     for (int i = 0; i < (int)N; i++)
         {
@@ -253,9 +249,6 @@ void SteinhardtQl::computeBiasForces(unsigned int timestep)
 
         // only compute for a single particle type
         if (typei != m_type) continue;
-
-        for (unsigned int l = 0; l < m_lmax; ++l)
-            del_Ql_i[l] = vec3<Scalar>(0.0,0.0,0.0);
 
         // loop over all of the neighbors of this particle
         const unsigned int myHead = h_head_list.data[i];
@@ -282,58 +275,66 @@ void SteinhardtQl::computeBiasForces(unsigned int timestep)
             // calculate r_ij squared (FLOPS: 5)
             Scalar rsq = dot(dx, dx);
 
+            vec3<Scalar> force(0.0,0.0,0.0);
+
             if (rsq <= m_rcutsq)
                 {
                 // compute theta, phi
-                Scalar theta = acos(dx.y/sqrt(rsq));
+                std::complex<Scalar> r(sqrt(rsq));
+                Scalar theta = acos(dx.z/r.real());
                 Scalar phi = atan2(dx.y, dx.x);
 
                 vec3<std::complex<Scalar> > e_theta = vec3<std::complex<Scalar> >(cos(theta)*cos(phi),cos(theta)*sin(phi),-sin(theta));
                 vec3<std::complex<Scalar> > e_phi = vec3<std::complex<Scalar> >(-sin(phi),cos(phi),0.0);
-                std::complex<Scalar> r(sqrt(rsq));
 
                 bool negative_m = true;
-                fsph::evaluate_SPH<Scalar>(&Ylm_pp.front(), m_lmax, &phi, &theta, 1, negative_m);
+                // note switching theta and phi due to diffferent convention
+                fsph::evaluate_SPH<Scalar>(&Ylm_pp.front(), m_lmax, &theta, &phi, 1, negative_m);
 
                 std::complex<Scalar> fprime_divr(fprimeSmooth_divr(m_ronsq,m_rcutsq, rsq));
                 std::complex<Scalar> f(fSmooth(m_ronsq, m_rcutsq, rsq));
-
-                for (unsigned int l = 1; l <= m_lmax; ++l)
+                int n = 0;
+                for (int l = 0; l <= (int)m_lmax; ++l)
                     {
                     vec3<Scalar> del_Ql_i(0.0,0.0,0.0);
-                    for (unsigned int m=-l; m<=l; ++m)
+                    for (int p = 0; p < 2*l+1; ++p)
                         {
-                        unsigned int n = fsph::sphIndex(l,m);
-                        std::complex<Scalar> dYlm_dtheta = std::complex<Scalar>(m/tan(theta))*Ylm_pp[n];
+                        int m = (p <= l) ? p : (l-p);
+                        int phase = (m > 0 && m % 2) ? -1 : 1; // Condon-Shortley phase, for derivative formula
+                        std::complex<Scalar> Ylm = std::complex<Scalar>(phase)*Ylm_pp[n];
+                        std::complex<Scalar> dYlm_dtheta = std::complex<Scalar>(m/tan(theta))*Ylm;
                         if (m < l)
                             {
-                            unsigned int n2 = fsph::sphIndex(l,m+1);
-                            dYlm_dtheta += std::complex<Scalar>(sqrt((l-m)*(l-m+1)))*std::exp(std::complex<Scalar>(0,-phi))*Ylm_pp[n2];
+                            unsigned int m_plus_one = (m < 0) ? (m == -1 ? n-p : n-1) : (n+1);
+                            int phase_plus_one = (m + 1 > 0 && (m+1) %2 ) ? -1 : 1;
+                            dYlm_dtheta += std::complex<Scalar>(phase_plus_one*sqrt((l-m)*(l+m+1)))*std::exp(std::complex<Scalar>(0,-phi))*Ylm_pp[m_plus_one];
                             }
-                        std::complex<Scalar> dYlm_dphi = std::complex<Scalar>(0,m)*Ylm_pp[n];
+                        std::complex<Scalar> dYlm_dphi = std::complex<Scalar>(0,m)*Ylm;
 
-                        vec3<std::complex<Scalar> > del_Qlm = vec3<std::complex<Scalar> >(dx)*fprime_divr*Ylm_pp[n] + f/r*e_theta*dYlm_dtheta + f*e_phi/(r*std::complex<Scalar>(sin(theta)))*dYlm_dphi;
-                        del_Ql_i += vec3<Scalar>(del_Qlm.x.real(),del_Qlm.y.real(), del_Qlm.z.real());
+                        vec3<std::complex<Scalar> > del_Qlm = vec3<std::complex<Scalar> >(dx)*fprime_divr*Ylm + f/r*e_theta*dYlm_dtheta + f*e_phi/(r*std::complex<Scalar>(sin(theta)))*dYlm_dphi;
+                        del_Qlm *= std::conj(m_Qlm[n]);
+                        del_Ql_i += Scalar(2.0)*vec3<Scalar>(del_Qlm.x.real(),del_Qlm.y.real(), del_Qlm.z.real());
+                        n++;
                         }
-                    del_Ql_i *= Scalar(4.0*M_PI/(2*l+1))/(Nglobal*Nglobal)/(nc*nc)/m_Ql[l-1];
+                    del_Ql_i *= Scalar(4.0*M_PI/(2*l+1))/(Nglobal*Nglobal)/(nc*nc);
 
-                    vec3<Scalar> fi = -m_bias*del_Ql_i*Qterm[l-1];
-                    h_force.data[i].x += fi.x;
-                    h_force.data[i].y += fi.y;
-                    h_force.data[i].z += fi.z;
-
-                    if (third_law && j < N)
-                        {
-                        h_force.data[j].x -= fi.x;
-                        h_force.data[j].y -= fi.y;
-                        h_force.data[j].z -= fi.z;
-                        }
+                    force -= m_bias*del_Ql_i*m_Ql_ref[l];
                     }
                 }
-            }
+            h_force.data[i].x += force.x;
+            h_force.data[i].y += force.y;
+            h_force.data[i].z += force.z;
 
+            if (third_law && j < N)
+                {
+                h_force.data[j].x -= force.x;
+                h_force.data[j].y -= force.y;
+                h_force.data[j].z -= force.z;
+                }
+            }
         }
 
+    if (m_prof) m_prof->pop();
     if (m_prof) m_prof->pop();
     }
 

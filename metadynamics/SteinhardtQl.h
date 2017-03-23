@@ -7,6 +7,8 @@
 
 #include "CollectiveVariable.h"
 
+#include <complex>
+
 #include <hoomd/md/NeighborList.h>
 
 class SteinhardtQl : public CollectiveVariable
@@ -60,9 +62,8 @@ class SteinhardtQl : public CollectiveVariable
                     }
                 }
 
-            // nothing found?
-            m_exec_conf->msg->error() << "cv.steinhardt: Invalid log quantity " << quantity << std::endl;
-            throw std::runtime_error("Error querying log quantity");
+            // nothing found? ask parent class
+            return CollectiveVariable::getLogValue(quantity, timestep);
             }
 
         // compute the collective variable
@@ -87,7 +88,8 @@ class SteinhardtQl : public CollectiveVariable
         unsigned int m_cv_last_updated; //!< Last updated timestep
         bool m_have_computed;           //!< True if we have computed the CV at least once
 
-        std::vector<Scalar> m_Ql; //!< List of compute Ql, up to lmax
+        std::vector<Scalar> m_Ql; //!< List of computed Ql, up to lmax
+        std::vector<std::complex<Scalar> > m_Qlm; //!< List of Qlm, accumulated over all particles
         std::vector<Scalar> m_Ql_ref; //!< List of reference Ql
         std::string m_prof_name;  //!< Name for profiling
         Scalar m_value;          //!< Value of the collective variable
