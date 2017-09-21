@@ -98,15 +98,6 @@ class LamellarOrderParameter : public CollectiveVariable
 
     };
 
-// ------------ Vector math functions --------------------------
-//! Comparison operator needed for export of std::vector<int3>
-HOSTDEVICE inline bool operator== (const int3 &a, const int3 &b)
-    {
-    return (a.x == b.x &&
-            a.y == b.y &&
-            a.z == b.z);
-    }
-
 //! Export LamellarOrderParameter to python
 void export_LamellarOrderParameter(pybind11::module& m);
 
