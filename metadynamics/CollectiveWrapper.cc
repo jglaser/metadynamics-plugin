@@ -98,7 +98,7 @@ void CollectiveWrapper::computeBiasForcesGPU(unsigned int timestep)
     ArrayHandle<Scalar> d_virial(m_fc->getVirialArray(), access_location::device, access_mode::readwrite);
 
     unsigned int pitch = m_fc->getVirialArray().getPitch();
-    Scalar fac = Scalar(1.0) + m_bias;
+    Scalar fac = m_bias;
 
     gpu_scale_netforce(d_force.data, d_torque.data, d_virial.data, pitch, fac, m_pdata->getN()+m_pdata->getNGhosts());
 
@@ -115,7 +115,7 @@ void CollectiveWrapper::computeBiasForces(unsigned int timestep)
     if (m_prof)
         m_prof->push("Collective wrap");
 
-    Scalar fac = Scalar(1.0) + m_bias;
+    Scalar fac = m_bias;
 
     #ifdef ENABLE_CUDA
     if (m_exec_conf->exec_mode == ExecutionConfiguration::GPU)
