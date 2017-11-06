@@ -641,7 +641,7 @@ void OrderParameterMesh::updateMeshes()
             Scalar val(1.0);
             if (m_sq_pow > Scalar(0.0))
                 {
-                val = fast::pow(f.r*f.r+f.i*f.i, m_sq_pow);
+                val = pow(f.r*f.r+f.i*f.i, m_sq_pow);
                 }
 
             h_fourier_mesh_G.data[k].r = f.r * val * h_inf_f.data[k];

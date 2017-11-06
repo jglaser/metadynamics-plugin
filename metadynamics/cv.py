@@ -263,6 +263,35 @@ class aspect_ratio(_collective_variable):
     def update_coeffs(self):
         pass
 
+## \brief Number density
+#
+class density(_collective_variable):
+    ## Construct a collective variable from the number density of particles
+    #
+    # \param sigma Standard deviation of deposited Gaussians
+    def __init__(self, name="",sigma=1.0):
+        hoomd.util.print_status_line()
+
+        _collective_variable.__init__(self, sigma, name)
+
+        self.cpp_force = _metadynamics.Density(hoomd.context.current.system_definition)
+
+        # add to System
+        hoomd.context.current.system.addCompute(self.cpp_force, self.force_name)
+
+    ## \var cpp_force
+    # \internal
+
+    ## \internal
+    def update_coeffs(self):
+        pass
+
+def _table_eval(r, rmin, rmax, V, F, width):
+    dr = (rmax - rmin) / float(width-1);
+    i = int(round((r - rmin)/dr))
+    return (V[i], F[i])
+
+
 def _table_eval(r, rmin, rmax, V, F, width):
     dr = (rmax - rmin) / float(width-1);
     i = int(round((r - rmin)/dr))
