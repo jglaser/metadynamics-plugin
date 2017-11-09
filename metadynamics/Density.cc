@@ -2,8 +2,10 @@
 
 namespace py = pybind11;
 
-Density::Density(std::shared_ptr<SystemDefinition> sysdef)
-    : CollectiveVariable(sysdef, "cv_density")
+Density::Density(std::shared_ptr<SystemDefinition> sysdef,
+    std::shared_ptr<ParticleGroup> group,
+    const std::string& suffix)
+    : CollectiveVariable(sysdef, "cv_density"+(suffix != "" ? "_"+suffix : "")), m_group(group)
     {
     // reset force and virial
     ArrayHandle<Scalar4> h_force(m_force, access_location::host, access_mode::overwrite);
@@ -18,7 +20,7 @@ Density::Density(std::shared_ptr<SystemDefinition> sysdef)
 Scalar Density::getCurrentValue(unsigned int timestep)
     {
     Scalar V = m_pdata->getGlobalBox().getVolume(m_sysdef->getNDimensions()==2);
-    unsigned int N = m_pdata->getNGlobal();
+    unsigned int N = m_group->getNumMembersGlobal();
 
     Scalar rho = N/V;
     return rho;
@@ -33,7 +35,7 @@ void Density::computeBiasForces(unsigned int timestep)
 
     const BoxDim& global_box = m_pdata->getGlobalBox();
     Scalar V = global_box.getVolume(m_sysdef->getNDimensions()==2);
-    unsigned int N = m_pdata->getNGlobal();
+    unsigned int N = m_group->getNumMembersGlobal();
 
     Scalar Lx = global_box.getL().x;
     Scalar Ly = global_box.getL().y;
@@ -57,7 +59,9 @@ void Density::computeBiasForces(unsigned int timestep)
 void export_Density(py::module& m)
     {
     py::class_<Density, std::shared_ptr<Density> >(m, "Density", py::base<CollectiveVariable>() )
-        .def(py::init< std::shared_ptr<SystemDefinition> >() );
+        .def(py::init< std::shared_ptr<SystemDefinition>,
+                       std::shared_ptr<ParticleGroup>,
+                       const std::string& >() );
         ;
     }
 

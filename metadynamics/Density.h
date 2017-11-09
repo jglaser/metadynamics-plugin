@@ -1,9 +1,12 @@
 #include "CollectiveVariable.h"
 
+#include <hoomd/ParticleGroup.h>
+
 class Density :  public CollectiveVariable
     {
     public:
-        Density(std::shared_ptr<SystemDefinition> sysdef);
+        Density(std::shared_ptr<SystemDefinition> sysdef, std::shared_ptr<ParticleGroup> group,
+            const std::string& suffix);
         virtual ~Density() {}
 
         virtual Scalar getCurrentValue(unsigned int timestep);
@@ -47,6 +50,7 @@ class Density :  public CollectiveVariable
         virtual void computeBiasForces(unsigned int timestep);
 
         std::string m_log_name; //!< The name of the collective variable
+        std::shared_ptr<ParticleGroup> m_group; //!< The group to count the number of particles
     };
 
 //! Export Density to Python

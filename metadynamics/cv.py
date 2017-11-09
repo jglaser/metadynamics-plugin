@@ -5,6 +5,7 @@ from hoomd.metadynamics import  _metadynamics
 import hoomd
 from hoomd import _hoomd
 from hoomd import md
+from hoomd import group
 from hoomd.md import nlist as nl
 from hoomd.md import _md
 
@@ -268,13 +269,18 @@ class aspect_ratio(_collective_variable):
 class density(_collective_variable):
     ## Construct a collective variable from the number density of particles
     #
+    # \param group Group that provides count of number of particles
     # \param sigma Standard deviation of deposited Gaussians
-    def __init__(self, name="",sigma=1.0):
+    def __init__(self, group=None, sigma=1.0):
         hoomd.util.print_status_line()
 
+        if group is None:
+            group = hoomd.group.all()
+
+        name = group.name 
         _collective_variable.__init__(self, sigma, name)
 
-        self.cpp_force = _metadynamics.Density(hoomd.context.current.system_definition)
+        self.cpp_force = _metadynamics.Density(hoomd.context.current.system_definition, group.cpp_group, name)
 
         # add to System
         hoomd.context.current.system.addCompute(self.cpp_force, self.force_name)
