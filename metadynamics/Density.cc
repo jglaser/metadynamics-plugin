@@ -40,19 +40,16 @@ void Density::computeBiasForces(unsigned int timestep)
     Scalar Lx = global_box.getL().x;
     Scalar Ly = global_box.getL().y;
     Scalar Lz = global_box.getL().z;
-    Scalar xy = global_box.getTiltFactorXY();
-    Scalar xz = global_box.getTiltFactorXZ();
-    Scalar yz = global_box.getTiltFactorYZ();
 
     // derivative of rho w.r.t. V
     Scalar fac = -N/(V*V);
 
     // from Martyna Tobias Klein 1994 Eq. (2.20)
     m_external_virial[0] = - m_bias*fac*Lx*Ly*Lz;         // xx
-    m_external_virial[1] = - m_bias*fac*xy*Ly*Ly*Lz;      // xy
-    m_external_virial[2] = - m_bias*fac*xz*Ly*Lz*Lz;      // xz
+    m_external_virial[1] = 0;
+    m_external_virial[2] = 0;
     m_external_virial[3] = - m_bias*fac*Lx*Ly*Lz;         // yy
-    m_external_virial[4] = - m_bias*fac*yz*Lx*Lz*Lz;      // yz
+    m_external_virial[4] = 0;
     m_external_virial[5] = - m_bias*fac*Lx*Ly*Lz;         // zz
     }
 
