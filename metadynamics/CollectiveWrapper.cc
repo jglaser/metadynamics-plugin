@@ -153,14 +153,6 @@ void CollectiveWrapper::computeBiasForces(unsigned int timestep)
             }
         }
 
-    for (unsigned int i = 0; i < 6; ++i)
-        {
-        Scalar v = m_fc->getExternalVirial(i);
-
-        // note: we cannot change the external virial on the ForceCompute, so add it here
-        m_external_virial[i] = (fac-Scalar(1.0))*v;
-        }
-
     if (m_prof)
         m_prof->pop();
     }
