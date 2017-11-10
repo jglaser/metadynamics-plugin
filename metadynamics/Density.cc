@@ -22,7 +22,7 @@ Scalar Density::getCurrentValue(unsigned int timestep)
     Scalar V = m_pdata->getGlobalBox().getVolume(m_sysdef->getNDimensions()==2);
     unsigned int N = m_group->getNumMembersGlobal();
 
-    Scalar rho = N/V;
+    Scalar rho = (Scalar)N/V;
     return rho;
     }
 
@@ -42,15 +42,15 @@ void Density::computeBiasForces(unsigned int timestep)
     Scalar Lz = global_box.getL().z;
 
     // derivative of rho w.r.t. V
-    Scalar fac = -N/(V*V);
+    Scalar fac = -(Scalar)N/(V*V);
 
     // from Martyna Tobias Klein 1994 Eq. (2.20)
-    m_external_virial[0] = - m_bias*fac*Lx*Ly*Lz;         // xx
+    m_external_virial[0] = -m_bias*fac*Lx*Ly*Lz;         // xx
     m_external_virial[1] = 0;
     m_external_virial[2] = 0;
-    m_external_virial[3] = - m_bias*fac*Lx*Ly*Lz;         // yy
+    m_external_virial[3] = -m_bias*fac*Lx*Ly*Lz;         // yy
     m_external_virial[4] = 0;
-    m_external_virial[5] = - m_bias*fac*Lx*Ly*Lz;         // zz
+    m_external_virial[5] = -m_bias*fac*Lx*Ly*Lz;         // zz
     }
 
 void export_Density(py::module& m)
