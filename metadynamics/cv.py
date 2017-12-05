@@ -453,7 +453,7 @@ class mesh(_collective_variable):
         :param coeff:
             Additional parameters to the function, as a dict (optional)
         """
-        allocate arrays to store kernel and derivative
+        # allocate arrays to store kernel and derivative
         Ktable = _hoomd.std_vector_scalar()
         dKtable = _hoomd.std_vector_scalar()
 
