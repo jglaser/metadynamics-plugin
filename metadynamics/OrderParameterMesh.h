@@ -5,7 +5,10 @@
 
 #include <hoomd/md/CommunicatorGrid.h>
 
+#ifdef ENABLE_MPI
 #include <hoomd/extern/dfftlib/src/dfft_host.h>
+#endif
+
 #include <hoomd/extern/kiss_fftnd.h>
 
 /*! Order parameter evaluated using the particle mesh method
