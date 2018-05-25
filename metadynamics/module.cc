@@ -24,7 +24,7 @@ PYBIND11_PLUGIN(_metadynamics)
     {
     pybind11::module m("_metadynamics");
 
-    pybind11::bind_vector<int3>(m, "std_vector_int3");
+    pybind11::bind_vector<std::vector<int3 >>(m, "std_vector_int3");
 
     export_CollectiveVariable(m);
     export_IntegratorMetaDynamics(m);

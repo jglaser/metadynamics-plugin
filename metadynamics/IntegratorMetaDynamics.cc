@@ -11,7 +11,7 @@
 
 namespace py = pybind11;
 
-#include <hoomd/extern/Eigen/Dense>
+#include <hoomd/extern/Eigen/Eigen/Dense>
 
 using namespace std;
 
