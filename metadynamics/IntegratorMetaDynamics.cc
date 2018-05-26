@@ -557,11 +557,11 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
             {
             if (m_grid_fname2 != "")
                 {
-                writeGrid(m_cur_file ? m_grid_fname2 : m_grid_fname1);
+                writeGrid(m_cur_file ? m_grid_fname2 : m_grid_fname1, timestep);
                 m_cur_file = m_cur_file ? 0 : 1;
                 }
             else
-                writeGrid(m_grid_fname1);
+                writeGrid(m_grid_fname1, timestep);
             }
 
     
@@ -811,7 +811,7 @@ void IntegratorMetaDynamics::dumpGrid(const std::string& filename1, const std::s
     if (period == 0)
         {
         // dump grid immediately
-        writeGrid(filename1);
+        writeGrid(filename1, 0);
         return;
         }
 
@@ -820,7 +820,7 @@ void IntegratorMetaDynamics::dumpGrid(const std::string& filename1, const std::s
     m_grid_fname2 = filename2;
     }
 
-void IntegratorMetaDynamics::writeGrid(const std::string& filename)
+void IntegratorMetaDynamics::writeGrid(const std::string& filename, unsigned int timestep)
     {
     std::ofstream file;
 
@@ -838,7 +838,7 @@ void IntegratorMetaDynamics::writeGrid(const std::string& filename)
 
  
     // open output file
-    file.open(filename.c_str(), ios_base::out);
+    file.open((filename+"_"+std::to_string(timestep)).c_str(), ios_base::out);
 
     // write file header
     file << "#n_cv: " << m_grid_index.getDimension() << std::endl;

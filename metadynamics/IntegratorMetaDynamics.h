@@ -355,7 +355,7 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         void readGrid(const std::string& filename);
 
         //! Helper function to write grid data
-        void writeGrid(const std::string& filename);
+        void writeGrid(const std::string& filename, unsigned int timestep);
 
         //! Helper function to update the grid values
         void updateGrid(std::vector<Scalar>& current_val, Scalar scal);
