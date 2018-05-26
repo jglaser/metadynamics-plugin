@@ -2,6 +2,7 @@
 #include <hoomd/HOOMDMath.h>
 #include <hoomd/Index1D.h>
 #include <hoomd/BoxDim.h>
+#include <hoomd/CachedAllocator.h>
 
 #include <cufft.h>
 
@@ -43,10 +44,10 @@ void gpu_compute_mesh_virial(const unsigned int n_wave_vectors,
 void gpu_update_meshes(const unsigned int n_wave_vectors,
                          cufftComplex *d_fourier_mesh,
                          cufftComplex *d_fourier_mesh_G,
-                         const Scalar *d_inf_f,
+                         const Scalar *d_interpolation_f,
+                         const Scalar mode_sq,
                          const Scalar3 *d_k,
-                         const unsigned int N_global,
-                         Scalar sq_pow);
+                         const unsigned int N_global);
 
 void gpu_compute_forces(const unsigned int N,
                         const Scalar4 *d_postype,
@@ -98,3 +99,8 @@ void gpu_compute_q_max(unsigned int n_wave_vectors,
                    const Scalar3 *d_k,
                    const cufftComplex *d_fourier_mesh,
                    const unsigned int block_size);
+
+Scalar gpu_compute_mode_sq(unsigned int N,
+    const Scalar4 *d_postype,
+    const Scalar *d_mode,
+    const CachedAllocator& alloc);

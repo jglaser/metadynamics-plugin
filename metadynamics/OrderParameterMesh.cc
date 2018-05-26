@@ -33,7 +33,6 @@ OrderParameterMesh::OrderParameterMesh(std::shared_ptr<SystemDefinition> sysdef,
       m_box_changed(false),
       m_cv(Scalar(0.0)),
       m_q_max_last_computed(0),
-      m_sq_pow(1.0),
       m_k_min(0.0),
       m_k_max(0.0),
       m_delta_k(0.0),
@@ -51,6 +50,8 @@ OrderParameterMesh::OrderParameterMesh(std::shared_ptr<SystemDefinition> sysdef,
 
     GPUArray<Scalar> mode_array(m_pdata->getNTypes(), m_exec_conf);
     m_mode.swap(mode_array);
+
+    m_mode_sq = 0.0;
 
     ArrayHandle<Scalar> h_mode(m_mode, access_location::host, access_mode::overwrite);
     std::copy(mode.begin(), mode.end(), h_mode.data);
@@ -214,6 +215,10 @@ void OrderParameterMesh::setupMesh()
     GPUArray<Scalar> inf_f(m_n_inner_cells, m_exec_conf);
     m_inf_f.swap(inf_f);
 
+    // allocate memory for interpolationluence function and k values
+    GPUArray<Scalar> interpolation_f(m_n_inner_cells, m_exec_conf);
+    m_interpolation_f.swap(interpolation_f);
+
     GPUArray<Scalar3> k(m_n_inner_cells, m_exec_conf);
     m_k.swap(k);
 
@@ -341,12 +346,14 @@ void OrderParameterMesh::computeInfluenceFunction()
     if (m_prof) m_prof->push("influence function");
 
     ArrayHandle<Scalar> h_inf_f(m_inf_f,access_location::host, access_mode::overwrite);
+    ArrayHandle<Scalar> h_interpolation_f(m_interpolation_f,access_location::host, access_mode::overwrite);
     ArrayHandle<Scalar3> h_k(m_k,access_location::host, access_mode::overwrite);
 
     ArrayHandle<Scalar> h_table(m_table, access_location::host, access_mode::read);
 
     // reset arrays
     memset(h_inf_f.data, 0, sizeof(Scalar)*m_inf_f.getNumElements());
+    memset(h_interpolation_f.data, 0, sizeof(Scalar)*m_interpolation_f.getNumElements());
     memset(h_k.data, 0, sizeof(Scalar3)*m_k.getNumElements());
 
     const BoxDim& global_box = m_pdata->getGlobalBox();
@@ -436,8 +443,10 @@ void OrderParameterMesh::computeInfluenceFunction()
             }
 
         h_inf_f.data[cell_idx] = val;
-
         h_k.data[cell_idx] = k;
+
+        Scalar3 kH = Scalar(M_PI*2.0)*make_scalar3(n.x/global_dim.x, n.y/global_dim.y, n.z/global_dim.z);
+        h_interpolation_f.data[cell_idx] = assignTSCfourier(kH.x)*assignTSCfourier(kH.y)*assignTSCfourier(kH.z);
         }
 
     if (m_prof) m_prof->pop();
@@ -473,6 +482,35 @@ Scalar OrderParameterMesh::assignTSCderiv(Scalar x)
     return ret;
     }
 
+/*! \param k Wave number, times mesh size
+ */
+Scalar OrderParameterMesh::assignTSCfourier(Scalar x)
+    {
+    //! Coefficients of a power expansion of sin(x)/x
+    const Scalar cpu_sinc_coeff[] = {Scalar(1.0), Scalar(-1.0/6.0), Scalar(1.0/120.0),
+                            Scalar(-1.0/5040.0),Scalar(1.0/362880.0),
+                            Scalar(-1.0/39916800.0)};
+    Scalar sinc = 0;
+
+    if (x*x <= Scalar(1.0))
+        {
+        Scalar term = Scalar(1.0);
+        for (unsigned int i = 0; i < 6; ++i)
+           {
+           sinc += cpu_sinc_coeff[i] * term;
+           term *= x*x;
+           }
+        }
+    else
+        {
+        sinc = sin(x)/x;
+        }
+
+    // third order assigment function
+    return sinc*sinc*sinc;
+    }
+
+
 //! Assignment of particles to mesh using three-point scheme (triangular shaped cloud)
 /*! This is a second order accurate scheme with continuous value and continuous derivative
  */
@@ -490,6 +528,8 @@ void OrderParameterMesh::assignParticles()
     memset(h_mesh.data, 0, sizeof(kiss_fft_cpx)*m_mesh.getNumElements());
 
     unsigned int nparticles = m_pdata->getN();
+
+    m_mode_sq = 0.0;
 
     // loop over local particles
     for (unsigned int idx = 0; idx < nparticles; ++idx)
@@ -580,7 +620,21 @@ void OrderParameterMesh::assignParticles()
                     h_mesh.data[neigh_idx].r += h_mode.data[type]*density_fraction;
                     }
 
+        m_mode_sq += h_mode.data[type]*h_mode.data[type];
         }  // end of loop over particles
+
+    #ifdef ENABLE_MPI
+    if (m_pdata->getDomainDecomposition())
+        {
+        // reduce sum
+        MPI_Allreduce(MPI_IN_PLACE,
+                      &m_mode_sq,
+                      1,
+                      MPI_HOOMD_SCALAR,
+                      MPI_SUM,
+                      m_exec_conf->getMPICommunicator());
+        }
+    #endif
 
     if (m_prof) m_prof->pop();
     }
@@ -629,6 +683,8 @@ void OrderParameterMesh::updateMeshes()
 
         {
         ArrayHandle<kiss_fft_cpx> h_fourier_mesh_G(m_fourier_mesh_G, access_location::host, access_mode::overwrite);
+        ArrayHandle<Scalar> h_interpolation_f(m_interpolation_f, access_location::host, access_mode::read);
+
         // multiply with influence function
         for (unsigned int k = 0; k < m_n_inner_cells; ++k)
             {
@@ -638,14 +694,15 @@ void OrderParameterMesh::updateMeshes()
             f.r /= (Scalar) N_global;
             f.i /= (Scalar) N_global;
 
-            Scalar val(1.0);
-            if (m_sq_pow > Scalar(0.0))
-                {
-                val = pow(f.r*f.r+f.i*f.i, m_sq_pow);
-                }
+            Scalar val = f.r*f.r+f.i*f.i;
 
-            h_fourier_mesh_G.data[k].r = f.r * val * h_inf_f.data[k];
-            h_fourier_mesh_G.data[k].i = f.i * val * h_inf_f.data[k];
+            h_fourier_mesh_G.data[k].r = f.r * val;
+            h_fourier_mesh_G.data[k].i = f.i * val;
+
+            Scalar diagonal_term = h_interpolation_f.data[k]*h_interpolation_f.data[k]*m_mode_sq/(Scalar)N_global/(Scalar)N_global;
+
+            h_fourier_mesh_G.data[k].r -= f.r * diagonal_term;
+            h_fourier_mesh_G.data[k].i -= f.i * diagonal_term;
 
             h_fourier_mesh.data[k] = f;
             }
@@ -798,7 +855,7 @@ void OrderParameterMesh::interpolateForces()
                    }
 
         // Multiply with bias potential derivative
-        force *= (Scalar(2.0)*(m_sq_pow+Scalar(1.0)))/(Scalar)n_global*m_bias/Scalar(2.0);
+        force *= Scalar(2.0)/(Scalar)n_global*m_bias;
 
         h_force.data[idx] = make_scalar4(force.x,force.y,force.z,0.0);
         }  // end of loop over particles
@@ -883,7 +940,7 @@ Scalar OrderParameterMesh::getCurrentValue(unsigned int timestep)
         m_n_ghost_cells.z != n_ghost_cells.z)
         ghost_cell_num_changed = true;
 
-    if (m_box_changed || ghost_cell_num_changed)
+    if (ghost_cell_num_changed)
         {
         if (ghost_cell_num_changed) setupMesh();
         computeInfluenceFunction();
@@ -967,12 +1024,7 @@ void OrderParameterMesh::computeVirial()
 
             kfac *= val_D;
 
-            Scalar val(1.0);
-            if (m_sq_pow > Scalar(0.0))
-                {
-                val = fast::pow((fourier.r*fourier.r+fourier.i*fourier.i)/(Scalar)Nglobal, m_sq_pow);
-                }
-
+            Scalar val = (fourier.r*fourier.r+fourier.i*fourier.i)/(Scalar)Nglobal;
             Scalar rhog = (fourier.r * fourier.r + fourier.i * fourier.i)*val/(Scalar)Nglobal;
 
             virial[0] += rhog*kfac*k.x*k.x; // xx
@@ -1129,7 +1181,6 @@ void export_OrderParameterMesh(py::module& m)
                                      const std::vector<Scalar>,
                                      const std::vector<int3>
                                     >())
-        .def("setSqPower", &OrderParameterMesh::setSqPower)
         .def("setTable", &OrderParameterMesh::setTable)
         .def("setUseTable", &OrderParameterMesh::setUseTable);
     }

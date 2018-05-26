@@ -45,14 +45,6 @@ class OrderParameterMesh : public CollectiveVariable
          */
         Scalar getLogValue(const std::string& quantity, unsigned int timestep);
 
-        //! Set power of structure factor in mode sum
-        /*! \param power power of S(q), minus one
-         */
-        void setSqPower(Scalar sq_pow)
-            {
-            m_sq_pow = sq_pow;
-            }
-
         /*! Set the convolution kernel table
          * \param K convolution kernel as function of k
          * \param d_K derivative of convolution kernel
@@ -89,7 +81,9 @@ class OrderParameterMesh : public CollectiveVariable
         unsigned int m_radius;              //!< Stencil radius (in units of mesh size)
         unsigned int m_n_inner_cells;       //!< Number of inner mesh points (without ghost cells)
         GPUArray<Scalar> m_mode;            //!< Per-type scalar multiplying density ("charges")
+        Scalar m_mode_sq;                   //!< Sum of squared mode amplitudes
         GPUArray<Scalar> m_inf_f;           //!< Fourier representation of the influence function (real part)
+        GPUArray<Scalar> m_interpolation_f; //!< Fourier representation of the interpolation function
         GPUArray<Scalar3> m_k;              //!< Mesh of k values
         Scalar m_qstarsq;                   //!< Short wave length cut-off squared for density harmonics
         bool m_is_first_step;               //!< True if we have not yet computed the influence function
@@ -104,8 +98,6 @@ class OrderParameterMesh : public CollectiveVariable
         Scalar m_sq_max;                           //!< Maximum structure factor
 
         GPUArray<int3> m_zero_modes;        //!< Fourier modes that should be zeroed
-
-        Scalar m_sq_pow;                           //!< power-1 of the structure factor S(q) in mode sum
 
         Scalar m_k_min;                             //!< Minimum k of tabulated convolution kernel
         Scalar m_k_max;                             //!< Maximum k of tabulated convolution kernel
@@ -134,6 +126,9 @@ class OrderParameterMesh : public CollectiveVariable
 
         //! Derivative of the TSC (triangular-shaped cloud) charge assignment function
         Scalar assignTSCderiv(Scalar x);
+
+        //! Fourier representation of the TSC (triangular-shaped cloud) charge assignment function
+        Scalar assignTSCfourier(Scalar k);
 
         //! Helper function to assign particle coordinates to mesh
         virtual void assignParticles();

@@ -510,10 +510,10 @@ void gpu_compute_mesh_virial(const unsigned int n_wave_vectors,
 __global__ void gpu_update_meshes_kernel(const unsigned int n_wave_vectors,
                                          cufftComplex *d_fourier_mesh,
                                          cufftComplex *d_fourier_mesh_G,
-                                         const Scalar *d_inf_f,
+                                         const Scalar *d_interpolation_f,
+                                         const Scalar mode_sq,
                                          const Scalar3 *d_k,
-                                         const unsigned int N_global,
-                                         Scalar sq_pow)
+                                         const unsigned int N_global)
     {
     unsigned int k = blockDim.x * blockIdx.x + threadIdx.x;
 
@@ -524,15 +524,17 @@ __global__ void gpu_update_meshes_kernel(const unsigned int n_wave_vectors,
     // Normalization
     f.x /= (Scalar)N_global;
     f.y /= (Scalar)N_global;
-    Scalar val(1.0);
-    if (sq_pow > Scalar(0.0))
-        {
-        val = fast::pow(f.x*f.x+f.y*f.y, sq_pow);
-        }
+
+    Scalar val = f.x*f.x+f.y*f.y;
 
     cufftComplex fourier_G;
-    fourier_G.x =f.x * val * d_inf_f[k];
-    fourier_G.y =f.y * val * d_inf_f[k];
+    fourier_G.x =f.x * val;
+    fourier_G.y =f.y * val;
+
+    Scalar diagonal_term = d_interpolation_f[k]*d_interpolation_f[k]*mode_sq/(Scalar)N_global/(Scalar)N_global;
+
+    fourier_G.x -= f.x * diagonal_term;
+    fourier_G.y -= f.y * diagonal_term;
 
     d_fourier_mesh[k] = f;
     d_fourier_mesh_G[k] = fourier_G;
@@ -541,10 +543,10 @@ __global__ void gpu_update_meshes_kernel(const unsigned int n_wave_vectors,
 void gpu_update_meshes(const unsigned int n_wave_vectors,
                          cufftComplex *d_fourier_mesh,
                          cufftComplex *d_fourier_mesh_G,
-                         const Scalar *d_inf_f,
+                         const Scalar *d_interpolation_f,
+                         const Scalar mode_sq,
                          const Scalar3 *d_k,
-                         const unsigned int N_global,
-                         Scalar sq_pow)
+                         const unsigned int N_global)
 
     {
     const unsigned int block_size = 512;
@@ -552,10 +554,10 @@ void gpu_update_meshes(const unsigned int n_wave_vectors,
     gpu_update_meshes_kernel<<<n_wave_vectors/block_size+1, block_size>>>(n_wave_vectors,
                                                                           d_fourier_mesh,
                                                                           d_fourier_mesh_G,
-                                                                          d_inf_f,
+                                                                          d_interpolation_f,
+                                                                          mode_sq,
                                                                           d_k,
-                                                                          N_global,
-                                                                          sq_pow);
+                                                                          N_global);
     }
 
 //! Texture for reading particle positions
@@ -1308,4 +1310,29 @@ void gpu_compute_q_max(unsigned int n_wave_vectors,
     gpu_compute_qmax_final_kernel<<<1, final_block_size,shared_size>>>(d_max_partial,
                                                                 n_blocks,
                                                                 d_q_max);
+    }
+
+#include <thrust/device_ptr.h>
+#include <thrust/inner_product.h>
+#include <thrust/iterator/permutation_iterator.h>
+#include <thrust/iterator/transform_iterator.h>
+
+struct get_type
+    {
+    __device__ unsigned int operator()(const Scalar4& postype)
+        {
+        return __scalar_as_int(postype.w);
+        }
+    };
+
+Scalar gpu_compute_mode_sq(unsigned int N,
+    const Scalar4 *d_postype,
+    const Scalar *d_mode,
+    const CachedAllocator& alloc)
+    {
+    thrust::device_ptr<const Scalar> mode(d_mode);
+    thrust::device_ptr<const Scalar4> postype(d_postype);
+    auto it = thrust::make_permutation_iterator(mode, thrust::make_transform_iterator(postype, get_type()));
+
+    return thrust::inner_product(thrust::cuda::par(alloc), it, it + N, it, Scalar(0.0));
     }

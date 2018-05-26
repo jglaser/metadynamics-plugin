@@ -222,6 +222,25 @@ void OrderParameterMeshGPU::assignParticles()
             CHECK_CUDA_ERROR();
         }
 
+    // reduce squares of mode amplitude
+    m_mode_sq = gpu_compute_mode_sq(m_pdata->getN(),
+        d_postype.data,
+        d_mode.data,
+        m_exec_conf->getCachedAllocator());
+
+    #ifdef ENABLE_MPI
+    if (m_pdata->getDomainDecomposition())
+        {
+        // reduce sum
+        MPI_Allreduce(MPI_IN_PLACE,
+                      &m_mode_sq,
+                      1,
+                      MPI_HOOMD_SCALAR,
+                      MPI_SUM,
+                      m_exec_conf->getMPICommunicator());
+        }
+    #endif
+
     if (m_prof) m_prof->pop(m_exec_conf);
     }
 
@@ -275,16 +294,16 @@ void OrderParameterMeshGPU::updateMeshes()
         ArrayHandle<cufftComplex> d_fourier_mesh(m_fourier_mesh, access_location::device, access_mode::readwrite);
         ArrayHandle<cufftComplex> d_fourier_mesh_G(m_fourier_mesh_G, access_location::device, access_mode::overwrite);
 
-        ArrayHandle<Scalar> d_inf_f(m_inf_f, access_location::device, access_mode::read);
+        ArrayHandle<Scalar> d_interpolation_f(m_interpolation_f, access_location::device, access_mode::read);
         ArrayHandle<Scalar3> d_k(m_k, access_location::device, access_mode::read);
 
         gpu_update_meshes(m_n_inner_cells,
                           d_fourier_mesh.data,
                           d_fourier_mesh_G.data,
-                          d_inf_f.data,
+                          d_interpolation_f.data,
+                          m_mode_sq,
                           d_k.data,
-                          m_pdata->getNGlobal(),
-                          m_sq_pow);
+                          m_pdata->getNGlobal());
 
         if (m_exec_conf->isCUDAErrorCheckingEnabled())
             CHECK_CUDA_ERROR();
@@ -365,7 +384,7 @@ void OrderParameterMeshGPU::interpolateForces()
                        m_pdata->getBox(),
                        m_pdata->getGlobalBox(),
                        m_pdata->getNGlobal(),
-                       m_sq_pow);
+                       1.0);
 
     if (m_exec_conf->isCUDAErrorCheckingEnabled())
         CHECK_CUDA_ERROR();
@@ -405,7 +424,7 @@ void OrderParameterMeshGPU::computeVirial()
                             d_table_D.data,
                             m_use_table,
                             m_pdata->getNGlobal(),
-                            m_sq_pow);
+                            1.0);
 
     if (m_exec_conf->isCUDAErrorCheckingEnabled())
         CHECK_CUDA_ERROR();
@@ -480,55 +499,6 @@ Scalar OrderParameterMeshGPU::computeCV()
     if (m_prof) m_prof->pop(m_exec_conf);
 
     return sum;
-    }
-
-//! Compute the optimal influence function
-void OrderParameterMeshGPU::computeInfluenceFunction()
-    {
-    if (m_prof) m_prof->push(m_exec_conf, "influence function");
-
-    ArrayHandle<Scalar> d_inf_f(m_inf_f, access_location::device, access_mode::overwrite);
-    ArrayHandle<Scalar3> d_k(m_k, access_location::device, access_mode::overwrite);
-    ArrayHandle<int3> d_zero_modes(m_zero_modes, access_location::device, access_mode::read);
-
-    uint3 global_dim = m_mesh_points;
-    uint3 pidx = make_uint3(0,0,0);
-    uint3 pdim = make_uint3(0,0,0);
-    #ifdef ENABLE_MPI
-    if (m_pdata->getDomainDecomposition())
-        {
-        const Index3D &didx = m_pdata->getDomainDecomposition()->getDomainIndexer();
-        global_dim.x *= didx.getW();
-        global_dim.y *= didx.getH();
-        global_dim.z *= didx.getD();
-        pidx = m_pdata->getDomainDecomposition()->getGridPos();
-        pdim = make_uint3(didx.getW(), didx.getH(), didx.getD());
-        }
-    #endif
-
-    // access tabulated convolution kernel
-    ArrayHandle<Scalar> d_table(m_table, access_location::device, access_mode::read);
-
-    gpu_compute_influence_function(m_mesh_points,
-                                   global_dim,
-                                   d_inf_f.data,
-                                   d_k.data,
-                                   m_pdata->getGlobalBox(),
-                                   d_zero_modes.data,
-                                   m_zero_modes.getNumElements(),
-                                   m_local_fft,
-                                   pidx,
-                                   pdim,
-                                   m_k_min,
-                                   m_k_max,
-                                   m_delta_k,
-                                   d_table.data,
-                                   m_use_table);
-
-    if (m_exec_conf->isCUDAErrorCheckingEnabled())
-        CHECK_CUDA_ERROR();
-
-    if (m_prof) m_prof->pop(m_exec_conf);
     }
 
 void OrderParameterMeshGPU::computeQmax(unsigned int timestep)

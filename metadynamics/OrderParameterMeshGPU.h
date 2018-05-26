@@ -45,9 +45,6 @@ class OrderParameterMeshGPU : public OrderParameterMesh
         //! Helper function to interpolate the forces
         virtual void interpolateForces();
 
-        //! Compute the optimal influence function
-        virtual void computeInfluenceFunction();
-
         //! Helper function to calculate value of collective variable
         virtual Scalar computeCV();
 

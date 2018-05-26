@@ -420,16 +420,10 @@ class mesh(_collective_variable):
     ## \var cpp_force
     # \internal
 
-    def set_params(self, sq_pow=None, use_table=None, **args):
+    def set_params(self, use_table=None, **args):
         """Set parameters for the collective variable
-
-        :param sq_pow:
-            Power of S(q), minus one, in the mode sum
         """
         hoomd.util.print_status_line()
-
-        if sq_pow is not None:
-            self.cpp_force.setSqPower(sq_pow)
 
         if use_table is not None:
             self.cpp_force.setUseTable(use_table)
