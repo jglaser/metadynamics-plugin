@@ -1316,8 +1316,9 @@ void gpu_compute_q_max(unsigned int n_wave_vectors,
 #include <thrust/inner_product.h>
 #include <thrust/iterator/permutation_iterator.h>
 #include <thrust/iterator/transform_iterator.h>
+#include <thrust/execution_policy.h>
 
-struct get_type
+struct get_type : thrust::unary_function<Scalar4, unsigned int>
     {
     __device__ unsigned int operator()(const Scalar4& postype)
         {
