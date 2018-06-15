@@ -1269,6 +1269,9 @@ void IntegratorMetaDynamics::resetHistogram()
 
 void IntegratorMetaDynamics::computeSigma()
     {
+    if (m_prof)
+        m_prof->push(m_exec_conf,"Derivatives");
+
     std::vector<CollectiveVariableItem>::iterator iti,itj;
 
     unsigned int ncv = m_variables.size();
@@ -1361,6 +1364,9 @@ void IntegratorMetaDynamics::computeSigma()
         }
 
     delete[] sigmasq;
+
+    if (m_prof)
+        m_prof->pop();
     }
 
 Scalar IntegratorMetaDynamics::sigmaDeterminant()
