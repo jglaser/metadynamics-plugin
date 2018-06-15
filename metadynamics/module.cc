@@ -20,10 +20,8 @@
 
 // specify the python module. Note that the name must expliclty match the PROJECT() name provided in CMakeLists
 // (with an underscore in front)
-PYBIND11_PLUGIN(_metadynamics)
+PYBIND11_MODULE(_metadynamics, m)
     {
-    pybind11::module m("_metadynamics");
-
     pybind11::bind_vector<std::vector<int3 >>(m, "std_vector_int3");
 
     export_CollectiveVariable(m);
@@ -40,6 +38,4 @@ PYBIND11_PLUGIN(_metadynamics)
     export_LamellarOrderParameterGPU(m);
     export_OrderParameterMeshGPU(m);
 #endif
-
-    return m.ptr();
     }
