@@ -164,7 +164,7 @@ void IntegratorMetaDynamics::prepRun(unsigned int timestep)
             m_sigma_inv.swap(sigma_inv);
 
             GPUArray<Scalar> M(m_variables.size()*m_variables.size(), m_exec_conf);
-            m_M.swap(M);
+            m_M.swap(sigma_inv);
 
             ArrayHandle<Scalar> h_cv_min(m_cv_min, access_location::host, access_mode::overwrite);
             ArrayHandle<Scalar> h_cv_max(m_cv_max, access_location::host, access_mode::overwrite);
