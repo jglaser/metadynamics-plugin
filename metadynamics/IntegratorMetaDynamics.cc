@@ -1181,7 +1181,7 @@ void IntegratorMetaDynamics::updateSigmaGrid(std::vector<Scalar>& current_val)
     if (m_prof) m_prof->push("update grid");
 
     ArrayHandle<Scalar> h_sigma_grid_delta(m_sigma_grid_delta, access_location::host, access_mode::readwrite);
-    ArrayHandle<Scalar> h_M(m_M_grid_delta, access_location::host, access_mode::read);
+    ArrayHandle<Scalar> h_M(m_M, access_location::host, access_mode::read);
     ArrayHandle<Scalar> h_M_grid_delta(m_M_grid_delta, access_location::host, access_mode::readwrite);
     ArrayHandle<unsigned int> h_grid_hist_gauss_delta(m_grid_hist_gauss_delta, access_location::host, access_mode::readwrite);
 
