@@ -277,6 +277,7 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
 
         std::vector<std::vector<Scalar> > m_cv_values;    //!< History of CV values
 
+        unsigned int m_num_update_steps;                  //!< Number of update steps performed in this run thus far
         unsigned int m_num_gaussians;                     //!< Number of Gaussians deposited
 
         std::vector<std::string> m_log_names;             //!< Names of logging quantities
@@ -285,6 +286,7 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         std::vector<Scalar> m_bias_potential;             //!< List of values of the bias potential
 
         bool m_is_initialized;                            //!< True if history-dependent potential has been initialized
+        bool m_histograms_initialized;                    //!< True if histograms have been set up
         const std::string m_filename;                     //!< Name of output file
         bool m_overwrite;                                 //!< True if the file should be overwritten
         bool m_is_appending;                              //!< True if we are appending to the file
@@ -308,13 +310,10 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         GPUArray<Scalar> m_cv_min;                        //!< Minimum grid values per CV
         GPUArray<Scalar> m_cv_max;                        //!< Maximum grid values per CV
         GPUArray<Scalar> m_sigma_inv;                     //!< Square matrix of Gaussian standard deviations (inverse)
-        GPUArray<Scalar> m_M;                             //!< Tesor of bias potential derivatives
         GPUArray<Scalar> m_sigma_grid;                    //!< Gaussian volume as function of the collective ariables
         GPUArray<Scalar> m_sigma_grid_delta;              //!< Gaussian volume as function of the collective ariables, increments
-        GPUArray<Scalar> m_M_grid;                        //!< Tensor of bias potential derivative products on grid
-        GPUArray<Scalar> m_M_grid_delta;                  //!< Tensor of bias potential derivative products on grid, increments
-        GPUArray<unsigned int> m_grid_hist_gauss;         //!< Number of Gaussians deposited at every grid point
-        GPUArray<unsigned int> m_grid_hist_gauss_delta;   //!< Increments in number of Gaussians
+        GPUArray<unsigned int> m_grid_hist_gauss;               //!< Number of Gaussians deposited at every grid point
+        GPUArray<unsigned int> m_grid_hist_gauss_delta;         //!< Increments in number of Gaussians
         GPUArray<unsigned int> m_grid_hist;               //!< Number of times a state has been visited
         GPUArray<unsigned int> m_grid_hist_delta;         //!< Deltas of histogram
         GPUArray<Scalar> m_current_val;                   //!< Current CV values array
