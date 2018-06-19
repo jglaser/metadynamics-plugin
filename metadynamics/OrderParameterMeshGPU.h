@@ -9,6 +9,7 @@
 
 #include <hoomd/GPUFlags.h>
 #include <hoomd/md/CommunicatorGridGPU.h>
+#include <cufft.h>
 
 #ifdef ENABLE_MPI
 #ifndef USE_HOST_DFFT
