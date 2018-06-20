@@ -531,7 +531,7 @@ __global__ void gpu_update_meshes_kernel(const unsigned int n_wave_vectors,
     fourier_G.x =f.x * val;
     fourier_G.y =f.y * val;
 
-    Scalar diagonal_term = d_interpolation_f[k]*d_interpolation_f[k]*mode_sq/(Scalar)N_global/(Scalar)N_global;
+    Scalar diagonal_term = Scalar(0.5)*d_interpolation_f[k]*d_interpolation_f[k]*mode_sq/(Scalar)N_global/(Scalar)N_global;
 
     fourier_G.x -= f.x * diagonal_term;
     fourier_G.y -= f.y * diagonal_term;
