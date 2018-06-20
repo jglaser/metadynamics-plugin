@@ -457,6 +457,7 @@ Scalar OrderParameterMeshGPU::computeCV()
 
     ArrayHandle<cufftComplex> d_fourier_mesh(m_fourier_mesh, access_location::device, access_mode::read);
     ArrayHandle<cufftComplex> d_fourier_mesh_G(m_fourier_mesh_G, access_location::device, access_mode::read);
+    ArrayHandle<Scalar> d_interpolation_f(m_interpolation_f, access_location::device, access_mode::read);
 
     ArrayHandle<Scalar> d_sum_partial(m_sum_partial, access_location::device, access_mode::overwrite);
 
@@ -476,6 +477,9 @@ Scalar OrderParameterMeshGPU::computeCV()
                    d_fourier_mesh_G.data,
                    m_block_size,
                    m_mesh_points,
+                   d_interpolation_f.data,
+                   m_mode_sq,
+                   m_pdata->getNGlobal(),
                    exclude_dc);
 
     if (m_exec_conf->isCUDAErrorCheckingEnabled())

@@ -699,7 +699,7 @@ void OrderParameterMesh::updateMeshes()
             h_fourier_mesh_G.data[k].r = f.r * val;
             h_fourier_mesh_G.data[k].i = f.i * val;
 
-            Scalar diagonal_term = h_interpolation_f.data[k]*h_interpolation_f.data[k]*m_mode_sq/(Scalar)N_global/(Scalar)N_global;
+            Scalar diagonal_term = Scalar(0.5)*h_interpolation_f.data[k]*h_interpolation_f.data[k]*m_mode_sq/(Scalar)N_global/(Scalar)N_global;
 
             h_fourier_mesh_G.data[k].r -= f.r * diagonal_term;
             h_fourier_mesh_G.data[k].i -= f.i * diagonal_term;
@@ -869,6 +869,7 @@ Scalar OrderParameterMesh::computeCV()
 
     ArrayHandle<kiss_fft_cpx> h_fourier_mesh(m_fourier_mesh, access_location::host, access_mode::read);
     ArrayHandle<kiss_fft_cpx> h_fourier_mesh_G(m_fourier_mesh_G, access_location::host, access_mode::read);
+    ArrayHandle<Scalar> h_interpolation_f(m_interpolation_f, access_location::host, access_mode::read);
 
     Scalar sum(0.0);
 
@@ -881,6 +882,8 @@ Scalar OrderParameterMesh::computeCV()
         }
     #endif
 
+    unsigned int N_global = m_pdata->getNGlobal();
+
     for (unsigned int k = 0; k < m_n_inner_cells; ++k)
         {
         bool exclude = false;
@@ -892,6 +895,10 @@ Scalar OrderParameterMesh::computeCV()
             {
             sum += h_fourier_mesh_G.data[k].r * h_fourier_mesh.data[k].r
                 + h_fourier_mesh_G.data[k].i * h_fourier_mesh.data[k].i;
+
+            Scalar norm2 = h_fourier_mesh.data[k].r*h_fourier_mesh.data[k].r + h_fourier_mesh.data[k].i*h_fourier_mesh.data[k].i;
+            Scalar diagonal_term = Scalar(0.5)*norm2*h_interpolation_f.data[k]*h_interpolation_f.data[k]*m_mode_sq/(Scalar)N_global/(Scalar)N_global;
+            sum -= diagonal_term;
             }
         }
 

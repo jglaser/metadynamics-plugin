@@ -773,6 +773,9 @@ __global__ void kernel_calculate_cv_partial(
             Scalar *sum_partial,
             const cufftComplex *d_fourier_mesh,
             const cufftComplex *d_fourier_mesh_G,
+            const Scalar *d_interpolation_f,
+            const Scalar mode_sq,
+            const unsigned int N_global,
             const bool exclude_dc)
     {
     extern __shared__ Scalar sdata[];
@@ -785,7 +788,13 @@ __global__ void kernel_calculate_cv_partial(
 
     if (j < n_wave_vectors) {
         if (! exclude_dc || j != 0)
+            {
             mySum = d_fourier_mesh[j].x * d_fourier_mesh_G[j].x + d_fourier_mesh[j].y * d_fourier_mesh_G[j].y;
+
+            Scalar norm2 = d_fourier_mesh[j].x*d_fourier_mesh[j].x + d_fourier_mesh[j].y*d_fourier_mesh[j].y;
+            Scalar diagonal_term = Scalar(0.5)*norm2*d_interpolation_f[j]*d_interpolation_f[j]*mode_sq/(Scalar)N_global/(Scalar)N_global;
+            mySum -= diagonal_term;
+            }
         }
 
     sdata[tidx] = mySum;
@@ -852,6 +861,9 @@ void gpu_compute_cv(unsigned int n_wave_vectors,
                    const cufftComplex *d_fourier_mesh_G,
                    const unsigned int block_size,
                    const uint3 mesh_dim,
+                   const Scalar *d_interpolation_f,
+                   const Scalar mode_sq,
+                   const unsigned int N_global,
                    const bool exclude_dc)
     {
     unsigned int n_blocks = n_wave_vectors/block_size + 1;
@@ -862,6 +874,9 @@ void gpu_compute_cv(unsigned int n_wave_vectors,
                d_sum_partial,
                d_fourier_mesh,
                d_fourier_mesh_G,
+               d_interpolation_f,
+               mode_sq,
+               N_global,
                exclude_dc);
 
     // calculate final sum of mesh values

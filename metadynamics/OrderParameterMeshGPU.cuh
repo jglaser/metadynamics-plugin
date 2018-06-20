@@ -69,6 +69,9 @@ void gpu_compute_cv(unsigned int n_wave_vectors,
                    const cufftComplex *d_fourier_mesh_G,
                    const unsigned int block_size,
                    const uint3 mesh_dim,
+                   const Scalar *d_interpolation_f,
+                   const Scalar mode_sq,
+                   const unsigned int N_global,
                    const bool exclude_dc);
 
 void gpu_compute_virial(unsigned int n_wave_vectors,
