@@ -232,9 +232,6 @@ class mode_metadynamics(md.integrate._integrator):
             num_cv = 0
             for f in hoomd.context.current.forces:
                 if isinstance(f, cv._collective_variable) and f.grid_set:
-                    if f.umbrella:
-                        continue
-
                     if f.name != self.cv_names[num_cv]:
                         notfound = True
                     num_cv += 1
@@ -250,9 +247,6 @@ class mode_metadynamics(md.integrate._integrator):
 
         for f in hoomd.context.current.forces:
             if isinstance(f, cv._collective_variable):
-
-                if f.umbrella:
-                    continue
 
                 # enable histograms if required
                 if f.grid_set is True:

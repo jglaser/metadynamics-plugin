@@ -23,11 +23,14 @@ void CollectiveVariable::computeForces(unsigned int timestep)
     {
     if (m_umbrella != no_umbrella)
         {
+        // add to existing bias
+
         Scalar val = getCurrentValue(timestep);
         if ((val < m_cv0 + m_width_flat/Scalar(2.0)) &&
             (val > m_cv0 - m_width_flat/Scalar(2.0)))
             {
-            setBiasFactor(0.0);
+//            setBiasFactor(0.0);
+            // leave bias as it is
             }
         else
             {
@@ -39,24 +42,27 @@ void CollectiveVariable::computeForces(unsigned int timestep)
 
             if (m_umbrella == linear)
                 {
-                setBiasFactor(m_scale*Scalar(1.0));
+                setBiasFactor(m_bias+m_scale*Scalar(1.0));
                 }
             else if (m_umbrella == harmonic)
                 {
-                setBiasFactor(m_kappa*delta);
+                setBiasFactor(m_bias+m_kappa*delta);
                 }
             else if (m_umbrella == wall)
                 {
-                setBiasFactor(m_scale*Scalar(12.0)*pow(delta/m_kappa,Scalar(11.0))/m_kappa);
+                setBiasFactor(m_bias+m_scale*Scalar(12.0)*pow(delta/m_kappa,Scalar(11.0))/m_kappa);
                 }
             else if (m_umbrella == gaussian)
                 {
-                setBiasFactor(-m_scale*(val-m_cv0)*exp(-(val-m_cv0)*(val-m_cv0)/m_kappa/m_kappa/Scalar(2.0)));
+                setBiasFactor(m_bias-m_scale*(val-m_cv0)*exp(-(val-m_cv0)*(val-m_cv0)/m_kappa/m_kappa/Scalar(2.0)));
                 }
             }
         }
 
     computeBiasForces(timestep);
+
+    // reset bias factor
+    setBiasFactor(0.0);
     }
 
 Scalar CollectiveVariable::getUmbrellaPotential(unsigned int timestep)
