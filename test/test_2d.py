@@ -19,10 +19,10 @@ with context.initialize():
     md.integrate.nve(group=group.all())
 
     density = metadynamics.cv.density(group=group.all(),sigma=0.25)
-    density.set_grid(cv_min=0,cv_max=1,num_points=100)
+    density.set_grid(cv_min=0,cv_max=1,num_points=20)
 
     aspect = metadynamics.cv.aspect_ratio(sigma=0.1,dir1=0,dir2=1)
-    aspect.set_grid(cv_min=0,cv_max=2,num_points=200)
+    aspect.set_grid(cv_min=0,cv_max=2,num_points=30)
 
     meta.dump_grid('bias.dat',period=1)
 
@@ -43,10 +43,10 @@ with context.initialize():
     md.integrate.nve(group=group.all())
 
     density = metadynamics.cv.density(group=group.all(),sigma=0.25)
-    density.set_grid(cv_min=0,cv_max=1,num_points=100)
+    density.set_grid(cv_min=0,cv_max=1,num_points=20)
 
     aspect = metadynamics.cv.aspect_ratio(sigma=0.1,dir1=0,dir2=1)
-    aspect.set_grid(cv_min=0,cv_max=2,num_points=200)
+    aspect.set_grid(cv_min=0,cv_max=2,num_points=30)
 
     meta.restart_from_grid('bias.dat_1')
     meta.dump_grid('bias_restart.dat',period=1)
