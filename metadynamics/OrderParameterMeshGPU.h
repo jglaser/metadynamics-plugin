@@ -68,27 +68,27 @@ class OrderParameterMeshGPU : public OrderParameterMesh
         dfft_plan m_dfft_plan_inverse;     //!< Forward distributed FFT
         #endif
 
-        GPUArray<cufftComplex> m_mesh;                 //!< The particle density mesh
-        GPUArray<cufftComplex> m_fourier_mesh;         //!< The fourier transformed mesh
-        GPUArray<cufftComplex> m_fourier_mesh_G;       //!< Fourier transformed mesh times the influence function
-        GPUArray<cufftComplex> m_inv_fourier_mesh;     //!< The inverse-fourier transformed force mesh
+        GlobalArray<cufftComplex> m_mesh;                 //!< The particle density mesh
+        GlobalArray<cufftComplex> m_fourier_mesh;         //!< The fourier transformed mesh
+        GlobalArray<cufftComplex> m_fourier_mesh_G;       //!< Fourier transformed mesh times the influence function
+        GlobalArray<cufftComplex> m_inv_fourier_mesh;     //!< The inverse-fourier transformed force mesh
 
         Index2D m_bin_idx;                         //!< Total number of bins
-        GPUArray<Scalar4> m_particle_bins;         //!< Cell list for particle positions and modes
-        GPUArray<Scalar> m_mesh_scratch;           //!< Mesh with scratch space for density reduction
+        GlobalArray<Scalar4> m_particle_bins;         //!< Cell list for particle positions and modes
+        GlobalArray<Scalar> m_mesh_scratch;           //!< Mesh with scratch space for density reduction
         Index2D m_scratch_idx;                     //!< Indexer for scratch space
-        GPUArray<unsigned int> m_n_cell;           //!< Number of particles per cell
+        GlobalArray<unsigned int> m_n_cell;           //!< Number of particles per cell
         unsigned int m_cell_size;                  //!< Current max. number of particles per cell
         GPUFlags<unsigned int> m_cell_overflowed;  //!< Flag set to 1 if a cell overflows
 
         GPUFlags<Scalar> m_sum;                    //!< Sum over fourier mesh values
-        GPUArray<Scalar> m_sum_partial;            //!< Partial sums over fourier mesh values
-        GPUArray<Scalar> m_sum_virial_partial;     //!< Partial sums over virial mesh values
-        GPUArray<Scalar> m_sum_virial;             //!< Final sum over virial mesh values
+        GlobalArray<Scalar> m_sum_partial;            //!< Partial sums over fourier mesh values
+        GlobalArray<Scalar> m_sum_virial_partial;     //!< Partial sums over virial mesh values
+        GlobalArray<Scalar> m_sum_virial;             //!< Final sum over virial mesh values
         unsigned int m_block_size;                 //!< Block size for fourier mesh reduction
 
         GPUFlags<Scalar4> m_gpu_q_max;             //!< Return value for maximum Fourier mode reduction
-        GPUArray<Scalar4> m_max_partial;           //!< Scratch space for reduction of maximum Fourier amplitude
+        GlobalArray<Scalar4> m_max_partial;           //!< Scratch space for reduction of maximum Fourier amplitude
     };
 
 //! Define plus operator for complex data type (only need to compile by CommunicatorMesh base class)

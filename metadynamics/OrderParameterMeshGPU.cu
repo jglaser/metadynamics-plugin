@@ -1344,7 +1344,7 @@ struct get_type : thrust::unary_function<Scalar4, unsigned int>
 Scalar gpu_compute_mode_sq(unsigned int N,
     const Scalar4 *d_postype,
     const Scalar *d_mode,
-    const CachedAllocator& alloc)
+    CachedAllocator& alloc)
     {
     thrust::device_ptr<const Scalar> mode(d_mode);
     thrust::device_ptr<const Scalar4> postype(d_postype);

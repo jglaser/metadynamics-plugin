@@ -48,7 +48,7 @@ OrderParameterMesh::OrderParameterMesh(std::shared_ptr<SystemDefinition> sysdef,
         throw std::runtime_error("Error setting up cv.mesh");
         }
 
-    GPUArray<Scalar> mode_array(m_pdata->getNTypes(), m_exec_conf);
+    GlobalArray<Scalar> mode_array(m_pdata->getNTypes(), m_exec_conf);
     m_mode.swap(mode_array);
 
     m_mode_sq = 0.0;
@@ -56,7 +56,7 @@ OrderParameterMesh::OrderParameterMesh(std::shared_ptr<SystemDefinition> sysdef,
     ArrayHandle<Scalar> h_mode(m_mode, access_location::host, access_mode::overwrite);
     std::copy(mode.begin(), mode.end(), h_mode.data);
 
-    GPUArray<int3> zero_modes_array(zero_modes.size(), m_exec_conf);
+    GlobalArray<int3> zero_modes_array(zero_modes.size(), m_exec_conf);
     m_zero_modes.swap(zero_modes_array);
 
     ArrayHandle<int3> h_zero_modes(m_zero_modes, access_location::host, access_mode::overwrite);
@@ -170,10 +170,10 @@ void OrderParameterMesh::setTable(const std::vector<Scalar> &K,
     m_delta_k = (kmax - kmin) / Scalar(K.size() - 1);
 
     // allocate the arrays
-    GPUArray<Scalar> table(K.size(), m_exec_conf);
+    GlobalArray<Scalar> table(K.size(), m_exec_conf);
     m_table.swap(table);
 
-    GPUArray<Scalar> table_d(d_K.size(), m_exec_conf);
+    GlobalArray<Scalar> table_d(d_K.size(), m_exec_conf);
     m_table_d.swap(table_d);
 
     // access the array
@@ -212,17 +212,17 @@ void OrderParameterMesh::setupMesh()
     m_n_inner_cells = m_mesh_points.x * m_mesh_points.y * m_mesh_points.z;
 
     // allocate memory for influence function and k values
-    GPUArray<Scalar> inf_f(m_n_inner_cells, m_exec_conf);
+    GlobalArray<Scalar> inf_f(m_n_inner_cells, m_exec_conf);
     m_inf_f.swap(inf_f);
 
     // allocate memory for interpolationluence function and k values
-    GPUArray<Scalar> interpolation_f(m_n_inner_cells, m_exec_conf);
+    GlobalArray<Scalar> interpolation_f(m_n_inner_cells, m_exec_conf);
     m_interpolation_f.swap(interpolation_f);
 
-    GPUArray<Scalar3> k(m_n_inner_cells, m_exec_conf);
+    GlobalArray<Scalar3> k(m_n_inner_cells, m_exec_conf);
     m_k.swap(k);
 
-    GPUArray<Scalar> virial_mesh(6*m_n_inner_cells, m_exec_conf);
+    GlobalArray<Scalar> virial_mesh(6*m_n_inner_cells, m_exec_conf);
     m_virial_mesh.swap(virial_mesh);
 
     initializeFFT();
@@ -328,16 +328,16 @@ void OrderParameterMesh::initializeFFT()
         }
 
     // allocate mesh and transformed mesh
-    GPUArray<kiss_fft_cpx> mesh(m_n_cells,m_exec_conf);
+    GlobalArray<kiss_fft_cpx> mesh(m_n_cells,m_exec_conf);
     m_mesh.swap(mesh);
 
-    GPUArray<kiss_fft_cpx> fourier_mesh(m_n_inner_cells, m_exec_conf);
+    GlobalArray<kiss_fft_cpx> fourier_mesh(m_n_inner_cells, m_exec_conf);
     m_fourier_mesh.swap(fourier_mesh);
 
-    GPUArray<kiss_fft_cpx> fourier_mesh_G(m_n_inner_cells, m_exec_conf);
+    GlobalArray<kiss_fft_cpx> fourier_mesh_G(m_n_inner_cells, m_exec_conf);
     m_fourier_mesh_G.swap(fourier_mesh_G);
 
-    GPUArray<kiss_fft_cpx> inv_fourier_mesh(m_n_cells, m_exec_conf);
+    GlobalArray<kiss_fft_cpx> inv_fourier_mesh(m_n_cells, m_exec_conf);
     m_inv_fourier_mesh.swap(inv_fourier_mesh);
     }
 

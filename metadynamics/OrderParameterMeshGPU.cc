@@ -25,16 +25,16 @@ OrderParameterMeshGPU::OrderParameterMeshGPU(std::shared_ptr<SystemDefinition> s
       m_gpu_q_max(m_exec_conf)
     {
     unsigned int n_blocks = m_mesh_points.x*m_mesh_points.y*m_mesh_points.z/m_block_size+1;
-    GPUArray<Scalar> sum_partial(n_blocks,m_exec_conf);
+    GlobalArray<Scalar> sum_partial(n_blocks,m_exec_conf);
     m_sum_partial.swap(sum_partial);
 
-    GPUArray<Scalar> sum_virial_partial(6*n_blocks,m_exec_conf);
+    GlobalArray<Scalar> sum_virial_partial(6*n_blocks,m_exec_conf);
     m_sum_virial_partial.swap(sum_virial_partial);
 
-    GPUArray<Scalar> sum_virial(6,m_exec_conf);
+    GlobalArray<Scalar> sum_virial(6,m_exec_conf);
     m_sum_virial.swap(sum_virial);
 
-    GPUArray<Scalar4> max_partial(n_blocks, m_exec_conf);
+    GlobalArray<Scalar4> max_partial(n_blocks, m_exec_conf);
     m_max_partial.swap(max_partial);
 
     // initial value of number of particles per bin
@@ -123,22 +123,22 @@ void OrderParameterMeshGPU::initializeFFT()
     m_scratch_idx = Index2D(n_particle_bins,(2*m_radius+1)*(2*m_radius+1)*(2*m_radius+1));
 
     // allocate mesh and transformed mesh
-    GPUArray<cufftComplex> mesh(m_n_cells,m_exec_conf);
+    GlobalArray<cufftComplex> mesh(m_n_cells,m_exec_conf);
     m_mesh.swap(mesh);
 
-    GPUArray<cufftComplex> fourier_mesh(m_n_inner_cells, m_exec_conf);
+    GlobalArray<cufftComplex> fourier_mesh(m_n_inner_cells, m_exec_conf);
     m_fourier_mesh.swap(fourier_mesh);
 
-    GPUArray<cufftComplex> fourier_mesh_G(m_n_inner_cells, m_exec_conf);
+    GlobalArray<cufftComplex> fourier_mesh_G(m_n_inner_cells, m_exec_conf);
     m_fourier_mesh_G.swap(fourier_mesh_G);
 
-    GPUArray<cufftComplex> inv_fourier_mesh(m_n_cells, m_exec_conf);
+    GlobalArray<cufftComplex> inv_fourier_mesh(m_n_cells, m_exec_conf);
     m_inv_fourier_mesh.swap(inv_fourier_mesh);
 
-    GPUArray<Scalar4> particle_bins(m_bin_idx.getNumElements(), m_exec_conf);
+    GlobalArray<Scalar4> particle_bins(m_bin_idx.getNumElements(), m_exec_conf);
     m_particle_bins.swap(particle_bins);
 
-    GPUArray<unsigned int> n_cell(m_bin_idx.getW(), m_exec_conf);
+    GlobalArray<unsigned int> n_cell(m_bin_idx.getW(), m_exec_conf);
     m_n_cell.swap(n_cell);
 
     GPUFlags<unsigned int> cell_overflowed(m_exec_conf);
@@ -147,7 +147,7 @@ void OrderParameterMeshGPU::initializeFFT()
     m_cell_overflowed.resetFlags(0);
 
     // allocate scratch space for density reduction
-    GPUArray<Scalar> mesh_scratch(m_scratch_idx.getNumElements(), m_exec_conf);
+    GlobalArray<Scalar> mesh_scratch(m_scratch_idx.getNumElements(), m_exec_conf);
     m_mesh_scratch.swap(mesh_scratch);
     }
 
@@ -195,7 +195,7 @@ void OrderParameterMeshGPU::assignParticles()
             m_cell_size = flags;
 
             m_bin_idx = Index2D(m_bin_idx.getW(),m_cell_size);
-            GPUArray<Scalar4> particle_bins(m_bin_idx.getNumElements(),m_exec_conf);
+            GlobalArray<Scalar4> particle_bins(m_bin_idx.getNumElements(),m_exec_conf);
             m_particle_bins.swap(particle_bins);
             m_cell_overflowed.resetFlags(0);
             }

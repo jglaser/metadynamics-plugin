@@ -80,30 +80,30 @@ class OrderParameterMesh : public CollectiveVariable
         unsigned int m_n_cells;             //!< Total number of inner cells
         unsigned int m_radius;              //!< Stencil radius (in units of mesh size)
         unsigned int m_n_inner_cells;       //!< Number of inner mesh points (without ghost cells)
-        GPUArray<Scalar> m_mode;            //!< Per-type scalar multiplying density ("charges")
+        GlobalArray<Scalar> m_mode;            //!< Per-type scalar multiplying density ("charges")
         Scalar m_mode_sq;                   //!< Sum of squared mode amplitudes
-        GPUArray<Scalar> m_inf_f;           //!< Fourier representation of the influence function (real part)
-        GPUArray<Scalar> m_interpolation_f; //!< Fourier representation of the interpolation function
-        GPUArray<Scalar3> m_k;              //!< Mesh of k values
+        GlobalArray<Scalar> m_inf_f;           //!< Fourier representation of the influence function (real part)
+        GlobalArray<Scalar> m_interpolation_f; //!< Fourier representation of the interpolation function
+        GlobalArray<Scalar3> m_k;              //!< Mesh of k values
         Scalar m_qstarsq;                   //!< Short wave length cut-off squared for density harmonics
         bool m_is_first_step;               //!< True if we have not yet computed the influence function
         unsigned int m_cv_last_updated;     //!< Timestep of last update of collective variable
         bool m_box_changed;                 //!< True if box has changed since last compute
         Scalar m_cv;                        //!< Current value of collective variable
 
-        GPUArray<Scalar> m_virial_mesh;     //!< k-space mesh of virial tensor values
+        GlobalArray<Scalar> m_virial_mesh;     //!< k-space mesh of virial tensor values
 
         unsigned int m_q_max_last_computed;        //!< Last time step at which q max was computed
         Scalar3 m_q_max;                           //!< Current wave vector with maximum amplitude
         Scalar m_sq_max;                           //!< Maximum structure factor
 
-        GPUArray<int3> m_zero_modes;        //!< Fourier modes that should be zeroed
+        GlobalArray<int3> m_zero_modes;        //!< Fourier modes that should be zeroed
 
         Scalar m_k_min;                             //!< Minimum k of tabulated convolution kernel
         Scalar m_k_max;                             //!< Maximum k of tabulated convolution kernel
         Scalar m_delta_k;                           //!< Spacing between k values
-        GPUArray<Scalar> m_table;                   //!< Tabulated kernel
-        GPUArray<Scalar> m_table_d;                 //!< Tabulated kernel
+        GlobalArray<Scalar> m_table;                   //!< Tabulated kernel
+        GlobalArray<Scalar> m_table_d;                 //!< Tabulated kernel
         bool m_use_table;                           //!< Whether to use the tabulated kernel
 
         //! Helper function to be called when box changes
@@ -161,10 +161,10 @@ class OrderParameterMesh : public CollectiveVariable
 
         bool m_kiss_fft_initialized;               //!< True if a local KISS FFT has been set up
 
-        GPUArray<kiss_fft_cpx> m_mesh;             //!< The particle density mesh
-        GPUArray<kiss_fft_cpx> m_fourier_mesh;     //!< The fourier transformed mesh
-        GPUArray<kiss_fft_cpx> m_fourier_mesh_G;   //!< Fourier transformed mesh times the influence function
-        GPUArray<kiss_fft_cpx> m_inv_fourier_mesh; //!< The inverse-Fourier transformed mesh
+        GlobalArray<kiss_fft_cpx> m_mesh;             //!< The particle density mesh
+        GlobalArray<kiss_fft_cpx> m_fourier_mesh;     //!< The fourier transformed mesh
+        GlobalArray<kiss_fft_cpx> m_fourier_mesh_G;   //!< Fourier transformed mesh times the influence function
+        GlobalArray<kiss_fft_cpx> m_inv_fourier_mesh; //!< The inverse-Fourier transformed mesh
 
         std::vector<std::string> m_log_names;           //!< Name of the log quantity
 

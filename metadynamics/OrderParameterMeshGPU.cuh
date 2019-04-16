@@ -106,4 +106,4 @@ void gpu_compute_q_max(unsigned int n_wave_vectors,
 Scalar gpu_compute_mode_sq(unsigned int N,
     const Scalar4 *d_postype,
     const Scalar *d_mode,
-    const CachedAllocator& alloc);
+    CachedAllocator& alloc);
