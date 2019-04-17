@@ -3,7 +3,7 @@
 
 #include "CollectiveVariable.h"
 
-#include <hoomd/GPUFlags.h>
+#include <hoomd/GlobalArray.h>
 
 /*! Wrapper to convert a regular ForceCompute into a CollectiveVariable */
 
@@ -26,12 +26,27 @@ class CollectiveWrapper : public CollectiveVariable
             return m_energy;
             }
 
+        //! Set autotuner parameters
+        /*! \param enable Enable/disable autotuning
+            \param period period (approximate) in time steps when returning occurs
+        */
+        virtual void setAutotunerParams(bool enable, unsigned int period)
+            {
+            CollectiveVariable::setAutotunerParams(enable, period);
+            m_tuner_reduce->setPeriod(period);
+            m_tuner_reduce->setEnabled(enable);
+            m_tuner_scale->setPeriod(period);
+            m_tuner_scale->setEnabled(enable);
+            }
+
     protected:
         std::shared_ptr<ForceCompute> m_fc; //!< The parent force compute
         Scalar m_energy;                    //!< The potential energy
 
         #ifdef ENABLE_CUDA
-        GPUFlags<Scalar> m_sum;     //!< for reading back potential energy from GPU
+        GlobalArray<Scalar> m_sum;     //!< for reading back potential energy from GPU
+        std::unique_ptr<Autotuner> m_tuner_scale; //!< Autotuner for scaling forces
+        std::unique_ptr<Autotuner> m_tuner_reduce; //!< Autotuner for collective variable reduction
         #endif
 
         virtual void computeCV(unsigned int timestep);

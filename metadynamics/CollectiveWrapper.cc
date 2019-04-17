@@ -17,10 +17,14 @@ CollectiveWrapper::CollectiveWrapper(std::shared_ptr<SystemDefinition> sysdef,
     #ifdef ENABLE_CUDA
     if (m_exec_conf->exec_mode == ExecutionConfiguration::GPU)
         {
-        GPUFlags<Scalar> sum(m_exec_conf);
-        sum.resetFlags(0);
+        GlobalArray<Scalar> sum(1,m_exec_conf);
         m_sum.swap(sum);
+        TAG_ALLOCATION(m_sum);
         }
+
+    cudaDeviceProp dev_prop = m_exec_conf->dev_prop;
+    m_tuner_reduce.reset(new Autotuner(dev_prop.warpSize, dev_prop.maxThreadsPerBlock, dev_prop.warpSize, 5, 100000, name+"_reduce", this->m_exec_conf));
+    m_tuner_scale.reset(new Autotuner(dev_prop.warpSize, dev_prop.maxThreadsPerBlock, dev_prop.warpSize, 5, 100000, name+"_scale", this->m_exec_conf));
     #endif
     }
 
@@ -73,22 +77,35 @@ void CollectiveWrapper::computeCVGPU(unsigned int timestep)
     {
     ArrayHandle<Scalar4> d_force(m_fc->getForceArray(), access_location::device, access_mode::read);
 
-    unsigned int block_size = 512;
-    unsigned int n_blocks = m_pdata->getN() / block_size + 1;
+    // maximum size, per GPU, for a block_size of one
+    unsigned int scratch_size = (m_pdata->getN()+m_pdata->getNGhosts()+1);
+    ScopedAllocation<Scalar> d_scratch(m_exec_conf->getCachedAllocatorManaged(), scratch_size*m_exec_conf->getNumActiveGPUs());
 
-    ScopedAllocation<Scalar> d_scratch(m_exec_conf->getCachedAllocator(), n_blocks);
+        {
+        ArrayHandle<Scalar> d_sum(m_sum, access_location::device, access_mode::overwrite);
 
-    gpu_reduce_potential_energy(d_scratch.data,
-        d_force.data,
-        m_pdata->getN()+m_pdata->getNGhosts(),
-        m_sum.getDeviceFlags(),
-        n_blocks,
-        block_size,
-        false);
+        // reset sum
+        cudaMemsetAsync(d_sum.data, 0, sizeof(Scalar));
 
-    if (m_exec_conf->isCUDAErrorCheckingEnabled()) CHECK_CUDA_ERROR();
+        m_exec_conf->beginMultiGPU();
+        m_tuner_reduce->begin();
 
-    m_energy = m_sum.readFlags();
+        gpu_reduce_potential_energy(d_scratch.data,
+            d_force.data,
+            m_pdata->getGPUPartition(),
+            m_pdata->getNGhosts(),
+            scratch_size,
+            d_sum.data,
+            false,
+            m_tuner_reduce->getParam());
+        if (m_exec_conf->isCUDAErrorCheckingEnabled()) CHECK_CUDA_ERROR();
+
+        m_tuner_reduce->end();
+        m_exec_conf->endMultiGPU();
+        }
+    
+    ArrayHandle<Scalar> h_sum(m_sum, access_location::host, access_mode::read);
+    m_energy = *h_sum.data;
     }
 
 void CollectiveWrapper::computeBiasForcesGPU(unsigned int timestep)
@@ -100,10 +117,23 @@ void CollectiveWrapper::computeBiasForcesGPU(unsigned int timestep)
     unsigned int pitch = m_fc->getVirialArray().getPitch();
     Scalar fac = m_bias;
 
-    gpu_scale_netforce(d_force.data, d_torque.data, d_virial.data, pitch, fac, m_pdata->getN()+m_pdata->getNGhosts());
+    m_exec_conf->beginMultiGPU();
+    m_tuner_scale->begin();
+    
+    gpu_scale_netforce(d_force.data,
+        d_torque.data,
+        d_virial.data,
+        pitch,
+        fac,
+        m_pdata->getGPUPartition(),
+        m_pdata->getNGhosts(),
+        m_tuner_scale->getParam());
 
     if (m_exec_conf->isCUDAErrorCheckingEnabled())
         CHECK_CUDA_ERROR();
+
+    m_tuner_scale->end();
+    m_exec_conf->endMultiGPU();
     }
 #endif
 

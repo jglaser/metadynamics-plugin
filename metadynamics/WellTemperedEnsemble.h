@@ -7,7 +7,13 @@
 
 #include "CollectiveVariable.h"
 
-#include <hoomd/GPUFlags.h>
+#include <hoomd/GlobalArray.h>
+
+#ifdef ENABLE_CUDA
+#include "hoomd/Autotuner.h"
+#endif
+
+#include <memory>
 
 /*! Class to implement the potential energy as a collective variable (Well-tempered Ensemble)
 
@@ -64,14 +70,29 @@ class WellTemperedEnsemble : public CollectiveVariable
             return CollectiveVariable::getLogValue(quantity, timestep);
             }
 
+        //! Set autotuner parameters
+        /*! \param enable Enable/disable autotuning
+            \param period period (approximate) in time steps when returning occurs
+        */
+        virtual void setAutotunerParams(bool enable, unsigned int period)
+            {
+            CollectiveVariable::setAutotunerParams(enable, period);
+            m_tuner_reduce->setPeriod(period);
+            m_tuner_reduce->setEnabled(enable);
+            m_tuner_scale->setPeriod(period);
+            m_tuner_scale->setEnabled(enable);
+            }
+
     protected:
         Scalar m_pe;                //!< The potential energy
         std::string m_log_name;     //!< Name of log quantity
 
         #ifdef ENABLE_CUDA
-        GPUFlags<Scalar> m_sum;     //!< for reading back potential energy from GPU
+        GlobalArray<Scalar> m_sum;     //!< for reading back potential energy from GPU
+        std::unique_ptr<Autotuner> m_tuner_scale; //!< Autotuner for scaling forces
+        std::unique_ptr<Autotuner> m_tuner_reduce; //!< Autotuner for collective variable reduction
         #endif
-
+    
         virtual void computeCV(unsigned int timestep);
 
         /*! Compute the biased forces for this collective variable.

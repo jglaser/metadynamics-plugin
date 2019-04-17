@@ -16,10 +16,14 @@ WellTemperedEnsemble::WellTemperedEnsemble(std::shared_ptr<SystemDefinition> sys
     #ifdef ENABLE_CUDA
     if (m_exec_conf->exec_mode == ExecutionConfiguration::GPU)
         {
-        GPUFlags<Scalar> sum(m_exec_conf);
-        sum.resetFlags(0);
+        GlobalArray<Scalar> sum(1,m_exec_conf);
         m_sum.swap(sum);
+        TAG_ALLOCATION(m_sum);
         }
+
+    cudaDeviceProp dev_prop = m_exec_conf->dev_prop;
+    m_tuner_reduce.reset(new Autotuner(dev_prop.warpSize, dev_prop.maxThreadsPerBlock, dev_prop.warpSize, 5, 100000, "wte_reduce", this->m_exec_conf));
+    m_tuner_scale.reset(new Autotuner(dev_prop.warpSize, dev_prop.maxThreadsPerBlock, dev_prop.warpSize, 5, 100000, "wte_scale", this->m_exec_conf));
     #endif
     }
 
@@ -68,22 +72,35 @@ void WellTemperedEnsemble::computeCVGPU(unsigned int timestep)
     {
     ArrayHandle<Scalar4> d_net_force(m_pdata->getNetForce(), access_location::device, access_mode::read);
 
-    unsigned int block_size = 512;
-    unsigned int n_blocks = m_pdata->getN() / block_size + 1;
+    // maximum size, per GPU, for a block_size of one
+    unsigned int scratch_size = (m_pdata->getN()+1);
+    ScopedAllocation<Scalar> d_scratch(m_exec_conf->getCachedAllocatorManaged(), scratch_size*m_exec_conf->getNumActiveGPUs());
 
-    ScopedAllocation<Scalar> d_scratch(m_exec_conf->getCachedAllocator(), n_blocks);
+        {
+        ArrayHandle<Scalar> d_sum(m_sum, access_location::device, access_mode::overwrite);
 
-    gpu_reduce_potential_energy(d_scratch.data,
-        d_net_force.data,
-        m_pdata->getN(),
-        m_sum.getDeviceFlags(),
-        n_blocks,
-        block_size,
-        false);
+        // reset sum
+        cudaMemsetAsync(d_sum.data, 0, sizeof(Scalar));
 
-    if (m_exec_conf->isCUDAErrorCheckingEnabled()) CHECK_CUDA_ERROR();
+        m_exec_conf->beginMultiGPU();
+        m_tuner_reduce->begin();
 
-    m_pe = m_sum.readFlags();
+        gpu_reduce_potential_energy(d_scratch.data,
+            d_net_force.data,
+            m_pdata->getGPUPartition(),
+            0, // nghost
+            scratch_size,
+            d_sum.data,
+            false,
+            m_tuner_reduce->getParam());
+        if (m_exec_conf->isCUDAErrorCheckingEnabled()) CHECK_CUDA_ERROR();
+
+        m_tuner_reduce->end();
+        m_exec_conf->endMultiGPU();
+        }
+    
+    ArrayHandle<Scalar> h_sum(m_sum, access_location::host, access_mode::read);
+    m_pe = *h_sum.data;
     }
 
 void WellTemperedEnsemble::computeBiasForcesGPU(unsigned int timestep)
@@ -95,10 +112,23 @@ void WellTemperedEnsemble::computeBiasForcesGPU(unsigned int timestep)
     unsigned int pitch = m_pdata->getNetVirial().getPitch();
     Scalar fac = Scalar(1.0)+m_bias;
 
-    gpu_scale_netforce(d_net_force.data, d_net_torque.data, d_net_virial.data, pitch, fac, m_pdata->getN());
+    m_exec_conf->beginMultiGPU();
+    m_tuner_scale->begin();
+    
+    gpu_scale_netforce(d_net_force.data,
+        d_net_torque.data,
+        d_net_virial.data,
+        pitch,
+        fac,
+        m_pdata->getGPUPartition(),
+        0, // nghost
+        m_tuner_scale->getParam());
 
     if (m_exec_conf->isCUDAErrorCheckingEnabled())
         CHECK_CUDA_ERROR();
+
+    m_tuner_scale->end();
+    m_exec_conf->endMultiGPU();
     }
 #endif
 
