@@ -673,15 +673,23 @@ Scalar IntegratorMetaDynamics::interpolateGrid(const std::vector<Scalar>& val, b
     for (unsigned int cv_idx = 0; cv_idx < m_variables.size(); cv_idx++)
         {
         Scalar delta = (m_variables[cv_idx].m_cv_max - m_variables[cv_idx].m_cv_min)/(m_variables[cv_idx].m_num_points - 1);
-        int lower = (int) ((val[cv] - m_variables[cv_idx].m_cv_min)/delta);
-        int upper = lower+1;
 
-        if (lower < 0 || upper >= m_variables[cv_idx].m_num_points)
+        if (val[cv] < m_variables[cv_idx].m_cv_min || val[cv] >= m_variables[cv_idx].m_cv_max)
             {
             m_exec_conf->msg->warning() << "integrate.mode_metadynamics: Value " << val[cv]
                                         << " of collective variable " << m_variables[cv_idx].m_cv->getName() << " out of bounds." << endl
                                         << "Assuming bias potential of zero." << endl;
             return Scalar(0.0);
+            }
+
+        int lower = (int) ((val[cv] - m_variables[cv_idx].m_cv_min)/delta);
+        int upper = lower+1;
+
+        // account for round off error
+        if (upper >= (int) m_variables[cv_idx].m_num_points)
+            {
+            lower--;
+            upper--;
             }
 
         Scalar lower_bound = m_variables[cv_idx].m_cv_min + delta * lower;

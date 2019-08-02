@@ -19,7 +19,7 @@ struct CollectiveVariableItem
     Scalar m_sigma;                             //!< Width of compensating gaussians for this variable
     Scalar m_cv_min;                            //!< Minium value of collective variable (if using grid)
     Scalar m_cv_max;                            //!< Maximum value of collective variable (if using grid)
-    Scalar m_num_points;                        //!< Number of grid points for this collective variable
+    unsigned int m_num_points;                  //!< Number of grid points for this collective variable
     };
 
 //! Implements a metadynamics update scheme
