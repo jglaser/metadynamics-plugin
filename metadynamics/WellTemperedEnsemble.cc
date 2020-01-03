@@ -3,7 +3,7 @@
  */
 #include "WellTemperedEnsemble.h"
 
-#ifdef ENABLE_CUDA
+#ifdef ENABLE_HIP
 #include "WellTemperedEnsemble.cuh"
 #endif
 
@@ -13,7 +13,7 @@ WellTemperedEnsemble::WellTemperedEnsemble(std::shared_ptr<SystemDefinition> sys
                                        const std::string& name)
     : CollectiveVariable(sysdef, name), m_pe(0.0), m_log_name("cv_potential_energy")
     {
-    #ifdef ENABLE_CUDA
+    #ifdef ENABLE_HIP
     if (m_exec_conf->exec_mode == ExecutionConfiguration::GPU)
         {
         GlobalArray<Scalar> sum(1,m_exec_conf);
@@ -21,7 +21,7 @@ WellTemperedEnsemble::WellTemperedEnsemble(std::shared_ptr<SystemDefinition> sys
         TAG_ALLOCATION(m_sum);
         }
 
-    cudaDeviceProp dev_prop = m_exec_conf->dev_prop;
+    hipDeviceProp_t dev_prop = m_exec_conf->dev_prop;
     m_tuner_reduce.reset(new Autotuner(dev_prop.warpSize, dev_prop.maxThreadsPerBlock, dev_prop.warpSize, 5, 100000, "wte_reduce", this->m_exec_conf));
     m_tuner_scale.reset(new Autotuner(dev_prop.warpSize, dev_prop.maxThreadsPerBlock, dev_prop.warpSize, 5, 100000, "wte_scale", this->m_exec_conf));
     #endif
@@ -32,7 +32,7 @@ void WellTemperedEnsemble::computeCV(unsigned int timestep)
     if (m_prof)
         m_prof->push(m_exec_conf,"Well-Tempered Ensemble");
 
-    #ifdef ENABLE_CUDA
+    #ifdef ENABLE_HIP
     if (m_exec_conf->exec_mode == ExecutionConfiguration::GPU)
         {
         computeCVGPU(timestep);
@@ -67,7 +67,7 @@ void WellTemperedEnsemble::computeCV(unsigned int timestep)
         m_prof->pop();
     }
 
-#ifdef ENABLE_CUDA
+#ifdef ENABLE_HIP
 void WellTemperedEnsemble::computeCVGPU(unsigned int timestep)
     {
     ArrayHandle<Scalar4> d_net_force(m_pdata->getNetForce(), access_location::device, access_mode::read);
@@ -139,7 +139,7 @@ void WellTemperedEnsemble::computeBiasForces(unsigned int timestep)
 
     Scalar fac = Scalar(1.0)+m_bias;
 
-    #ifdef ENABLE_CUDA
+    #ifdef ENABLE_HIP
     if (m_exec_conf->exec_mode == ExecutionConfiguration::GPU)
         {
         computeBiasForcesGPU(timestep);

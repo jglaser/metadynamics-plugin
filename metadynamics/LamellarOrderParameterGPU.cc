@@ -3,7 +3,7 @@
  */
 #include "LamellarOrderParameterGPU.h"
 
-#ifdef ENABLE_CUDA
+#ifdef ENABLE_HIP
 
 #include "LamellarOrderParameterGPU.cuh"
 

@@ -7,7 +7,7 @@
 
 #include "LamellarOrderParameter.h"
 
-#ifdef ENABLE_CUDA
+#ifdef ENABLE_HIP
 
 //! Class to calculate the lamellar order parameter on the GPU
 class LamellarOrderParameterGPU : public LamellarOrderParameter

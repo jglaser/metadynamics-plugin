@@ -43,7 +43,7 @@ class CollectiveWrapper : public CollectiveVariable
         std::shared_ptr<ForceCompute> m_fc; //!< The parent force compute
         Scalar m_energy;                    //!< The potential energy
 
-        #ifdef ENABLE_CUDA
+        #ifdef ENABLE_HIP
         GlobalArray<Scalar> m_sum;     //!< for reading back potential energy from GPU
         std::unique_ptr<Autotuner> m_tuner_scale; //!< Autotuner for scaling forces
         std::unique_ptr<Autotuner> m_tuner_reduce; //!< Autotuner for collective variable reduction

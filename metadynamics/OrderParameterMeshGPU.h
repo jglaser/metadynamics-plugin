@@ -3,7 +3,7 @@
 #ifndef __ORDER_PARAMETER_MESH_GPU_H__
 #define __ORDER_PARAMETER_MESH_GPU_H__
 
-#ifdef ENABLE_CUDA
+#ifdef ENABLE_HIP
 
 //#define USE_HOST_DFFT
 
@@ -114,5 +114,5 @@ inline Scalar4 operator + (Scalar4& lhs, Scalar4& rhs)
 
 void export_OrderParameterMeshGPU(pybind11::module& m);
 
-#endif // ENABLE_CUDA
+#endif // ENABLE_HIP
 #endif // __ORDER_PARAMETER_MESH_GPU_H__

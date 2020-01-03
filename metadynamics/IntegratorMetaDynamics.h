@@ -6,7 +6,7 @@
 
 #include <hoomd/md/IntegratorTwoStep.h>
 
-#include <hoomd/extern/pybind/include/pybind11/pybind11.h>
+#include <pybind11/pybind11.h>
 
 /*! \file IntegratorMetaDynamics.h
     \brief Declares the IntegratorMetaDynamics class
@@ -360,7 +360,7 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         //! Helper function to update the grid values
         void updateGrid(std::vector<Scalar>& current_val, Scalar scal);
 
-#ifdef ENABLE_CUDA
+#ifdef ENABLE_HIP
         void updateGridGPU(std::vector<Scalar>& current_val, Scalar scal);
 #endif
 

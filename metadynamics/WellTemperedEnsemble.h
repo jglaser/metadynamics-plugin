@@ -9,7 +9,7 @@
 
 #include <hoomd/GlobalArray.h>
 
-#ifdef ENABLE_CUDA
+#ifdef ENABLE_HIP
 #include "hoomd/Autotuner.h"
 #endif
 
@@ -87,7 +87,7 @@ class WellTemperedEnsemble : public CollectiveVariable
         Scalar m_pe;                //!< The potential energy
         std::string m_log_name;     //!< Name of log quantity
 
-        #ifdef ENABLE_CUDA
+        #ifdef ENABLE_HIP
         GlobalArray<Scalar> m_sum;     //!< for reading back potential energy from GPU
         std::unique_ptr<Autotuner> m_tuner_scale; //!< Autotuner for scaling forces
         std::unique_ptr<Autotuner> m_tuner_reduce; //!< Autotuner for collective variable reduction

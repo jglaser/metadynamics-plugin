@@ -3,7 +3,7 @@
  */
 #include "CollectiveWrapper.h"
 
-#ifdef ENABLE_CUDA
+#ifdef ENABLE_HIP
 #include "WellTemperedEnsemble.cuh"
 #endif
 
@@ -14,7 +14,7 @@ CollectiveWrapper::CollectiveWrapper(std::shared_ptr<SystemDefinition> sysdef,
                                        const std::string& name)
     : CollectiveVariable(sysdef, name), m_fc(fc), m_energy(0.0)
     {
-    #ifdef ENABLE_CUDA
+    #ifdef ENABLE_HIP
     if (m_exec_conf->exec_mode == ExecutionConfiguration::GPU)
         {
         GlobalArray<Scalar> sum(1,m_exec_conf);
@@ -22,7 +22,7 @@ CollectiveWrapper::CollectiveWrapper(std::shared_ptr<SystemDefinition> sysdef,
         TAG_ALLOCATION(m_sum);
         }
 
-    cudaDeviceProp dev_prop = m_exec_conf->dev_prop;
+    hipDeviceProp_t dev_prop = m_exec_conf->dev_prop;
     m_tuner_reduce.reset(new Autotuner(dev_prop.warpSize, dev_prop.maxThreadsPerBlock, dev_prop.warpSize, 5, 100000, name+"_reduce", this->m_exec_conf));
     m_tuner_scale.reset(new Autotuner(dev_prop.warpSize, dev_prop.maxThreadsPerBlock, dev_prop.warpSize, 5, 100000, name+"_scale", this->m_exec_conf));
     #endif
@@ -36,7 +36,7 @@ void CollectiveWrapper::computeCV(unsigned int timestep)
     if (m_prof)
         m_prof->push(m_exec_conf,"Collective wrap");
 
-    #ifdef ENABLE_CUDA
+    #ifdef ENABLE_HIP
     if (m_exec_conf->exec_mode == ExecutionConfiguration::GPU)
         {
         computeCVGPU(timestep);
@@ -72,7 +72,7 @@ void CollectiveWrapper::computeCV(unsigned int timestep)
         m_prof->pop();
     }
 
-#ifdef ENABLE_CUDA
+#ifdef ENABLE_HIP
 void CollectiveWrapper::computeCVGPU(unsigned int timestep)
     {
     ArrayHandle<Scalar4> d_force(m_fc->getForceArray(), access_location::device, access_mode::read);
@@ -147,7 +147,7 @@ void CollectiveWrapper::computeBiasForces(unsigned int timestep)
 
     Scalar fac = m_bias;
 
-    #ifdef ENABLE_CUDA
+    #ifdef ENABLE_HIP
     if (m_exec_conf->exec_mode == ExecutionConfiguration::GPU)
         {
         computeBiasForcesGPU(timestep);

@@ -25,45 +25,25 @@ set(_${COMPONENT_NAME}_cu_sources
     WellTemperedEnsemble.cu
     )
 
-include_directories(${HOOMD_INCLUDE_DIR}/hoomd/extern/dfftlib/src)
+include_directories(${HOOMD_INSTALL_PREFIX}/${PYTHON_SITE_INSTALL_DIR}/include/hoomd/extern/dfftlib/src)
 
-# Need to define NO_IMPORT_ARRAY in every file but module.cc
-set_source_files_properties(${_${COMPONENT_NAME}_sources} ${_${COMPONENT_NAME}_cu_sources} PROPERTIES COMPILE_DEFINITIONS NO_IMPORT_ARRAY)
+pybind11_add_module (_${COMPONENT_NAME} SHARED ${_${COMPONENT_NAME}_sources} ${_${COMPONENT_NAME}_cu_sources} NO_EXTRAS)
 
-if (ENABLE_CUDA)
-CUDA_COMPILE(_CUDA_GENERATED_FILES ${_${COMPONENT_NAME}_cu_sources} OPTIONS ${CUDA_ADDITIONAL_OPTIONS} SHARED)
-endif (ENABLE_CUDA)
-
-pybind11_add_module (_${COMPONENT_NAME} SHARED ${_${COMPONENT_NAME}_sources} ${_CUDA_GENERATED_FILES} NO_EXTRAS)
+fix_cudart_rpath(_${COMPONENT_NAME})
 
 # link the library to its dependencies
-target_link_libraries(_${COMPONENT_NAME} ${HOOMD_LIBRARIES} ${HOOMD_MD_LIB})
+target_link_libraries(_${COMPONENT_NAME} PUBLIC HOOMD::_hoomd HOOMD::_md )
 
-# if we are compiling with MPI support built in, set appropriate
-# compiler/linker flags
-if (ENABLE_MPI)
-   if(MPI_COMPILE_FLAGS)
-       set_target_properties(_${COMPONENT_NAME} PROPERTIES COMPILE_FLAGS "${MPI_CXX_COMPILE_FLAGS}")
-   endif(MPI_COMPILE_FLAGS)
-   if(MPI_LINK_FLAGS)
-       set_target_properties(_${COMPONENT_NAME} PROPERTIES LINK_FLAGS "${MPI_CXX_LINK_FLAGS}")
-   endif(MPI_LINK_FLAGS)
-endif(ENABLE_MPI)
-
-##################################
-# change the name of the library to be a valid python module
-# tweak the properties of the output to make a functional python module
-set_target_properties(_${COMPONENT_NAME} PROPERTIES PREFIX "" OUTPUT_NAME "_${COMPONENT_NAME}")
-
-# .dylib is not recognized as a python module by python on Mac OS X
-if(APPLE)
-    set_target_properties(_${COMPONENT_NAME} PROPERTIES SUFFIX ".so")
-endif(APPLE)
-fix_cudart_rpath(_${COMPONENT_NAME})
+if (APPLE)
+set_target_properties(_${COMPONENT_NAME} PROPERTIES INSTALL_RPATH "@loader_path/..;@loader_path")
+else()
+set_target_properties(_${COMPONENT_NAME} PROPERTIES INSTALL_RPATH "\$ORIGIN/..;\$ORIGIN")
+endif()
 
 # install the library
 install(TARGETS _${COMPONENT_NAME}
-        LIBRARY DESTINATION ${PYTHON_MODULE_BASE_DIR}/${COMPONENT_NAME}
+        EXPORT HOOMDTargets
+        LIBRARY DESTINATION ${PYTHON_SITE_INSTALL_DIR}/${COMPONENT_NAME}
         )
 
 ################ Python only modules
@@ -85,7 +65,7 @@ set(files
     )
 
 install(FILES ${files}
-        DESTINATION ${PYTHON_MODULE_BASE_DIR}/${COMPONENT_NAME}
+        DESTINATION ${PYTHON_SITE_INSTALL_DIR}/${COMPONENT_NAME}
        )
 
 foreach(file ${files})

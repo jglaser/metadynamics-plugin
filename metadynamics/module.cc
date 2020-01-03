@@ -9,14 +9,13 @@
 #include "SteinhardtQl.h"
 #include "Density.h"
 
-#ifdef ENABLE_CUDA
+#ifdef ENABLE_HIP
 #include "LamellarOrderParameterGPU.h"
 #include "OrderParameterMeshGPU.h"
 #endif
 
-
-#include <hoomd/extern/pybind/include/pybind11/pybind11.h>
-#include <hoomd/extern/pybind/include/pybind11/stl_bind.h>
+#include <pybind11/pybind11.h>
+#include <pybind11/stl_bind.h>
 
 // specify the python module. Note that the name must expliclty match the PROJECT() name provided in CMakeLists
 // (with an underscore in front)
@@ -34,7 +33,7 @@ PYBIND11_MODULE(_metadynamics, m)
     export_SteinhardtQl(m);
     export_Density(m);
 
-#ifdef ENABLE_CUDA
+#ifdef ENABLE_HIP
     export_LamellarOrderParameterGPU(m);
     export_OrderParameterMeshGPU(m);
 #endif

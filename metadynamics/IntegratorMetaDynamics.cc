@@ -11,11 +11,11 @@
 
 namespace py = pybind11;
 
-#include <hoomd/extern/Eigen/Eigen/Dense>
+#include <Eigen/Dense>
 
 using namespace std;
 
-#ifdef ENABLE_CUDA
+#ifdef ENABLE_HIP
 #include "IntegratorMetaDynamics.cuh"
 #endif
 
@@ -273,7 +273,7 @@ void IntegratorMetaDynamics::update(unsigned int timestep)
     if (net_force_first)
         {
         // compute the net force on all particles
-        #ifdef ENABLE_CUDA
+        #ifdef ENABLE_HIP
         if (m_exec_conf->exec_mode == ExecutionConfiguration::GPU)
             computeNetForceGPU(timestep+1);
         else
@@ -287,7 +287,7 @@ void IntegratorMetaDynamics::update(unsigned int timestep)
     if (! net_force_first)
         {
         // compute the net force on all particles
-        #ifdef ENABLE_CUDA
+        #ifdef ENABLE_HIP
         if (m_exec_conf->exec_mode == ExecutionConfiguration::GPU)
             computeNetForceGPU(timestep+1);
         else
@@ -380,7 +380,7 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
 
                 m_exec_conf->msg->notice(3) << "integrate.mode_metadynamics: Updating grid." << std::endl;
 
-                #ifdef ENABLE_CUDA
+                #ifdef ENABLE_HIP
                 if (m_exec_conf->isCUDAEnabled())
                     updateGridGPU(current_val, scal);
                 else
@@ -1155,7 +1155,7 @@ void IntegratorMetaDynamics::updateSigmaGrid(std::vector<Scalar>& current_val)
     }
 
 
-#ifdef ENABLE_CUDA
+#ifdef ENABLE_HIP
 void IntegratorMetaDynamics::updateGridGPU(std::vector<Scalar>& current_val, Scalar scal)
     {
     if (m_prof)

@@ -20,11 +20,11 @@ in the presence of a previously generated bias potential,
 without updating the latter, to sample a histogram of values of the
 collective variable (i.e. for error control).
 """
-from hoomd.metadynamics import _metadynamics
-from hoomd.metadynamics import cv
 import hoomd
 from hoomd import md
 
+from hoomd.metadynamics import _metadynamics
+from hoomd.metadynamics import cv
 
 class mode_metadynamics(md.integrate._integrator):
     """Enables integration using metadynamics, a free energy technique.

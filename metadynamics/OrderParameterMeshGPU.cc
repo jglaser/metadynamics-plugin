@@ -2,7 +2,7 @@
 
 namespace py = pybind11;
 
-#ifdef ENABLE_CUDA
+#ifdef ENABLE_HIP
 #include "OrderParameterMeshGPU.cuh"
 
 /*! \param sysdef The system definition
@@ -581,4 +581,4 @@ void export_OrderParameterMeshGPU(py::module& m)
                         >());
     }
 
-#endif // ENABLE_CUDA
+#endif // ENABLE_HIP
