@@ -53,14 +53,14 @@ IntegratorMetaDynamics::IntegratorMetaDynamics(std::shared_ptr<SystemDefinition>
       m_temp(T),
       m_mode(mode),
       m_multiple_walkers(false),
-      m_curr_reweight(1.0)
+      m_curr_ln_reweight(0.0)
     {
     assert(m_T_shift>0);
     assert(m_W > 0);
 
     m_log_names.push_back("bias");
     m_log_names.push_back("det_sigma");
-    m_log_names.push_back("weight");
+    m_log_names.push_back("ln_weight");
 
     #ifdef ENABLE_MPI
     // create partition communicator
@@ -409,9 +409,6 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
                     }
                 #endif
 
-                // use deltaV and grid histogram to update estimator of unbiased CV histogram
-                updateReweightedEstimator(current_val);
-
                     {
                     // add deltas to grid
                     ArrayHandle<Scalar> h_grid(m_grid, access_location::host, access_mode::readwrite);
@@ -437,6 +434,26 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
                         }
                     } // end ArrayHandle scope 
 
+                // use deltaV and grid histogram to update estimator of unbiased CV histogram
+                updateReweightedEstimator(current_val);
+
+                    {
+                    // reset deltas
+                    ArrayHandle<Scalar> h_grid_delta(m_grid_delta, access_location::host, access_mode::overwrite);
+                    ArrayHandle<Scalar> h_sigma_grid_delta(m_sigma_grid_delta, access_location::host, access_mode::overwrite);
+                    ArrayHandle<unsigned int> h_grid_hist_delta(m_grid_hist_delta, access_location::host, access_mode::overwrite);
+                    ArrayHandle<unsigned int> h_grid_hist_gauss_delta(m_grid_hist_gauss_delta, access_location::host, access_mode::overwrite);
+     
+                    for (unsigned int i = 0; i < m_grid.getNumElements(); ++i)
+                        {
+                        h_grid_delta.data[i] = Scalar(0.0);
+                        h_sigma_grid_delta.data[i] = Scalar(0.0);
+                        h_grid_hist_delta.data[i] = 0;
+                        h_grid_hist_gauss_delta.data[i] = 0;
+                        }
+                    } // end ArrayHandle scope 
+
+ 
                 m_num_gaussians++;
                 } // end update
 
@@ -448,7 +465,7 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
             m_curr_bias_potential = interpolateGrid(current_val, false);
 
             // current reweighting factor
-            m_curr_reweight = interpolateGrid(current_val, true);
+            m_curr_ln_reweight = interpolateGrid(current_val, true);
             } 
         else  //!m_use_grid
             {
@@ -611,11 +628,8 @@ void IntegratorMetaDynamics::setupGrid()
     GPUArray<Scalar> grid_delta(m_grid_index.getNumElements(),m_exec_conf);
     m_grid_delta.swap(grid_delta);
 
-    GPUArray<Scalar> grid_reweighted(m_grid_index.getNumElements(),m_exec_conf);
-    m_grid_reweighted.swap(grid_reweighted);
-
-    GPUArray<Scalar> grid_weight(m_grid_index.getNumElements(),m_exec_conf);
-    m_grid_weight.swap(grid_weight);
+    GPUArray<Scalar> grid_ln_weight(m_grid_index.getNumElements(),m_exec_conf);
+    m_grid_ln_weight.swap(grid_ln_weight);
 
     // reset grid
     ArrayHandle<Scalar> h_grid(m_grid, access_location::host, access_mode::overwrite);
@@ -642,20 +656,17 @@ void IntegratorMetaDynamics::setupGrid()
     GPUArray<unsigned int> grid_hist_gauss_delta(m_grid_index.getNumElements(),m_exec_conf);
     m_grid_hist_gauss_delta.swap(grid_hist_gauss_delta);
 
-    ArrayHandle<Scalar> h_grid_reweighted(m_grid_reweighted, access_location::host, access_mode::overwrite);
-    memset(h_grid_reweighted.data, 0, sizeof(Scalar)*m_grid.getNumElements());
-
     ArrayHandle<unsigned int> h_grid_hist_gauss(m_grid_hist_gauss, access_location::host, access_mode::overwrite);
     memset(h_grid_hist_gauss.data,0, sizeof(unsigned int)*m_grid_hist_gauss.getNumElements());
 
     ArrayHandle<unsigned int> h_grid_hist_gauss_delta(m_grid_hist_gauss_delta, access_location::host, access_mode::overwrite);
     memset(h_grid_hist_gauss_delta.data,0, sizeof(unsigned int)*m_grid_hist_gauss_delta.getNumElements());
 
-    // reset to one
-    ArrayHandle<Scalar> h_grid_weight(m_grid_weight, access_location::host, access_mode::overwrite);
+    // reset to zero
+    ArrayHandle<Scalar> h_grid_ln_weight(m_grid_ln_weight, access_location::host, access_mode::overwrite);
 
-    for (unsigned int i = 0; i < m_grid_weight.getNumElements(); ++i)
-        h_grid_weight.data[i] = Scalar(1.0);
+    for (unsigned int i = 0; i < m_grid_ln_weight.getNumElements(); ++i)
+        h_grid_ln_weight.data[i] = 0.0f;
 
     resetHistogram();
     } 
@@ -706,7 +717,7 @@ Scalar IntegratorMetaDynamics::interpolateGrid(const std::vector<Scalar>& val, b
     Scalar res(0.0);
 
     ArrayHandle<Scalar> h_grid(m_grid, access_location::host, access_mode::read);
-    ArrayHandle<Scalar> h_grid_weight(m_grid_weight, access_location::host, access_mode::read);
+    ArrayHandle<Scalar> h_grid_ln_weight(m_grid_ln_weight, access_location::host, access_mode::read);
 
     for (unsigned int bits = 0; bits < n_term; ++bits)
         {
@@ -727,7 +738,7 @@ Scalar IntegratorMetaDynamics::interpolateGrid(const std::vector<Scalar>& val, b
             }
       
         unsigned int idx = m_grid_index.getIndex(coords);
-        Scalar val = (reweight ? h_grid_weight.data[idx] : h_grid.data[idx]);
+        Scalar val = (reweight ? h_grid_ln_weight.data[idx] : h_grid.data[idx]);
         term *= val;
         res += term;
         }
@@ -870,8 +881,7 @@ void IntegratorMetaDynamics::writeGrid(const std::string& filename, unsigned int
     file << m_delimiter << "det_sigma";
     file << m_delimiter << "num_gaussians";
     file << m_delimiter << "hist";
-    file << m_delimiter << "hist_reweight";
-    file << m_delimiter << "weight";
+    file << m_delimiter << "ln_weight";
 
     file << std::endl;
 
@@ -883,8 +893,7 @@ void IntegratorMetaDynamics::writeGrid(const std::string& filename, unsigned int
     ArrayHandle<Scalar> h_sigma_grid(m_sigma_grid, access_location::host, access_mode::read);
     ArrayHandle<unsigned int> h_grid_hist(m_grid_hist, access_location::host, access_mode::read);
     ArrayHandle<unsigned int> h_grid_hist_gauss(m_grid_hist_gauss, access_location::host, access_mode::read);
-    ArrayHandle<Scalar> h_grid_reweighted(m_grid_reweighted, access_location::host, access_mode::read);
-    ArrayHandle<Scalar> h_grid_weight(m_grid_weight, access_location::host, access_mode::read);
+    ArrayHandle<Scalar> h_grid_ln_weight(m_grid_ln_weight, access_location::host, access_mode::read);
 
     for (unsigned int grid_idx = 0; grid_idx < len; grid_idx++)
         {
@@ -917,8 +926,7 @@ void IntegratorMetaDynamics::writeGrid(const std::string& filename, unsigned int
         file << m_delimiter << h_grid_hist_gauss.data[grid_idx];
         file << m_delimiter << h_grid_hist.data[grid_idx];
     
-        file << m_delimiter << setprecision(10) << h_grid_reweighted.data[grid_idx];
-        file << m_delimiter << setprecision(10) << h_grid_weight.data[grid_idx];
+        file << m_delimiter << setprecision(10) << h_grid_ln_weight.data[grid_idx];
         file << std::endl;
         }
 
@@ -965,8 +973,7 @@ void IntegratorMetaDynamics::readGrid(const std::string& filename)
     ArrayHandle<Scalar> h_sigma_grid(m_sigma_grid, access_location::host, access_mode::overwrite);
     ArrayHandle<unsigned int> h_grid_hist(m_grid_hist, access_location::host, access_mode::overwrite);
     ArrayHandle<unsigned int> h_grid_hist_gauss(m_grid_hist_gauss, access_location::host, access_mode::overwrite);
-    ArrayHandle<Scalar> h_grid_reweighted(m_grid_reweighted, access_location::host, access_mode::overwrite);
-    ArrayHandle<Scalar> h_grid_weight(m_grid_weight, access_location::host, access_mode::overwrite);
+    ArrayHandle<Scalar> h_grid_ln_weight(m_grid_ln_weight, access_location::host, access_mode::overwrite);
 
     for (unsigned int grid_idx = 0; grid_idx < len; grid_idx++)
         {
@@ -991,8 +998,7 @@ void IntegratorMetaDynamics::readGrid(const std::string& filename)
 
         h_sigma_grid.data[grid_idx] *= h_grid_hist_gauss.data[grid_idx];
 
-        iss >> h_grid_reweighted.data[grid_idx];
-        iss >> h_grid_weight.data[grid_idx];
+        iss >> h_grid_ln_weight.data[grid_idx];
         }
     
     file.close();
@@ -1054,8 +1060,8 @@ void IntegratorMetaDynamics::updateReweightedEstimator(std::vector<Scalar>& curr
     {
     if (m_prof) m_prof->push("update grid");
 
-    ArrayHandle<Scalar> h_grid_reweighted(m_grid_reweighted, access_location::host, access_mode::readwrite);
-    ArrayHandle<Scalar> h_grid_weight(m_grid_weight, access_location::host, access_mode::readwrite);
+    ArrayHandle<unsigned int> h_grid_hist(m_grid_hist, access_location::host, access_mode::read);
+    ArrayHandle<Scalar> h_grid_ln_weight(m_grid_ln_weight, access_location::host, access_mode::readwrite);
     ArrayHandle<Scalar> h_grid_delta(m_grid_delta, access_location::host, access_mode::read);
     ArrayHandle<unsigned int> h_grid_hist_delta(m_grid_hist_delta, access_location::host, access_mode::read);
 
@@ -1069,9 +1075,8 @@ void IntegratorMetaDynamics::updateReweightedEstimator(std::vector<Scalar>& curr
     // compute ensemble-averaged temporal bias potential derivative
     for (unsigned int grid_idx = 0; grid_idx < len; grid_idx++)
         {
-        h_grid_reweighted.data[grid_idx] += (Scalar) h_grid_hist_delta.data[grid_idx];
-        avg_delta_V += h_grid_reweighted.data[grid_idx]*h_grid_delta.data[grid_idx];
-        norm += h_grid_reweighted.data[grid_idx];
+        avg_delta_V += (Scalar)h_grid_hist.data[grid_idx]*h_grid_delta.data[grid_idx];
+        norm += (Scalar)h_grid_hist.data[grid_idx];
         }
 
     avg_delta_V /= norm; 
@@ -1081,9 +1086,7 @@ void IntegratorMetaDynamics::updateReweightedEstimator(std::vector<Scalar>& curr
         double delta_V = h_grid_delta.data[grid_idx];
 
         // evolve estimator and grid of reweighting factors
-        Scalar fac = exp(-(delta_V-avg_delta_V)/m_temp);
-        h_grid_reweighted.data[grid_idx] *= fac;
-        h_grid_weight.data[grid_idx] /= fac;
+        h_grid_ln_weight.data[grid_idx] -= (delta_V - avg_delta_V)/m_temp;
         }
 
     if (m_prof) m_prof->pop();

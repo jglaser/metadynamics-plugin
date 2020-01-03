@@ -177,7 +177,7 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
                 }
             else if (quantity == m_log_names[2])
                 {
-                return m_curr_reweight;
+                return m_curr_ln_reweight;
                 }
             else
                 { 
@@ -323,13 +323,12 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         Scalar m_temp;                                    //!< Temperature for adaptive Gaussians
         Enum m_mode;                                      //!< The variant of metadynamics being used
         bool m_multiple_walkers;                          //!< True if multiple walkers are used
-        Scalar m_curr_reweight;                           //!< Current weight to reconstruct unbiased Boltzmann distribution
+        Scalar m_curr_ln_reweight;                        //!< Current log of weight to reconstruct unbiased Boltzmann distribution
 #ifdef ENABLE_MPI
         MPI_Comm m_partition_comm;                        //!< MPI communicator between partitions
 #endif
 
-        GPUArray<Scalar> m_grid_reweighted;             //!< Reweighted estimator for the CV distribution 
-        GPUArray<Scalar> m_grid_weight;                 //!< Accumulated reweighting factors
+        GPUArray<Scalar> m_grid_ln_weight;                 //!< Accumulated logs of reweighting factors
 
         //! Internal helper function to update the bias potential
         void updateBiasPotential(unsigned int timestep);
@@ -344,7 +343,7 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         void setupGrid();
 
         //! Helper function to get value of bias potential by multilinear interpolation
-        /* \param reweight If true, interpolate grid of reweighting factors
+        /* \param reweight If true, interpolate grid of reweighting factor logs
          */
         Scalar interpolateGrid(const std::vector<Scalar>& val, bool reweight);
 
