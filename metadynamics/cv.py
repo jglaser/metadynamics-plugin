@@ -77,8 +77,6 @@ class _collective_variable(md.force._force):
         :param num_points:
             Dimension of the grid for this collective variable
         """
-        hoomd.util.print_status_line()
-
         self.cv_min = cv_min
         self.cv_max = cv_max
         self.num_points = int(num_points)
@@ -95,8 +93,6 @@ class _collective_variable(md.force._force):
         :param num_points:
             Dimension of the grid for this collective variable
         """
-        hoomd.util.print_status_line()
-
         self.ftm_min = ftm_min
         self.ftm_max = ftm_max
 
@@ -122,8 +118,6 @@ class _collective_variable(md.force._force):
         :param reweight:
             True if CV should be included in reweighting
         """
-        hoomd.util.print_status_line()
-
         if sigma is not None:
             self.sigma = sigma
 
@@ -223,8 +217,6 @@ class lamellar(_collective_variable):
     """
 
     def __init__(self, mode, lattice_vectors, name=None, sigma=1.0):
-        hoomd.util.print_status_line()
-
         if name is not None:
             name = "_" + name
             suffix = name
@@ -289,8 +281,6 @@ class aspect_ratio(_collective_variable):
     """
 
     def __init__(self, dir1, dir2, name="", sigma=1.0):
-        hoomd.util.print_status_line()
-
         _collective_variable.__init__(self, sigma, name)
 
         self.cpp_force = _metadynamics.AspectRatio(hoomd.context.current.system_definition, int(dir1), int(dir2))
@@ -318,7 +308,6 @@ class density(_collective_variable):
     """
 
     def __init__(self, group=None, sigma=1.0):
-        hoomd.util.print_status_line()
 
         if group is None:
             group = hoomd.group.all()
@@ -371,8 +360,6 @@ class mesh(_collective_variable):
     """
 
     def __init__(self, mode, nx, ny=None, nz=None, name=None, sigma=1.0, zero_modes=None):
-        hoomd.util.print_status_line()
-
         if name is not None:
             name = "_" + name
             suffix = name
@@ -423,8 +410,6 @@ class mesh(_collective_variable):
     def set_params(self, use_table=None, **args):
         """Set parameters for the collective variable
         """
-        hoomd.util.print_status_line()
-
         if use_table is not None:
             self.cpp_force.setUseTable(use_table)
 
@@ -480,8 +465,6 @@ class potential_energy(_collective_variable):
     """
 
     def __init__(self, sigma=1.0):
-        hoomd.util.print_status_line()
-
         name = 'cv_potential_energy'
 
         _collective_variable.__init__(self, sigma, name)
@@ -513,8 +496,6 @@ class wrap(_collective_variable):
     """
 
     def __init__(self, force, sigma=1.0):
-        hoomd.util.print_status_line()
-
         if not isinstance(force, md.force._force):
             hoomd.context.msg.error("cv.wrap needs a md._force instance as argument.")
 
@@ -565,8 +546,6 @@ class steinhardt(_collective_variable):
     """
 
     def __init__(self, r_cut, r_on, lmax, Ql_ref, nlist, type, name=None, sigma=1.0):
-        hoomd.util.print_status_line()
-
         suffix = ""
         if name is not None:
             suffix = "_" + name
@@ -623,3 +602,37 @@ class steinhardt(_collective_variable):
     ## \internal
     def update_coeffs(self):
         pass
+
+class callback(_collective_variable):
+    R"""Collective variable with python callback
+
+    Provide the value of the collective variable through a python callback.
+
+    There is currently no way to compute bias forces for this collective variable.
+
+    :param cb:
+        A python callable that takes timestep as an argument and returns the value of the collective variable
+    :param name:
+        The name of the collective variable
+    :param sigma:
+        Standard deviation of deposited Gaussians
+    """
+
+    def __init__(self, cb, name, sigma=1.0):
+        if not callable(cb):
+            hoomd.context.msg.error("cv.callback needs a callable as argument.")
+
+        _collective_variable.__init__(self, sigma, name)
+
+        self.cpp_force = _metadynamics.CollectiveCallback(hoomd.context.current.system_definition, name, cb)
+
+    def disable(self, log=False):
+        self.disable(log)
+
+    def enable(self):
+        self.enable()
+
+    ## \internal
+    def update_coeffs(self):
+        pass
+

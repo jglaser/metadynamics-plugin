@@ -6,6 +6,7 @@
 #include "OrderParameterMesh.h"
 #include "WellTemperedEnsemble.h"
 #include "CollectiveWrapper.h"
+#include "CollectiveCallback.h"
 #include "SteinhardtQl.h"
 #include "Density.h"
 
@@ -30,6 +31,7 @@ PYBIND11_MODULE(_metadynamics, m)
     export_OrderParameterMesh(m);
     export_WellTemperedEnsemble(m);
     export_CollectiveWrapper(m);
+    export_CollectiveCallback(m);
     export_SteinhardtQl(m);
     export_Density(m);
 
