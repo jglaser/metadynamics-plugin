@@ -328,6 +328,7 @@ class IntegratorMetaDynamics : public IntegratorTwoStep
         MPI_Comm m_partition_comm;                        //!< MPI communicator between partitions
 #endif
 
+        GPUArray<Scalar> m_grid_reweighted;             //!< Reweighted estimator for the CV distribution
         GPUArray<Scalar> m_grid_ln_weight;                 //!< Accumulated logs of reweighting factors
 
         //! Internal helper function to update the bias potential
