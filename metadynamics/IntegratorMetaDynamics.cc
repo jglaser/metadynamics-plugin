@@ -1088,7 +1088,10 @@ void IntegratorMetaDynamics::updateReweightedEstimator(std::vector<Scalar>& curr
         h_grid_reweighted.data[grid_idx] += (Scalar) h_grid_hist_delta.data[grid_idx];
         }
 
-    avg_delta_V /= norm; 
+    if (norm != 0.0)
+        {
+        avg_delta_V /= norm; 
+        }
 
     for (unsigned int grid_idx = 0; grid_idx < len; grid_idx++)
         {
