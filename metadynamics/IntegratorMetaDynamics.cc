@@ -426,11 +426,6 @@ void IntegratorMetaDynamics::updateBiasPotential(unsigned int timestep)
                         h_sigma_grid.data[i] += h_sigma_grid_delta.data[i];
                         h_grid_hist.data[i] += h_grid_hist_delta.data[i];
                         h_grid_hist_gauss.data[i] += h_grid_hist_gauss_delta.data[i];
-
-                        h_grid_delta.data[i] = Scalar(0.0);
-                        h_sigma_grid_delta.data[i] = Scalar(0.0);
-                        h_grid_hist_delta.data[i] = 0;
-                        h_grid_hist_gauss_delta.data[i] = 0;
                         }
                     } // end ArrayHandle scope 
 
