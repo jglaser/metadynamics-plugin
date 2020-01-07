@@ -1083,9 +1083,6 @@ void IntegratorMetaDynamics::updateReweightedEstimator(std::vector<Scalar>& curr
         {
         avg_delta_V += (Scalar)h_grid_reweighted.data[grid_idx]*h_grid_delta.data[grid_idx];
         norm += (Scalar)h_grid_reweighted.data[grid_idx];
-
-        // update reweighted N_t(s)
-        h_grid_reweighted.data[grid_idx] += (Scalar) h_grid_hist_delta.data[grid_idx];
         }
 
     if (norm != 0.0)
@@ -1104,6 +1101,12 @@ void IntegratorMetaDynamics::updateReweightedEstimator(std::vector<Scalar>& curr
         // update grid of (ln's of) weights used to reconstruct the canonical average
         // by weighting observations with those they are brought back into the V=0 ensemble
         h_grid_ln_weight.data[grid_idx] += arg;
+        }
+
+    for (unsigned int grid_idx = 0; grid_idx < len; grid_idx++)
+        {
+        // update reweighted N_t(s)
+        h_grid_reweighted.data[grid_idx] += (Scalar) h_grid_hist_delta.data[grid_idx];
         }
 
     if (m_prof) m_prof->pop();
