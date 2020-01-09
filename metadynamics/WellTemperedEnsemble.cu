@@ -210,6 +210,11 @@ void gpu_reduce_potential_energy(Scalar *d_scratch,
         }
 
     unsigned int run_block_size = min(block_size, max_block_size);
+    
+    // get nearest power of two
+    unsigned int run_block_size_pot2 = 1;
+    while (run_block_size_pot2*2 <= run_block_size)
+        run_block_size_pot2 *= 2;
 
     // iterate over active GPUs in reverse, to end up on first GPU when returning from this function
     for (int idev = gpu_partition.getNumActiveGPUs() - 1; idev >= 0; --idev)
@@ -223,11 +228,11 @@ void gpu_reduce_potential_energy(Scalar *d_scratch,
             nwork += nghost;
 
         // setup the grid to run the kernel
-        unsigned int n_blocks = (nwork/run_block_size) + 1;
+        unsigned int n_blocks = (nwork/run_block_size_pot2) + 1;
         dim3 grid(n_blocks,  1, 1);
-        dim3 threads(run_block_size, 1, 1);
+        dim3 threads(run_block_size_pot2, 1, 1);
 
-        unsigned int shared_bytes = sizeof(Scalar)*run_block_size;
+        unsigned int shared_bytes = sizeof(Scalar)*run_block_size_pot2;
         gpu_compute_potential_energy_partial<<<grid, threads, shared_bytes>>>(d_scratch+idev*scratch_size, d_net_force, nwork, range.first, zero_energy);
 
         int final_block_size = 512;

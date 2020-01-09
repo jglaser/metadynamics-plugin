@@ -23,7 +23,15 @@ CollectiveWrapper::CollectiveWrapper(std::shared_ptr<SystemDefinition> sysdef,
         }
 
     hipDeviceProp_t dev_prop = m_exec_conf->dev_prop;
-    m_tuner_reduce.reset(new Autotuner(dev_prop.warpSize, dev_prop.maxThreadsPerBlock, dev_prop.warpSize, 5, 100000, name+"_reduce", this->m_exec_conf));
+
+    // power of two blocks sizes for reduction
+    std::vector<unsigned int> valid_params;
+    for (unsigned int block_size = dev_prop.warpSize; block_size <= (unsigned int) dev_prop.maxThreadsPerBlock; block_size *= 2)
+        {
+        valid_params.push_back(block_size);
+        }
+
+    m_tuner_reduce.reset(new Autotuner(valid_params, 5, 100000, name+"_reduce", this->m_exec_conf));
     m_tuner_scale.reset(new Autotuner(dev_prop.warpSize, dev_prop.maxThreadsPerBlock, dev_prop.warpSize, 5, 100000, name+"_scale", this->m_exec_conf));
     #endif
     }
