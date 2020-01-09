@@ -4,6 +4,7 @@
 #include "CollectiveVariable.h"
 
 #include <hoomd/GlobalArray.h>
+#include <hoomd/Autotuner.h>
 
 /*! Wrapper to convert a regular ForceCompute into a CollectiveVariable */
 
